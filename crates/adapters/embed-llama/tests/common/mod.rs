@@ -24,6 +24,7 @@ pub fn fake_config(dir: &std::path::Path, env: &[(&str, &str)]) -> LlamaServerCo
     let mut config = LlamaServerConfig::new(PathBuf::from(FAKE), model, dir);
     config.startup_timeout = Duration::from_secs(5);
     config.stop_timeout = Duration::from_secs(2);
+    config.idle_shutdown = None;
     config.extra_env = env
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))

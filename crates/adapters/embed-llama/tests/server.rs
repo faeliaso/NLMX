@@ -263,3 +263,21 @@ async fn health_notices_a_crashed_process() {
     assert_eq!(server.health().await, Health::Ready);
     server.stop().await;
 }
+
+#[tokio::test]
+async fn disables_the_prompt_cache_and_uses_one_slot() {
+    let dir = data_dir("args");
+    let args_file = dir.join("args.txt");
+    let server = LlamaServer::new(fake_config(
+        &dir,
+        &[("FAKE_ARGS_OUT", args_file.to_str().unwrap())],
+    ));
+    server.start().await.unwrap();
+    let args = std::fs::read_to_string(&args_file).unwrap();
+    let args: Vec<&str> = args.lines().collect();
+    for pair in [["--cache-ram", "0"], ["--parallel", "1"]] {
+        assert!(args.windows(2).any(|w| w == pair), "{pair:?} in {args:?}");
+    }
+    assert!(args.contains(&"--no-cache-prompt"), "{args:?}");
+    server.stop().await;
+}

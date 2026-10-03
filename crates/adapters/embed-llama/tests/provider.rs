@@ -26,6 +26,7 @@ fn provider(
         batch_size: 512,
         max_batch_inputs,
         gpu_layers: 0,
+        idle_shutdown_secs: 0,
     };
     LlamaCppEmbeddingProvider::new(config, Arc::new(LlamaServer::new(server)))
 }
@@ -166,6 +167,7 @@ async fn an_unavailable_server_is_reported() {
         batch_size: 512,
         max_batch_inputs: 4,
         gpu_layers: 0,
+        idle_shutdown_secs: 0,
     };
     let p = LlamaCppEmbeddingProvider::new(config, Arc::new(LlamaServer::new(server)));
     assert!(matches!(
@@ -198,6 +200,14 @@ fn configuration_is_loaded_resolved_and_validated() {
         ),
         (8192, 2048, 32)
     );
+    assert_eq!(config.idle_shutdown(), Some(Duration::from_secs(45)));
+
+    std::fs::write(
+        &path,
+        r#"{"model_id":"m","model_path":"m.gguf","pooling":"last","idle_shutdown_secs":0}"#,
+    )
+    .unwrap();
+    assert_eq!(EmbeddingConfig::load(&path).unwrap().idle_shutdown(), None);
 
     for (json, message) in [
         (
@@ -221,4 +231,76 @@ fn configuration_is_loaded_resolved_and_validated() {
         let err = EmbeddingConfig::load(&path).unwrap_err();
         assert!(err.0.contains(message), "{json}: {err}");
     }
+}
+
+fn idle_provider(name: &str, env: &[(&str, &str)], idle: Duration) -> LlamaCppEmbeddingProvider {
+    let dir = data_dir(name);
+    let mut server = fake_config(&dir, env);
+    server.idle_shutdown = Some(idle);
+    let config = EmbeddingConfig {
+        model_id: "fake-embedding-v1".into(),
+        model_path: server.model_path.clone(),
+        pooling: "mean".into(),
+        query_prefix: String::new(),
+        passage_prefix: String::new(),
+        context_size: 512,
+        batch_size: 512,
+        max_batch_inputs: 2,
+        gpu_layers: 0,
+        idle_shutdown_secs: 0,
+    };
+    LlamaCppEmbeddingProvider::new(config, Arc::new(LlamaServer::new(server)))
+}
+
+#[tokio::test]
+async fn stops_after_idle_and_restarts_on_the_next_request() {
+    let p = idle_provider("idle", &[], Duration::from_millis(300));
+    p.embed("a", EmbeddingPurpose::Passage).await.unwrap();
+    let pid = p.server().pid().await.unwrap();
+
+    assert!(common::wait_dead(pid).await, "stopped after idling");
+    assert_eq!(p.server().pid().await, None);
+    assert!(
+        !p.server()
+            .config()
+            .run_dir
+            .join("llama-server.json")
+            .exists(),
+        "pidfile removed"
+    );
+
+    p.embed("b", EmbeddingPurpose::Query).await.unwrap();
+    let restarted = p.server().pid().await.unwrap();
+    assert_ne!(restarted, pid);
+    p.shutdown().await;
+}
+
+#[tokio::test]
+async fn is_not_stopped_while_a_batch_is_running() {
+    // Each request takes longer than the idle timeout; the batch spans several requests.
+    let p = idle_provider(
+        "busy",
+        &[("FAKE_SLOW_MS", "250")],
+        Duration::from_millis(150),
+    );
+    let vectors = p
+        .embed_batch(&texts(6), EmbeddingPurpose::Passage)
+        .await
+        .unwrap();
+    assert_eq!(vectors.len(), 6);
+    let pid = p.server().pid().await.unwrap();
+    assert!(common::alive(pid), "still up right after the batch");
+    assert!(common::wait_dead(pid).await, "stopped once idle");
+    p.shutdown().await;
+}
+
+#[tokio::test]
+async fn keeps_running_without_idle_shutdown() {
+    let p = provider("no-idle", &[], 4);
+    p.embed("a", EmbeddingPurpose::Passage).await.unwrap();
+    let pid = p.server().pid().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(p.server().pid().await, Some(pid));
+    assert!(common::alive(pid));
+    p.shutdown().await;
 }

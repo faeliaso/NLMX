@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 pub use config::{ConfigError, EmbeddingConfig};
 pub use provider::LlamaCppEmbeddingProvider;
 pub use runtime::LlamaCppRuntime;
-pub use server::{Endpoint, Health, LlamaServer, LlamaServerConfig};
+pub use server::{
+    DEFAULT_IDLE_SHUTDOWN, Endpoint, Health, LlamaServer, LlamaServerConfig, UseGuard,
+};
 
 /// llama.cpp build fetched by scripts/bootstrap.sh.
 pub const LLAMA_BUILD: &str = "b11349";
@@ -61,5 +63,6 @@ pub fn provider(
     server.context_size = config.context_size;
     server.batch_size = config.batch_size;
     server.gpu_layers = config.gpu_layers;
+    server.idle_shutdown = config.idle_shutdown();
     LlamaCppEmbeddingProvider::new(config, std::sync::Arc::new(LlamaServer::new(server)))
 }

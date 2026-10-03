@@ -22,3 +22,7 @@ O plano original embutia o llama.cpp no processo do app via `llama-cpp-2` (build
 
 ## Atualização (2026-10-03)
 Empacotamento concluído: `llama-server` vai como sidecar (`bundle.externalBin` → `Contents/MacOS/llama-server`) com rpath `@executable_path/../Frameworks`, e suas dylibs em `Contents/Frameworks`, todas assinadas pelo bundler (`scripts/stage-runtime.sh`, `docs/RELEASE.md`).
+
+## Atualização (2026-10-03): memória
+- O `llama-server` b11349 liga por padrão um cache de prompts em RAM de até 8 GiB (`--cache-ram 8192`, `--cache-idle-slots`). Com embeddings ele só cresce, e o processo ia de ~1 GB a ~10 GB numa importação, sem nunca liberar. Agora o servidor sobe com `--cache-ram 0 --no-cache-prompt --parallel 1`.
+- O processo é encerrado depois de `idle_shutdown_secs` sem uso (padrão 45 s; `0` desliga) e sobe de novo na requisição seguinte (~0,5 s medido com o Qwen3-Embedding-0.6B). Preferimos isso a `--sleep-idle-seconds` do próprio servidor porque encerrar o processo garante que toda a memória (inclusive a do Metal) volte ao sistema.

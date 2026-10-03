@@ -28,6 +28,10 @@ pub struct EmbeddingConfig {
     pub max_batch_inputs: usize,
     #[serde(default = "defaults::gpu_layers")]
     pub gpu_layers: u32,
+    /// Seconds without requests before llama-server is stopped to free its memory (it starts
+    /// again on the next request); `0` keeps it running.
+    #[serde(default = "defaults::idle_shutdown_secs")]
+    pub idle_shutdown_secs: u64,
 }
 
 mod defaults {
@@ -43,6 +47,9 @@ mod defaults {
     pub fn gpu_layers() -> u32 {
         99
     }
+    pub fn idle_shutdown_secs() -> u64 {
+        crate::server::DEFAULT_IDLE_SHUTDOWN.as_secs()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +62,11 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl EmbeddingConfig {
+    pub fn idle_shutdown(&self) -> Option<std::time::Duration> {
+        (self.idle_shutdown_secs > 0)
+            .then(|| std::time::Duration::from_secs(self.idle_shutdown_secs))
+    }
+
     /// Reads, resolves and validates a configuration file.
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let raw = std::fs::read_to_string(path).map_err(|err| {

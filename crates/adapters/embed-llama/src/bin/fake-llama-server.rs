@@ -9,6 +9,7 @@
 //!   FAKE_CRASH_AFTER=n      exits after answering n embedding requests
 //!   FAKE_SLOW_MS=n          waits n ms before answering embeddings
 //!   FAKE_DIMS=n             embedding dimension (default 8)
+//!   FAKE_ARGS_OUT=path      writes its command-line arguments (one per line) to path
 
 use std::{
     env,
@@ -51,6 +52,9 @@ fn arg(args: &[String], name: &str) -> Option<String> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if let Ok(path) = env::var("FAKE_ARGS_OUT") {
+        std::fs::write(path, args[1..].join("\n")).expect("args file");
+    }
     let host = arg(&args, "--host").unwrap_or_else(|| "127.0.0.1".into());
     let port = arg(&args, "--port").expect("--port");
     let key_file = arg(&args, "--api-key-file").expect("--api-key-file");

@@ -132,11 +132,11 @@ Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref=
 | UI / event loop | thread principal | Tauri | app |
 | Runtime async | tokio multi-thread | Tauri | app |
 | PDFium | 1 thread dedicada (não é thread-safe) | `pdf-pdfium` | lazy |
-| `llama-server` | processo filho (sidecar), 127.0.0.1, porta efêmera, chave por execução | `embed-llama::LlamaServer` | primeiro uso → `RunEvent::Exit` |
+| `llama-server` | processo filho (sidecar), 127.0.0.1, porta efêmera, chave por execução | `embed-llama::LlamaServer` | primeiro uso → ocioso por `idle_shutdown_secs` (45 s) ou `RunEvent::Exit`; sobe de novo na próxima requisição |
 | `fm serve --socket` | processo filho, Unix socket | `llm-fm` | primeira geração → `RunEvent::Exit` |
 | SQLite | conexão WAL | `store-sqlite` | app |
 
-- **`llama-server`** (ADR 0006): pidfile + arquivo de chave em `<data>/run/`, log em `<data>/logs/llama-server.log`. Um servidor saudável de uma sessão anterior, mesmo binário e modelo, é reaproveitado; um velho é substituído; processos que não são o nosso binário nunca recebem sinal.
+- **`llama-server`** (ADR 0006): pidfile + arquivo de chave em `<data>/run/`, log em `<data>/logs/llama-server.log`. Um servidor saudável de uma sessão anterior, mesmo binário e modelo, é reaproveitado; um velho é substituído; processos que não são o nosso binário nunca recebem sinal. Roda com `--cache-ram 0 --no-cache-prompt --parallel 1`: o cache de prompts padrão (até 8 GiB) não serve para embeddings e levava o processo de ~1 GB a ~10 GB depois de uma importação. Depois de `idle_shutdown_secs` sem requisições (`embedding.json`, padrão 45, `0` = nunca), o processo é encerrado para devolver a memória; enquanto um `UseGuard` (`LlamaServer::begin_use`, mantido por todo `embed_batch`) estiver vivo, ele não para.
 - **`fm`** (ADR 0002): compatibilidade (macOS ≥ 27, arm64 nativo, `fm` presente) checada uma vez; `status()` via `fm available` com cache de 30 s (exit 69 ⇒ `LicenseRequired`). Socket em `$TMPDIR/nlmx-fm-<pid>-<n>.sock` (≤ 103 bytes, senão `/tmp`); reiniciado se morrer; uma geração por vez. Se o `serve` não sobe ou cai antes de responder, usa `fm respond --stream -i <instruções> <prompt>` e só tenta o `serve` de novo após 5 min.
 
 ## 9. Modelos

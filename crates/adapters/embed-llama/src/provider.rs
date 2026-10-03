@@ -93,6 +93,7 @@ impl LlamaCppEmbeddingProvider {
     }
 
     async fn load_identity(&self) -> Result<ModelIdentity, EmbeddingError> {
+        let _use = self.server.begin_use();
         let endpoint = self.server.ensure_running().await?;
         let response = self
             .http
@@ -138,6 +139,8 @@ impl LlamaCppEmbeddingProvider {
         }
         let dimensions = self.identity_cached().await?.dimensions;
         let prefix = self.prefix(purpose);
+        // Held for the whole call, so the server is not stopped for idling between batches.
+        let _use = self.server.begin_use();
         let _guard = self.in_flight.lock().await;
         let mut vectors = Vec::with_capacity(texts.len());
         for batch in texts.chunks(self.config.max_batch_inputs) {

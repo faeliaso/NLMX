@@ -6,7 +6,10 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,
     process::Stdio,
-    sync::Arc,
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -36,9 +39,15 @@ pub struct LlamaServerConfig {
     pub health_timeout: Duration,
     /// Grace period between SIGTERM and SIGKILL.
     pub stop_timeout: Duration,
+    /// Stop the server after this long without requests (it starts again on the next one);
+    /// `None` keeps it running until `stop`.
+    pub idle_shutdown: Option<Duration>,
     /// Extra environment variables for the server process.
     pub extra_env: Vec<(String, String)>,
 }
+
+/// Default for `LlamaServerConfig::idle_shutdown`.
+pub const DEFAULT_IDLE_SHUTDOWN: Duration = Duration::from_secs(45);
 
 impl LlamaServerConfig {
     pub fn new(binary: PathBuf, model_path: PathBuf, data_dir: &std::path::Path) -> Self {
@@ -54,6 +63,7 @@ impl LlamaServerConfig {
             startup_timeout: Duration::from_secs(120),
             health_timeout: Duration::from_secs(2),
             stop_timeout: Duration::from_secs(5),
+            idle_shutdown: Some(DEFAULT_IDLE_SHUTDOWN),
             extra_env: Vec::new(),
         }
     }
@@ -90,6 +100,23 @@ pub struct LlamaServer {
     state: Mutex<Option<Running>>,
     logs: Arc<LogSink>,
     http: reqwest::Client,
+    /// Bumped by every `begin_use`; an idle stop only happens if it did not change meanwhile.
+    activity: AtomicU64,
+    /// Uses in progress (`UseGuard`s alive).
+    busy: AtomicUsize,
+}
+
+/// Marks the server as in use; dropping the last one schedules the idle stop.
+pub struct UseGuard {
+    server: Arc<LlamaServer>,
+}
+
+impl Drop for UseGuard {
+    fn drop(&mut self) {
+        if self.server.busy.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.server.schedule_idle_stop();
+        }
+    }
 }
 
 impl LlamaServer {
@@ -104,6 +131,57 @@ impl LlamaServer {
             state: Mutex::new(None),
             logs,
             http,
+            activity: AtomicU64::new(0),
+            busy: AtomicUsize::new(0),
+        }
+    }
+
+    /// Call before using the server and keep the guard until done: while any guard is alive
+    /// the server is never stopped for being idle.
+    pub fn begin_use(self: &Arc<Self>) -> UseGuard {
+        self.busy.fetch_add(1, Ordering::SeqCst);
+        self.activity.fetch_add(1, Ordering::SeqCst);
+        UseGuard {
+            server: Arc::clone(self),
+        }
+    }
+
+    /// Stops the server after `idle_shutdown` unless it is used again before then. The memory
+    /// llama.cpp keeps after a burst of requests is only returned when the process exits.
+    fn schedule_idle_stop(self: &Arc<Self>) {
+        let Some(idle) = self.config.idle_shutdown else {
+            return;
+        };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let generation = self.activity.load(Ordering::SeqCst);
+        let server: Weak<Self> = Arc::downgrade(self);
+        runtime.spawn(async move {
+            tokio::time::sleep(idle).await;
+            if let Some(server) = server.upgrade() {
+                server.stop_if_idle(generation).await;
+            }
+        });
+    }
+
+    async fn stop_if_idle(&self, generation: u64) {
+        // Checked under the state lock: a new use bumps `activity` before `ensure_running`
+        // takes the lock, so it either cancels this stop or starts a fresh server after it.
+        let mut state = self.state.lock().await;
+        if self.activity.load(Ordering::SeqCst) != generation
+            || self.busy.load(Ordering::SeqCst) != 0
+        {
+            return;
+        }
+        if let Some(running) = state.take() {
+            tracing::info!(pid = running.pid, "llama-server stopped after idle");
+            self.logs.write(&format!(
+                "--- idle for {:?}",
+                self.config.idle_shutdown.unwrap_or_default()
+            ));
+            self.terminate(running).await;
+            pidfile::remove(&self.config.pidfile());
         }
     }
 
@@ -291,6 +369,10 @@ impl LlamaServer {
                 &c.batch_size.to_string(),
             ])
             .args(["--n-gpu-layers", &c.gpu_layers.to_string()])
+            // Embeddings never repeat a prompt: without these, the server keeps up to 8 GiB of
+            // prompt cache (`--cache-ram` default) for as long as it runs. One slot is enough,
+            // since the provider sends one request at a time.
+            .args(["--cache-ram", "0", "--no-cache-prompt", "--parallel", "1"])
             .args(["--no-webui", "--offline", "--log-colors", "off"])
             .envs(c.extra_env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
