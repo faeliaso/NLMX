@@ -1,0 +1,228 @@
+{% extends "components/layout.html" %}
+{% import "components/ds.html" as ds %}
+
+{% block html_attrs %}{% if let Some(theme) = theme %} data-theme="{{ theme }}"{% endif %}{% endblock %}
+{% block title %}Design System · NLMX{% endblock %}
+
+{% block body %}
+<div class="ds-gallery">
+  <header class="page-header" data-tauri-drag-region>
+    <div class="page-heading" data-tauri-drag-region style="padding-left: 4.5rem">
+      <h1 class="page-title">Design System</h1>
+      <p class="page-description">Tokens e componentes do NLMX · somente em builds de desenvolvimento</p>
+    </div>
+    <div class="page-actions">
+      <div class="segmented" role="group" aria-label="Tema">
+        <button type="button" data-theme-set="system" aria-pressed="false">Sistema</button>
+        <button type="button" data-theme-set="light" aria-pressed="false">{% call ds::icon("sun") %}{% endcall %}Claro</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">{% call ds::icon("moon") %}{% endcall %}Escuro</button>
+      </div>
+      <a class="btn btn-secondary" href="/settings">Voltar ao app</a>
+    </div>
+  </header>
+
+  <main class="page-body" style="max-width: 60rem">
+    <section aria-labelledby="colors">
+      <h2 class="section-heading" id="colors">Cores</h2>
+      <div class="ds-swatches">
+        {%- for token in colors %}
+        <div class="ds-swatch"><span class="ds-swatch-chip" style="background: var(--color-{{ token }})"></span><code>{{ token }}</code></div>
+        {%- endfor %}
+      </div>
+    </section>
+
+    <section aria-labelledby="type">
+      <h2 class="section-heading" id="type">Tipografia</h2>
+      <div class="card card-body ds-stack">
+        <p class="text-large-title font-semibold">Large title · 26</p>
+        <p class="text-title-1 font-semibold">Title 1 · 22</p>
+        <p class="text-title-2 font-semibold">Title 2 · 17</p>
+        <p class="text-title-3 font-semibold">Title 3 · 15</p>
+        <p class="text-callout">Callout · 14</p>
+        <p class="text-body">Body · 13 — texto padrão da interface no macOS.</p>
+        <p class="text-footnote text-fg-muted">Footnote · 12 — texto secundário</p>
+        <p class="text-caption text-fg-muted">Caption · 11</p>
+        <p><code>Mono · ui-monospace</code></p>
+      </div>
+    </section>
+
+    <section aria-labelledby="shape">
+      <h2 class="section-heading" id="shape">Radius e sombras</h2>
+      <div class="ds-row">
+        <div class="ds-shape rounded-xs">xs 4</div>
+        <div class="ds-shape rounded-sm">sm 6</div>
+        <div class="ds-shape rounded-md">md 8</div>
+        <div class="ds-shape rounded-lg">lg 10</div>
+        <div class="ds-shape rounded-xl">xl 14</div>
+      </div>
+      <div class="ds-row" style="margin-top: 1rem">
+        <div class="ds-shape rounded-lg shadow-xs">shadow-xs</div>
+        <div class="ds-shape rounded-lg shadow-sm">shadow-sm</div>
+        <div class="ds-shape rounded-lg shadow-md">shadow-md</div>
+        <div class="ds-shape rounded-lg shadow-lg">shadow-lg</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="buttons">
+      <h2 class="section-heading" id="buttons">Botões</h2>
+      <div class="card card-body ds-stack">
+        <div class="btn-group">
+          <button type="button" class="btn btn-primary">Primário</button>
+          <button type="button" class="btn btn-secondary">Secundário</button>
+          <button type="button" class="btn btn-ghost">Ghost</button>
+          <button type="button" class="btn btn-destructive">Excluir</button>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-primary btn-sm">Pequeno</button>
+          <button type="button" class="btn btn-primary">Médio</button>
+          <button type="button" class="btn btn-primary btn-lg">Grande</button>
+          <button type="button" class="btn btn-secondary btn-icon" aria-label="Adicionar">{% call ds::icon("plus") %}{% endcall %}</button>
+          <button type="button" class="btn btn-secondary">{% call ds::icon("upload") %}{% endcall %}Com ícone</button>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-primary" disabled>Desabilitado</button>
+          <button type="button" class="btn btn-primary" aria-busy="true">Carregando</button>
+          <button type="button" class="btn btn-secondary" aria-busy="true">Carregando</button>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="inputs">
+      <h2 class="section-heading" id="inputs">Inputs</h2>
+      <div class="card card-body ds-grid-2">
+        {% call ds::field("ds-name", "Nome da coleção", "Use um nome curto.") %}
+          <input class="input" id="ds-name" placeholder="Ex.: Contratos 2026" aria-describedby="ds-name-help">
+        {% endcall %}
+        {% call ds::field("ds-email", "Pasta de origem", "", "A pasta não existe mais.", true) %}
+          <input class="input" id="ds-email" value="/Users/exemplo/PDFs" aria-invalid="true" aria-describedby="ds-email-error" required>
+        {% endcall %}
+        <div class="field">
+          <label class="field-label" for="ds-search">Busca</label>
+          <div class="search">{% call ds::icon("search") %}{% endcall %}<input class="input" id="ds-search" type="search" placeholder="Buscar nos documentos"></div>
+        </div>
+        {% call ds::field("ds-select", "Modelo de embeddings") %}
+          <select class="select" id="ds-select"><option>Qwen3-Embedding-0.6B</option><option>multilingual-e5-small</option></select>
+        {% endcall %}
+        {% call ds::field("ds-notes", "Observações") %}
+          <textarea class="textarea" id="ds-notes" placeholder="Texto livre"></textarea>
+        {% endcall %}
+        <div class="field">
+          <span class="field-label">Opções</span>
+          <label class="check"><input type="checkbox" checked> Incluir subpastas</label>
+          <label class="check"><input type="radio" name="ds-r" checked> Copiar para a biblioteca</label>
+          <label class="check"><input type="radio" name="ds-r"> Apenas referenciar</label>
+          <label class="check switch"><input type="checkbox" role="switch" checked> Indexar automaticamente</label>
+          <label class="check"><input type="checkbox" disabled> Desabilitado</label>
+        </div>
+        {% call ds::field("ds-ro", "Somente leitura") %}
+          <input class="input" id="ds-ro" value="dev.nlmx.desktop" readonly>
+        {% endcall %}
+        {% call ds::field("ds-dis", "Desabilitado") %}
+          <input class="input" id="ds-dis" placeholder="Indisponível" disabled>
+        {% endcall %}
+      </div>
+    </section>
+
+    <section aria-labelledby="cards">
+      <h2 class="section-heading" id="cards">Cards e listas</h2>
+      <div class="ds-grid-2">
+        <div class="card">
+          <div class="card-header"><div><p class="card-title">Card com header</p><p class="card-subtitle">Subtítulo</p></div>{% call ds::badge("Novo", "accent") %}{% endcall %}</div>
+          <div class="card-body"><p class="text-fg-muted">Conteúdo do card com espaço generoso.</p></div>
+          <div class="card-footer"><span class="text-footnote text-fg-muted">Rodapé</span><button type="button" class="btn btn-secondary btn-sm">Ação</button></div>
+        </div>
+        <a class="card card-body card-interactive" href="#cards" style="color: inherit; text-decoration: none">
+          <p class="card-title">Card interativo</p>
+          <p class="text-fg-muted">Hover e foco visíveis.</p>
+        </a>
+      </div>
+      <div class="list" style="margin-top: 1rem">
+        <div class="list-row">{% call ds::icon("document") %}{% endcall %}<span class="list-row-title">Contrato de prestação.pdf</span><span class="list-row-meta">42 págs.</span>{% call ds::badge("Indexado", "success", true) %}{% endcall %}</div>
+        <div class="list-row">{% call ds::icon("document") %}{% endcall %}<span class="list-row-title">Manual técnico.pdf</span><span class="list-row-meta">310 págs.</span>{% call ds::badge("Processando", "info", true) %}{% endcall %}</div>
+        <div class="list-row">{% call ds::icon("document") %}{% endcall %}<span class="list-row-title">Digitalizado.pdf</span><span class="list-row-meta">12 págs.</span>{% call ds::badge("Sem texto", "warning", true) %}{% endcall %}</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="badges">
+      <h2 class="section-heading" id="badges">Badges</h2>
+      <div class="ds-row">
+        {% call ds::badge("Neutro") %}{% endcall %}
+        {% call ds::badge("Accent", "accent") %}{% endcall %}
+        {% call ds::badge("Sucesso", "success") %}{% endcall %}
+        {% call ds::badge("Atenção", "warning") %}{% endcall %}
+        {% call ds::badge("Erro", "danger") %}{% endcall %}
+        {% call ds::badge("Info", "info") %}{% endcall %}
+        {% call ds::badge("Com ponto", "success", true) %}{% endcall %}
+      </div>
+    </section>
+
+    <section aria-labelledby="menus">
+      <h2 class="section-heading" id="menus">Menus e dialogs</h2>
+      <div class="btn-group">
+        <button type="button" class="btn btn-secondary" popovertarget="ds-menu" aria-haspopup="menu" aria-expanded="false">
+          Ações {% call ds::icon("chevron-down") %}{% endcall %}
+        </button>
+        <div class="menu" id="ds-menu" popover role="menu" aria-label="Ações">
+          <p class="menu-label">Documento</p>
+          {% call ds::menu_item("Abrir", "document", "⌘O") %}{% endcall %}
+          {% call ds::menu_item("Reindexar", "refresh") %}{% endcall %}
+          <div class="menu-separator" role="separator"></div>
+          {% call ds::menu_item("Remover", "trash", "⌘⌫", true) %}{% endcall %}
+        </div>
+        <button type="button" class="btn btn-secondary" data-dialog-open="ds-dialog">Abrir dialog</button>
+        <button type="button" class="btn btn-destructive" data-dialog-open="ds-confirm">Confirmar exclusão</button>
+        <button type="button" class="btn btn-ghost" data-toast="success" data-toast-message="Documento indexado com sucesso.">Toast de sucesso</button>
+        <button type="button" class="btn btn-ghost" data-toast="danger" data-toast-message="Não foi possível concluir a ação.">Toast de erro</button>
+      </div>
+      {% call ds::dialog("ds-dialog", "Importar documentos", "Os PDFs serão copiados para a biblioteca local e indexados em segundo plano.") %}
+        <button type="button" class="btn btn-secondary" data-dialog-close>Cancelar</button>
+        <button type="button" class="btn btn-primary" data-dialog-close="ok" autofocus>Importar</button>
+      {% endcall %}
+      {% call ds::dialog("ds-confirm", "Remover documento?", "O arquivo, os trechos e os vetores serão apagados. Esta ação não pode ser desfeita.", true) %}
+        <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
+        <button type="button" class="btn btn-destructive" data-dialog-close="delete">Remover</button>
+      {% endcall %}
+    </section>
+
+    <section aria-labelledby="progress">
+      <h2 class="section-heading" id="progress">Progresso</h2>
+      <div class="card card-body ds-stack">
+        {% call ds::progress(35, "Extraindo texto") %}{% endcall %}
+        {% call ds::progress(100, "Concluído", "success") %}{% endcall %}
+        {% call ds::progress(60, "Falhou na página 120", "danger") %}{% endcall %}
+        {% call ds::progress_indeterminate("Preparando") %}{% endcall %}
+        <div class="ds-row">{% call ds::spinner("Carregando", "sm") %}{% endcall %}{% call ds::spinner("Carregando") %}{% endcall %}{% call ds::spinner("Carregando", "lg") %}{% endcall %}</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="skeleton">
+      <h2 class="section-heading" id="skeleton">Skeleton</h2>
+      <div class="ds-grid-2">
+        {% call ds::skeleton_card() %}{% endcall %}
+        <div class="card card-body" aria-busy="true">
+          <span class="sr-only">Carregando…</span>
+          <div class="ds-row"><span class="skeleton skeleton-circle"></span><div class="skeleton-stack" style="flex: 1"><span class="skeleton skeleton-line" style="width: 60%"></span><span class="skeleton skeleton-line" style="width: 35%"></span></div></div>
+          <span class="skeleton skeleton-block" style="margin-top: 1rem"></span>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="states">
+      <h2 class="section-heading" id="states">Estados</h2>
+      <div class="ds-stack">
+        {% call ds::alert("danger", "Não foi possível abrir o PDF", "O arquivo parece estar corrompido ou protegido por senha.") %}
+          <div class="alert-actions"><button type="button" class="btn btn-secondary btn-sm">Tentar novamente</button></div>
+        {% endcall %}
+        {% call ds::alert("warning", "Licença pendente", "Aceite os termos do Apple Foundation Models no Terminal.") %}{% endcall %}
+        {% call ds::alert("success", "Documento indexado", "42 páginas, 318 trechos.") %}{% endcall %}
+        {% call ds::alert("info", "Dica", "Arraste PDFs para a janela para importá-los.") %}{% endcall %}
+        <div class="card">
+          {% call ds::empty_state("document", "Nenhum documento", "Importe PDFs para começar.") %}
+            <button type="button" class="btn btn-primary">{% call ds::icon("upload") %}{% endcall %}Importar PDFs</button>
+          {% endcall %}
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+{% endblock %}

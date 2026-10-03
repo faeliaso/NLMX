@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened runtime, not sandboxed (distributed outside the App Store). No exceptions are needed:
+  the bundled libraries are signed by the same identity, outgoing network (user-confirmed model
+  downloads) and the loopback llama-server need no entitlement outside the sandbox, and the app
+  uses no camera, microphone, location or contacts.
+-->
+<plist version="1.0">
+<dict/>
+</plist>

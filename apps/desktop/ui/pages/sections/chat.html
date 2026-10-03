@@ -1,0 +1,83 @@
+{% import "components/ds.html" as ds %}
+<div class="chat-page" data-chat-page data-conversation="{{ conversation_id }}"{% if !viewer_html.is_empty() %} data-panel-open{% endif %}>
+  <header class="page-header chat-header" data-tauri-drag-region>
+    <div class="page-heading" data-tauri-drag-region>
+      <h1 class="page-title chat-title" tabindex="-1" data-page-title>{{ title }}</h1>
+      <p class="page-description">Respostas com citações dos seus documentos.</p>
+    </div>
+    <div class="page-actions chat-actions">
+      {%- if enabled %}
+      <form class="chat-scope" hx-post="/chat/{{ conversation_id }}/scope" hx-trigger="change" hx-target="#content">
+        <label class="sr-only" for="chat-scope">Documento da conversa</label>
+        <select class="select" id="chat-scope" name="document" title="Documento da conversa">
+          <option value=""{% if scope_title == "Todos os documentos" %} selected{% endif %}>Todos os documentos</option>
+          {%- for d in documents %}
+          <option value="{{ d.id }}"{% if d.selected %} selected{% endif %}>{{ d.title }}</option>
+          {%- endfor %}
+        </select>
+      </form>
+      {%- endif %}
+      <button type="button" class="btn btn-secondary btn-icon" popovertarget="chat-recent" aria-label="Conversas recentes" title="Conversas recentes">{% call ds::icon("clock") %}{% endcall %}</button>
+      <div popover class="menu chat-recent" id="chat-recent" role="menu" aria-label="Conversas recentes">
+        <p class="menu-label">Conversas recentes</p>
+        {%- for c in recent %}
+        <a class="menu-item{% if c.current %} is-current{% endif %}" role="menuitem" tabindex="-1" href="/chat/{{ c.id }}" hx-get="/chat/{{ c.id }}" hx-target="#content" hx-push-url="true"{% if c.current %} aria-current="true"{% endif %}><span class="truncate">{{ c.title }}</span></a>
+        {%- endfor %}
+        <div class="menu-separator" role="separator"></div>
+        <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="delete-conversation">{% call ds::icon("trash") %}{% endcall %}<span>Excluir esta conversa</span></button>
+      </div>
+      <form hx-post="/chat/new" hx-target="#content">
+        {%- for d in documents %}{% if d.selected %}<input type="hidden" name="document" value="{{ d.id }}">{% endif %}{% endfor %}
+        <button type="submit" class="btn btn-secondary">{% call ds::icon("plus") %}{% endcall %}Nova conversa</button>
+      </form>
+    </div>
+  </header>
+
+  {%- match model_notice %}{% when Some(notice) %}
+  <div class="chat-notice">{% call ds::alert("warning", notice.label, notice.detail) %}{% endcall %}</div>
+  {%- when None %}{% endmatch %}
+
+  <div class="chat-main">
+    <div class="chat-log" id="chat-log" role="log" aria-label="Conversa">
+      <div class="chat-log-inner" id="chat-turns">
+        {%- if turns.is_empty() %}
+        <div class="chat-empty" data-chat-empty>
+          {%- if enabled %}
+          {% call ds::empty_state("chat", "Pergunte sobre seus documentos", "As respostas citam os trechos e as páginas de origem. Escolha um documento acima para perguntas sobre ele.") %}
+          <div class="chat-suggestions">
+            {%- for s in suggestions %}
+            <button type="button" class="btn btn-secondary btn-sm" data-fill-question="{{ s }}">{{ s }}</button>
+            {%- endfor %}
+          </div>
+          {% endcall %}
+          {%- else %}
+          {% call ds::empty_state("chat", "Converse com seus documentos", "Importe PDFs para fazer perguntas. Cada resposta indica o trecho e a página de origem.") %}
+            <a class="btn btn-secondary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{% call ds::icon("document") %}{% endcall %}Ir para Documentos</a>
+          {% endcall %}
+          {%- endif %}
+        </div>
+        {%- endif %}
+        {%- for turn in turns %}
+        {% include "components/chat_turn.html" %}
+        {%- endfor %}
+      </div>
+    </div>
+    <div class="viewer-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar o documento" tabindex="0" data-viewer-resizer></div>
+    <aside class="viewer-pane" id="viewer" aria-label="Documento" tabindex="-1">{{ viewer_html|safe }}</aside>
+  </div>
+
+  <form class="composer" aria-label="Nova pergunta" id="chat-form"{% if enabled %} hx-post="/chat/{{ conversation_id }}/messages" hx-target="#chat-turns" hx-swap="beforeend"{% endif %}>
+    <div class="composer-box">
+      <label class="sr-only" for="question">Pergunta</label>
+      <textarea class="textarea" id="question" name="q" rows="1" required data-submit-on-enter data-autogrow
+                {% if enabled %}placeholder="Pergunte algo sobre {% if scope_title == "Todos os documentos" %}seus documentos{% else %}{{ scope_title }}{% endif %}…"{% else %}disabled placeholder="Disponível quando houver documentos importados"{% endif %}></textarea>
+      <button type="submit" class="btn btn-primary btn-icon"{% if !enabled %} disabled{% endif %} aria-label="Enviar pergunta">{% call ds::icon("send") %}{% endcall %}</button>
+    </div>
+    <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
+  </form>
+
+  {% call ds::dialog("delete-conversation", "Excluir esta conversa?", "As perguntas, respostas e citações desta conversa serão removidas. Os documentos não são afetados.", true) %}
+    <button type="button" class="btn btn-secondary" data-dialog-close>Cancelar</button>
+    <button type="button" class="btn btn-destructive" data-dialog-close hx-post="/chat/{{ conversation_id }}/delete" hx-target="#content">Excluir</button>
+  {% endcall %}
+</div>

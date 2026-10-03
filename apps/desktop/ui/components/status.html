@@ -1,0 +1,6 @@
+{% import "components/ds.html" as ds %}
+{%- if !storage.ok %}
+<span class="statusbar-item" title="{{ storage.error }}">Banco de dados {% call ds::badge("Indisponível", "danger", true) %}{% endcall %}</span>
+{%- endif %}
+<span class="statusbar-item" title="{{ lm.detail }}">Apple Foundation Models {% call ds::badge(lm.label, lm.kind, true) %}{% endcall %}</span>
+<span class="statusbar-item">v{{ version }}</span>

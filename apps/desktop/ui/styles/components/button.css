@@ -1,0 +1,71 @@
+@layer components {
+  .btn {
+    --btn-h: var(--control-md);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    height: var(--btn-h);
+    min-width: var(--btn-h);
+    padding: 0 0.75rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font: inherit;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: default; /* macOS convention: buttons keep the arrow cursor */
+    transition: background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard),
+      box-shadow var(--duration-fast) var(--ease-standard);
+  }
+  .btn > svg { width: 1rem; height: 1rem; flex: none; }
+
+  .btn-sm { --btn-h: var(--control-sm); padding: 0 0.5rem; font-size: var(--text-footnote); }
+  .btn-lg { --btn-h: var(--control-lg); padding: 0 1rem; font-size: var(--text-callout); }
+  .btn-icon { padding: 0; }
+
+  .btn-primary { background: var(--color-accent); color: var(--color-accent-fg); box-shadow: var(--shadow-xs); }
+  .btn-primary:hover { background: var(--color-accent-hover); }
+  .btn-primary:active { background: var(--color-accent-active); }
+
+  .btn-secondary {
+    background: var(--color-surface);
+    color: var(--color-fg);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-xs), 0 0 0 0.5px var(--ds-hairline);
+  }
+  .btn-secondary:hover { background: var(--color-surface-hover); }
+  .btn-secondary:active { background: var(--color-surface-pressed); }
+
+  .btn-ghost { background: transparent; color: var(--color-fg); }
+  .btn-ghost:hover { background: var(--color-surface-hover); }
+  .btn-ghost:active { background: var(--color-surface-pressed); }
+
+  .btn-destructive { background: var(--color-danger-fill); color: var(--color-danger-fill-fg); box-shadow: var(--shadow-xs); }
+  .btn-destructive:hover { filter: brightness(1.08); }
+  .btn-destructive:active { filter: brightness(0.92); }
+
+  .btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+
+  /* Loading: aria-busy set by markup, or .htmx-request added by HTMX while a request runs. */
+  .btn[aria-busy="true"], .btn.htmx-request { color: transparent; pointer-events: none; }
+  .btn[aria-busy="true"]::after, .btn.htmx-request::after {
+    content: "";
+    position: absolute;
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 2px solid currentColor;
+    border-color: var(--btn-spinner, var(--color-fg-muted));
+    border-right-color: transparent;
+    border-radius: var(--radius-full);
+    animation: ds-spin 0.7s linear infinite;
+  }
+  .btn-primary { --btn-spinner: var(--color-accent-fg); }
+  .btn-destructive { --btn-spinner: var(--color-danger-fill-fg); }
+
+  .btn-group { display: inline-flex; gap: 0.5rem; align-items: center; }
+}
+
+@keyframes ds-spin { to { transform: rotate(360deg); } }

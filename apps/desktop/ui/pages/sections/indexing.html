@@ -1,0 +1,8 @@
+{% import "components/ds.html" as ds %}
+{% import "components/page.html" as page %}
+<div class="page">
+  {% call page::header("Indexação", "Extração, divisão em trechos e embeddings, em segundo plano.") %}{% endcall %}
+  <div class="page-body page-body-center">
+    {% call ds::empty_state("layers", "Nenhuma tarefa de indexação", "Ao importar documentos, o progresso de cada etapa é exibido aqui.") %}{% endcall %}
+  </div>
+</div>

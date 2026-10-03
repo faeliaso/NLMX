@@ -1,0 +1,12 @@
+/target/
+/tools/
+/apps/desktop/src-tauri/gen/
+/runtime/lib/
+/models/**/*.gguf
+/models/**/*.part
+.DS_Store
+/models/embedding.json
+/dist/
+/apps/desktop/src-tauri/binaries/
+/apps/desktop/src-tauri/frameworks/
+/apps/desktop/src-tauri/licenses/

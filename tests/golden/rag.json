@@ -1,0 +1,16 @@
+{
+  "corpus": ["report.pdf", "text.pdf", "unicode.pdf", "large.pdf"],
+  "questions": [
+    { "question": "Quando termina o prazo de carência?", "expect": [["report.pdf", 2], ["report.pdf", 3]] },
+    { "question": "Quais exames laboratoriais estão cobertos?", "expect": [["report.pdf", 1]] },
+    { "question": "Quem resolve os casos omissos?", "expect": [["report.pdf", 3]] },
+    { "question": "Qual a carência da cláusula 1 do contrato de exemplo?", "expect": [["text.pdf", 1]] },
+    { "question": "Cobertura de consultas ambulatoriais", "expect": [["report.pdf", 1], ["text.pdf", 1]] },
+    { "question": "Internação hospitalar tem cobertura?", "expect": [["report.pdf", 1], ["text.pdf", 1]] },
+    { "question": "O que diz a linha 4 da seção 137?", "expect": [["large.pdf", 137]] },
+    { "question": "O que diz a linha 2 da seção 58?", "expect": [["large.pdf", 58]] },
+    { "question": "Como se escreve coração, órgão e câmbio?", "expect": [["unicode.pdf", 1]] },
+    { "question": "Qual o preço da gasolina em Marte?", "expect": [] },
+    { "question": "Receita de bolo de chocolate com morangos", "expect": [] }
+  ]
+}

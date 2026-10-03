@@ -1,0 +1,28 @@
+{% import "components/ds.html" as ds %}
+{%- match library %}
+{%- when Library::Unavailable(reason) %}
+{% call ds::alert("danger", "Biblioteca indisponível", reason) %}{% endcall %}
+{%- when Library::Documents(rows) %}
+{%- if rows.is_empty() %}
+{% call ds::empty_state("document", "Nenhum documento", "Importe PDFs para começar. Eles são copiados para a biblioteca local e divididos em trechos para a busca.") %}
+  <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar PDFs</button>
+{% endcall %}
+{%- else %}
+<ul class="list" aria-label="Documentos">
+  {%- for doc in rows %}
+  <li class="list-row">
+    {% call ds::icon("document") %}{% endcall %}
+    <div class="list-row-title">
+      <p class="selectable">{{ doc.title }}</p>
+      <p class="list-row-meta">{{ doc.filename }} · {{ doc.pages }} · {{ doc.chunks }} · {{ doc.imported_on }}</p>
+      {%- if !doc.error.is_empty() %}<p class="field-error selectable">{{ doc.error }}</p>{% endif %}
+    </div>
+    {% call ds::badge(doc.status_label, doc.status_kind, true) %}{% endcall %}
+    {%- if doc.viewable %}
+    <a class="btn btn-secondary btn-sm" href="/chat?view={{ doc.id }}" hx-get="/chat?view={{ doc.id }}" hx-target="#content" hx-push-url="true">Abrir</a>
+    {%- endif %}
+  </li>
+  {%- endfor %}
+</ul>
+{%- endif %}
+{%- endmatch %}

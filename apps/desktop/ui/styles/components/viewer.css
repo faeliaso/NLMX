@@ -1,0 +1,129 @@
+/* PDF viewer: toolbar, thumbnails and pages (image + transparent text layer + highlights). */
+@layer components {
+  .viewer { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+  .viewer-error { display: grid; gap: 0.75rem; justify-items: start; padding: 1rem; }
+
+  .viewer-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .viewer-heading { flex: 1 1 8rem; min-width: 0; }
+  .viewer-title {
+    overflow: hidden;
+    font-size: var(--text-callout);
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .viewer-title:focus { outline: none; }
+  .viewer-origin { font-size: var(--text-caption); color: var(--color-accent-text); font-weight: 600; }
+  .viewer-group { display: flex; align-items: center; gap: 0.125rem; }
+  .viewer-page-input { width: 3rem; height: var(--control-sm); padding: 0 0.375rem; text-align: center; }
+  .viewer-page-count { padding: 0 0.25rem; font-size: var(--text-footnote); color: var(--color-fg-muted); white-space: nowrap; }
+  .viewer-zoom-label { min-width: 3.5rem; justify-content: center; }
+  .viewer-search { display: flex; align-items: center; gap: 0.125rem; }
+  .viewer-search .input { width: 9rem; height: var(--control-sm); }
+  .viewer-search-count { min-width: 3.5rem; font-size: var(--text-caption); color: var(--color-fg-muted); text-align: center; }
+  [data-viewer] [aria-pressed="true"] { background: var(--color-accent-soft); color: var(--color-accent-text); }
+
+  .viewer-body { display: flex; flex: 1; min-height: 0; }
+  .viewer-thumbs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: none;
+    width: 7rem;
+    padding: 0.75rem 0.625rem;
+    overflow-y: auto;
+    border-right: 1px solid var(--color-border);
+  }
+  .viewer[data-thumbs-hidden] .viewer-thumbs { display: none; }
+  .viewer-thumb {
+    display: grid;
+    gap: 0.25rem;
+    justify-items: center;
+    padding: 0.25rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-fg-muted);
+    font: inherit;
+    font-size: var(--text-caption);
+    cursor: pointer;
+  }
+  .viewer-thumb-page {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface);
+  }
+  .viewer-thumb-page img { display: block; width: 100%; height: 100%; }
+  .viewer-thumb:hover .viewer-thumb-page { border-color: var(--color-border-strong); }
+  .viewer-thumb[aria-current="page"] { color: var(--color-accent-text); font-weight: 600; }
+  .viewer-thumb[aria-current="page"] .viewer-thumb-page { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent); }
+  .viewer-thumb:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus); }
+
+  .viewer-scroll { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; }
+  .viewer-scroll:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-focus); }
+  /* --scale: CSS px per PDF point (zoom × 96/72), set by viewer.js. */
+  .viewer-pages { --scale: 1; display: grid; justify-content: center; gap: 1rem; padding: 1rem; width: max-content; min-width: 100%; }
+  .viewer-page {
+    position: relative;
+    width: calc(var(--page-w) * var(--scale) * 1px);
+    height: calc(var(--page-h) * var(--scale) * 1px);
+    box-shadow: var(--shadow-md);
+  }
+  .viewer-page.is-flash { animation: viewer-flash 1.2s var(--ease-standard); }
+  @keyframes viewer-flash { 0%, 40% { box-shadow: 0 0 0 4px var(--color-accent); } 100% { box-shadow: var(--shadow-md); } }
+  .viewer-page-image { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .viewer-page-image:not([src]) { visibility: hidden; }
+  /* Paper-white while the image loads (pages are white whatever the theme), with a shimmer. */
+  .viewer-page { background: var(--color-paper); }
+  .viewer-page.is-loading::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, var(--color-skeleton-shine) 50%, transparent 70%) var(--color-skeleton);
+    background-size: 200% 100%;
+    opacity: 0.35;
+    animation: viewer-shimmer 1.2s linear infinite;
+  }
+  @keyframes viewer-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  .viewer-page-failed {
+    position: absolute;
+    inset: 40% 1rem auto;
+    display: grid;
+    gap: 0.5rem;
+    justify-items: center;
+    color: var(--color-fg-muted);
+    font-size: var(--text-footnote);
+    text-align: center;
+  }
+
+  /* Text layer: invisible text over the image, selectable and copyable. */
+  .viewer-text { position: absolute; inset: 0; overflow: hidden; line-height: 1; }
+  .viewer-text > span {
+    position: absolute;
+    color: transparent;
+    white-space: pre;
+    transform-origin: 0 0;
+    cursor: text;
+  }
+  .viewer-text > span::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); color: transparent; }
+
+  .viewer-marks { position: absolute; inset: 0; pointer-events: none; }
+  .viewer-highlight, .viewer-hit { position: absolute; border-radius: 2px; mix-blend-mode: multiply; }
+  .viewer-highlight {
+    background: color-mix(in srgb, var(--color-warning) 35%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--color-warning) 70%, transparent);
+  }
+  .viewer-hit { background: color-mix(in srgb, var(--color-accent) 25%, transparent); }
+  .viewer-hit.is-current { background: color-mix(in srgb, var(--color-accent) 45%, transparent); outline: 2px solid var(--color-accent); }
+}

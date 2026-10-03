@@ -1,0 +1,3 @@
+[env]
+# The app requires macOS 27 (`/usr/bin/fm`); see docs/adr/0002.
+MACOSX_DEPLOYMENT_TARGET = "27.0"

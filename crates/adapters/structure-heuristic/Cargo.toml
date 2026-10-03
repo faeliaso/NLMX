@@ -1,0 +1,15 @@
+[package]
+name = "nlmx-structure-heuristic"
+description = "StructureAnalyzer adapter: page layout to blocks and sections."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nlmx-domain.workspace = true
+nlmx-application.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,26 @@
+{% extends "components/layout.html" %}
+{% import "components/ds.html" as ds %}
+
+{% block title %}{{ title }} · NLMX{% endblock %}
+
+{% block body %}
+<div class="shell">
+  <aside class="sidebar" data-tauri-drag-region>
+    <p class="sidebar-title" data-tauri-drag-region>NLMX</p>
+    {% include "components/nav.html" %}
+  </aside>
+
+  <div class="main">
+    <div class="global-loading" aria-hidden="true">{% call ds::progress_indeterminate("Carregando") %}{% endcall %}</div>
+    <main class="content" id="content" tabindex="-1">{{ content|safe }}</main>
+    <footer class="statusbar" aria-label="Status">
+      <span class="statusbar-item activity-idle">{% call ds::icon("check") %}{% endcall %}Pronto</span>
+      <span class="statusbar-item activity-busy" role="status">{% call ds::spinner("Carregando", "sm") %}{% endcall %}Carregando…</span>
+      <span class="statusbar-spacer"></span>
+      <span id="system-status" hx-get="/fragments/status" hx-trigger="load, every 60s" hx-swap="innerHTML">
+        {% call ds::spinner("Verificando status", "sm") %}{% endcall %}
+      </span>
+    </footer>
+  </div>
+</div>
+{% endblock %}

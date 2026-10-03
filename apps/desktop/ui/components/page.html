@@ -1,0 +1,12 @@
+{#- Shell page macros. Import with: {% import "components/page.html" as page %} -#}
+
+{#- Contextual header. The call body holds the header actions (may be empty). -#}
+{% macro header(title, description) -%}
+<header class="page-header" data-tauri-drag-region>
+  <div class="page-heading" data-tauri-drag-region>
+    <h1 class="page-title" tabindex="-1" data-page-title>{{ title }}</h1>
+    <p class="page-description">{{ description }}</p>
+  </div>
+  <div class="page-actions">{{ caller() }}</div>
+</header>
+{%- endmacro %}

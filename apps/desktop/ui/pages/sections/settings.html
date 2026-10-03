@@ -1,0 +1,127 @@
+{% import "components/ds.html" as ds %}
+{% import "components/page.html" as page %}
+<div class="page">
+  {% call page::header("Configurações", "Preferências do aplicativo.") %}{% endcall %}
+  <div class="page-body">
+    <section aria-labelledby="appearance-heading">
+      <h2 class="section-heading" id="appearance-heading">Aparência</h2>
+      <div class="list">
+        <div class="list-row">
+          <span class="list-row-title" id="theme-label">Tema</span>
+          <div class="segmented" role="group" aria-labelledby="theme-label">
+            <button type="button" data-theme-set="system" aria-pressed="false">Sistema</button>
+            <button type="button" data-theme-set="light" aria-pressed="false">{% call ds::icon("sun") %}{% endcall %}Claro</button>
+            <button type="button" data-theme-set="dark" aria-pressed="false">{% call ds::icon("moon") %}{% endcall %}Escuro</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="data-heading">
+      <h2 class="section-heading" id="data-heading">Dados</h2>
+      <div class="list">
+        <div class="list-row">
+          <div class="list-row-title">
+            <p>Pasta de dados</p>
+            <p class="list-row-meta">Biblioteca, índices e modelos ficam somente neste Mac.</p>
+          </div>
+          <button type="button" class="btn btn-secondary" data-command="open_data_dir">Mostrar no Finder</button>
+        </div>
+        <div class="list-row">
+          <div class="list-row-title">
+            <p>Logs</p>
+            <p class="list-row-meta">Registros técnicos, sem conteúdo dos documentos — úteis para relatar problemas.</p>
+          </div>
+          <button type="button" class="btn btn-secondary" data-command="open_logs_dir">Mostrar logs no Finder</button>
+        </div>
+        {%- if storage.ok %}
+        <div class="list-row">
+          <span class="list-row-title">Banco de dados</span>
+          <span class="list-row-meta selectable" style="overflow-wrap: anywhere; text-align: right">{{ storage.path }}</span>
+        </div>
+        <div class="list-row"><span class="list-row-title">Versão do esquema</span><span class="list-row-meta tabular">{{ storage.schema }}</span></div>
+        <div class="list-row"><span class="list-row-title">SQLite · sqlite-vec</span><span class="list-row-meta tabular selectable">{{ storage.sqlite_version }} · {{ storage.vector_version }}</span></div>
+        {%- endif %}
+      </div>
+      {%- if !storage.ok %}
+      <div style="margin-top: 0.75rem">
+        {% call ds::alert("danger", "Banco de dados indisponível", storage.error) %}{% endcall %}
+      </div>
+      {%- endif %}
+    </section>
+
+    {%- match diagnostics %}{% when Some(d) %}
+    <section aria-labelledby="diagnostics-heading">
+      <div class="section-heading-row">
+        <h2 class="section-heading" id="diagnostics-heading">Diagnóstico</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-copy-from="diagnostics-json">{% call ds::icon("copy") %}{% endcall %}Copiar diagnóstico</button>
+      </div>
+      <p class="section-help">Medições desta sessão ({{ d.uptime }}), calculadas só neste Mac. Não incluem conteúdo dos documentos.</p>
+      <div class="list">
+        <div class="list-row"><span class="list-row-title">Documentos importados</span><span class="list-row-meta tabular">{{ d.documents }} · {{ d.pages }} páginas · {{ d.chunks }} trechos</span></div>
+        <div class="list-row"><span class="list-row-title">Páginas processadas por segundo</span><span class="list-row-meta tabular">{{ d.pages_per_second }}</span></div>
+        <div class="list-row"><span class="list-row-title">Embeddings por segundo</span><span class="list-row-meta tabular">{{ d.embeddings_per_second }} ({{ d.embeddings }} no total)</span></div>
+        <div class="list-row"><span class="list-row-title">Primeiro token da resposta (mediana)</span><span class="list-row-meta tabular">{{ d.first_token }}</span></div>
+      </div>
+      <table class="metrics-table">
+        <caption class="sr-only">Tempo e taxa de erro por operação</caption>
+        <thead><tr><th scope="col">Operação</th><th scope="col">Total</th><th scope="col">Falhas</th><th scope="col">Taxa de erro</th><th scope="col">Mediana</th><th scope="col">p95</th></tr></thead>
+        <tbody>
+          {%- for o in d.operations %}
+          <tr><th scope="row">{{ o.label }}</th><td>{{ o.total }}</td><td>{{ o.failed }}</td><td>{{ o.error_rate }}</td><td>{{ o.p50 }}</td><td>{{ o.p95 }}</td></tr>
+          {%- endfor %}
+        </tbody>
+      </table>
+      {%- if !d.memory.is_empty() %}
+      <h3 class="section-subheading">Memória</h3>
+      <div class="list">
+        {%- for (name, value) in d.memory %}<div class="list-row"><span class="list-row-title">{{ name }}</span><span class="list-row-meta tabular">{{ value }}</span></div>{% endfor %}
+      </div>
+      {%- endif %}
+      {%- if !d.storage.is_empty() %}
+      <h3 class="section-subheading">Armazenamento</h3>
+      <div class="list">
+        {%- for (name, value) in d.storage %}<div class="list-row"><span class="list-row-title">{{ name }}</span><span class="list-row-meta tabular">{{ value }}</span></div>{% endfor %}
+      </div>
+      {%- endif %}
+      <template id="diagnostics-json">{{ d.json }}</template>
+    </section>
+    {%- when None %}{% endmatch %}
+
+    <section aria-labelledby="about-heading">
+      <h2 class="section-heading" id="about-heading">Sobre</h2>
+      <div class="list">
+        <div class="list-row">
+          <div class="list-row-title">
+            <p>Versão</p>
+            <p class="list-row-meta">Para atualizar, instale o DMG novo: documentos, conversas e modelos são mantidos.</p>
+          </div>
+          <span class="list-row-meta selectable tabular">{{ version }}</span>
+          {%- match download_url %}{% when Some(_) %}
+          <button type="button" class="btn btn-secondary btn-sm" data-command="open_download_page">Página de downloads</button>
+          {%- when None %}{% endmatch %}
+        </div>
+        <div class="list-row">
+          <span class="list-row-title">Motor de PDF</span>
+          {%- match pdf_engine %}
+          {%- when Ok(build) %}<span class="list-row-meta tabular">PDFium {{ build }}</span>{% call ds::badge("Carregado", "success", true) %}{% endcall %}
+          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge("Indisponível", "danger", true) %}{% endcall %}
+          {%- endmatch %}
+        </div>
+        <div class="list-row">
+          <span class="list-row-title">Runtime de embeddings</span>
+          {%- match runtime %}
+          {%- when Ok(rt) %}<span class="list-row-meta tabular" title="{{ rt.path }}">{{ rt.name }} {{ rt.build }}</span>{% if rt.bundled %}{% call ds::badge("Incluído no app", "success", true) %}{% endcall %}{% else %}{% call ds::badge("Desenvolvimento", "info", true) %}{% endcall %}{% endif %}
+          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge("Indisponível", "danger", true) %}{% endcall %}
+          {%- endmatch %}
+        </div>
+        {%- if debug %}
+        <div class="list-row">
+          <span class="list-row-title">Design System</span>
+          <a class="btn btn-ghost btn-sm" href="/design-system">Abrir galeria</a>
+        </div>
+        {%- endif %}
+      </div>
+    </section>
+  </div>
+</div>
