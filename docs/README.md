@@ -11,3 +11,5 @@
 | [`adr/`](adr/) | Decisões de arquitetura. Não reescreva um ADR: acrescente uma "Atualização" ou crie um novo |
 
 Comandos de desenvolvimento e regras para editar o código: `CLAUDE.md` na raiz.
+
+Visão geral do projeto, scripts e instalação: [`README.md`](../README.md) na raiz. Como contribuir: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
