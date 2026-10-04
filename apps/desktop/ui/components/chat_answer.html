@@ -3,9 +3,6 @@
   {%- if answer.streaming() %}
   <p class="answer-progress" data-answer-progress>{% call ds::spinner("Gerando resposta", "sm") %}{% endcall %}<span>Buscando nos documentos…</span></p>
   <div class="answer-text answer-stream selectable" data-answer-stream></div>
-  <div class="answer-actions">
-    <button type="button" class="btn btn-secondary btn-sm" data-command="cancel_answer" data-command-args='{"messageId":{{ answer.id }}}'>{% call ds::icon("stop") %}{% endcall %}Parar</button>
-  </div>
   {%- else %}
   {%- if answer.status == "failed" %}
   {% call ds::alert("danger", "Não foi possível responder", answer.error) %}{% endcall %}

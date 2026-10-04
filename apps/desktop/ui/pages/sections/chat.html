@@ -71,7 +71,7 @@
       <label class="sr-only" for="question">Pergunta</label>
       <textarea class="textarea" id="question" name="q" rows="1" required data-submit-on-enter data-autogrow
                 {% if enabled %}placeholder="Pergunte algo sobre {% if scope_title == "Todos os documentos" %}seus documentos{% else %}{{ scope_title }}{% endif %}…"{% else %}disabled placeholder="Disponível quando houver documentos importados"{% endif %}></textarea>
-      <button type="submit" class="btn btn-primary btn-icon"{% if !enabled %} disabled{% endif %} aria-label="Enviar pergunta">{% call ds::icon("send") %}{% endcall %}</button>
+      <button type="submit" class="btn btn-primary btn-icon composer-action"{% if !enabled %} disabled{% endif %} aria-label="Enviar pergunta" title="Enviar pergunta">{% call ds::icon("send") %}{% endcall %}{% call ds::icon("stop") %}{% endcall %}</button>
     </div>
     <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
   </form>

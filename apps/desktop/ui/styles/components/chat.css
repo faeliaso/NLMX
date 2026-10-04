@@ -155,5 +155,12 @@
   .source-more[open] > summary { margin-bottom: 0.25rem; }
 
   .chat-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
-  .composer[data-locked] .composer-box { opacity: 0.6; }
+  .composer[data-locked] .textarea { opacity: 0.6; }
+  /* The composer button is "send" (first icon) or, while an answer is generated, "stop". */
+  .composer-action > svg:last-child,
+  .composer[data-locked] .composer-action > svg:first-child { display: none; }
+  .composer[data-locked] .composer-action > svg:last-child { display: block; }
+  .composer[data-locked] .composer-action { background: var(--color-danger-fill); color: var(--color-danger-fill-fg); }
+  .composer[data-locked] .composer-action:hover { filter: brightness(1.08); }
+  .composer[data-locked] .composer-action:active { filter: brightness(0.92); }
 }

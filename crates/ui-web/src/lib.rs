@@ -667,6 +667,7 @@ mod tests {
         assert!(!body.contains("principais pontos da seção 3"));
         assert!(body.contains(r#"hx-post="/chat/new""#));
         assert!(body.contains(r#"popovertarget="chat-recent""#));
+        assert!(body.contains(r#"class="btn btn-primary btn-icon composer-action""#));
     }
 
     #[tokio::test]
@@ -683,8 +684,8 @@ mod tests {
         assert!(body.contains("data-chat-turn") && body.contains("Qual a carência?"));
         assert!(body.contains(r#"data-status="streaming""#), "{body}");
         assert!(
-            body.contains(r#"data-command="cancel_answer""#),
-            "a stop button"
+            !body.contains("cancel_answer"),
+            "the composer button stops the answer, not the turn"
         );
         let id: i64 = body
             .split(r#"data-answer=""#)

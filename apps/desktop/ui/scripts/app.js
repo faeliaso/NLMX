@@ -110,14 +110,26 @@
     if (event.target.matches?.("textarea[data-autogrow]")) autogrow(event.target);
   });
 
-  // One answer at a time: the composer is locked while one is being generated.
+  // One answer at a time: while one is being generated the composer is locked and its
+  // send button becomes a stop button (a `cancel_answer` command, see "Tauri commands").
   function updateComposer() {
     const form = chatForm();
     if (!form) return;
-    const locked = Boolean(streaming());
-    form.toggleAttribute("data-locked", locked);
-    const button = form.querySelector('button[type="submit"]');
-    if (button && !form.querySelector("textarea")?.disabled) button.disabled = locked;
+    const answer = streaming();
+    form.toggleAttribute("data-locked", Boolean(answer));
+    const button = form.querySelector(".composer-action");
+    if (!button || form.querySelector("textarea")?.disabled) return;
+    const label = answer ? "Parar resposta" : "Enviar pergunta";
+    button.type = answer ? "button" : "submit";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    if (answer) {
+      button.dataset.command = "cancel_answer";
+      button.dataset.commandArgs = JSON.stringify({ messageId: Number(answer.dataset.answer) });
+    } else {
+      delete button.dataset.command;
+      delete button.dataset.commandArgs;
+    }
   }
 
   // Enter sends (Shift+Enter = new line).
