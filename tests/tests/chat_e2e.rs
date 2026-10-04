@@ -40,6 +40,9 @@ async fn app(name: &str, llm: Arc<dyn LlmProvider>) -> App {
     let source = FixedEmbeddingSource::of(FakeEmbeddingProvider { dimensions: 64 });
     let engine = Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"));
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: engine.clone(),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: db.clone(),
@@ -48,6 +51,7 @@ async fn app(name: &str, llm: Arc<dyn LlmProvider>) -> App {
         tokens: Arc::new(HeuristicTokenCounter),
         policy: ChunkPolicy::default(),
         embedder: Some(Arc::new(EmbedDocuments {
+            progress: None,
             embeddings: source.clone(),
             vectors: db.clone(),
             chunks: db.clone(),

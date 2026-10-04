@@ -1,9 +1,9 @@
 {% import "components/ds.html" as ds %}
 {% import "components/page.html" as page %}
 <div class="page">
-  {% call page::header("Documentos", "PDFs da sua biblioteca local. Nada sai deste Mac.") %}
+  {% call page::header("Documentos", "Documentos da sua biblioteca local. Nada sai deste Mac.") %}
     {%- if let Library::Documents(_) = library %}
-    <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar PDFs</button>
+    <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar documentos</button>
     {%- endif %}
   {% endcall %}
   <div class="page-body" id="document-list" hx-get="/fragments/documents" hx-trigger="documents-changed from:body, indexing-changed from:body">

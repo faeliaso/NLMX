@@ -4,13 +4,13 @@ use std::{sync::Arc, time::Instant};
 
 use nlmx_domain::{
     embedding::EmbeddingPurpose,
-    ingestion::{DocumentId, DocumentStatus},
+    ingestion::{DocumentId, DocumentStatus, IngestPhase, IngestProgress},
     telemetry::{ErrorKind, Measurement},
     vectors::{DeleteScope, EmbeddingSpace},
 };
 
 use crate::{
-    ports::{ChunkReader, DocumentRepository, EmbeddingSource, VectorStore},
+    ports::{ChunkReader, DocumentRepository, EmbeddingSource, ProgressSink, VectorStore},
     telemetry::{ms, record},
 };
 
@@ -25,6 +25,9 @@ pub enum EmbedOutcome {
     Failed(String),
 }
 
+/// Where embedding starts in a document's overall progress (parsing and saving come first).
+pub const EMBED_START: f32 = 0.6;
+
 pub struct EmbedDocuments {
     pub embeddings: Arc<dyn EmbeddingSource>,
     pub vectors: Arc<dyn VectorStore>,
@@ -32,6 +35,8 @@ pub struct EmbedDocuments {
     pub documents: Arc<dyn DocumentRepository>,
     /// Chunks per embedding request batch.
     pub batch_size: usize,
+    /// Told after each batch (`None`: no progress is reported).
+    pub progress: Option<Arc<dyn ProgressSink>>,
 }
 
 impl EmbedDocuments {
@@ -92,6 +97,8 @@ impl EmbedDocuments {
             .delete(index.id, &DeleteScope::Document(id))
             .await
             .map_err(|e| store(e.to_string()))?;
+        let report = self.reporter(id, chunks.len() as u32).await;
+        let mut done = 0usize;
         for batch in chunks.chunks(self.batch_size.max(1)) {
             let inputs: Vec<String> = batch
                 .iter()
@@ -110,12 +117,46 @@ impl EmbedDocuments {
                 .insert_batch(index.id, &items)
                 .await
                 .map_err(|e| store(e.to_string()))?;
+            done += batch.len();
+            report(
+                IngestPhase::Embedding,
+                EMBED_START + (1.0 - EMBED_START) * done as f32 / chunks.len().max(1) as f32,
+                DocumentStatus::Embedding,
+            );
         }
         self.documents
             .set_status(id, DocumentStatus::Indexed, None)
             .await
             .map_err(|e| store(e.message))?;
+        report(IngestPhase::Indexed, 1.0, DocumentStatus::Indexed);
         Ok((chunks.len() as u32, identity.dimensions))
+    }
+
+    /// A function that reports this document's progress (a no-op without a sink).
+    async fn reporter(
+        &self,
+        id: DocumentId,
+        chunks: u32,
+    ) -> Box<dyn Fn(IngestPhase, f32, DocumentStatus) + Send + Sync> {
+        let target = match (&self.progress, self.documents.get(id).await) {
+            (Some(sink), Ok(Some(doc))) => {
+                Some((sink.clone(), doc.original_filename, doc.document_type))
+            }
+            _ => None,
+        };
+        Box::new(move |phase, fraction, status| {
+            if let Some((sink, name, format)) = &target {
+                sink.report(IngestProgress::new(
+                    id,
+                    name.clone(),
+                    *format,
+                    phase,
+                    fraction,
+                    Some(chunks),
+                    status,
+                ));
+            }
+        })
     }
 
     /// Embeds every document waiting for embeddings (after startup or a model change).

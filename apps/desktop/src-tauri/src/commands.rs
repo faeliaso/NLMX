@@ -101,7 +101,16 @@ pub struct CommandOutcome {
     refresh: Option<&'static str>,
 }
 
-/// Picks PDFs with the native dialog and runs each through the ingestion pipeline.
+/// The documents being indexed right now, for a screen opened while they run.
+#[tauri::command]
+pub fn ingest_progress(
+    state: tauri::State<'_, crate::wiring::IngestProgressState>,
+) -> Vec<nlmx_domain::ingestion::IngestProgress> {
+    state.0.snapshot()
+}
+
+/// Picks documents (any supported format) with the native dialog and runs each through the
+/// indexing pipeline. A file that fails does not stop the others.
 #[tauri::command]
 pub async fn import_documents<R: Runtime>(
     app: AppHandle<R>,
@@ -117,13 +126,23 @@ pub async fn import_documents<R: Runtime>(
 
     // The dialog callback runs on the main thread; hand the selection to this async command.
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
+    // The formats come from the parsers that are registered, never from a fixed list here.
+    let kinds = ingestion.supported_types();
+    let extensions: Vec<&str> = kinds
+        .iter()
+        .flat_map(|kind| kind.extensions().iter().copied())
+        .collect();
+    let mut dialog = app
+        .dialog()
         .file()
-        .set_title("Importar PDFs")
-        .add_filter("PDF", &["pdf", "PDF"])
-        .pick_files(move |picked| {
-            let _ = tx.send(picked);
-        });
+        .set_title("Importar documentos")
+        .add_filter("Documentos", &extensions);
+    for kind in &kinds {
+        dialog = dialog.add_filter(kind.display_name(), kind.extensions());
+    }
+    dialog.pick_files(move |picked| {
+        let _ = tx.send(picked);
+    });
     let Some(picked) = rx.await.ok().flatten() else {
         return Ok(CommandOutcome {
             kind: "info",
@@ -144,7 +163,17 @@ pub async fn import_documents<R: Runtime>(
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        match ingestion.import(&path).await {
+        // Each file runs in its own task: even a panic in a parser only fails that file.
+        let task = {
+            let ingestion = ingestion.clone();
+            let path = path.clone();
+            tauri::async_runtime::spawn(async move { ingestion.import(&path).await })
+        };
+        let outcome = task.await.unwrap_or_else(|_| ImportOutcome::Failed {
+            id: None,
+            reason: "falha interna ao processar o arquivo".to_string(),
+        });
+        match outcome {
             ImportOutcome::Imported { .. } => imported += 1,
             ImportOutcome::Duplicate { .. } => duplicates += 1,
             ImportOutcome::Failed { reason, .. } => {

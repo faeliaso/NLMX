@@ -32,8 +32,12 @@ fn filter_sql(filter: &RetrievalFilter) -> (String, Vec<Value>) {
         values.extend(collections.iter().map(|&c| Value::from(c)));
     }
     if let Some(pages) = filter.pages {
-        // Chunks whose page span intersects [from, to].
-        sql.push_str(" AND c.page_start <= ? AND c.page_end >= ?");
+        // Chunks whose page span intersects [from, to]. Only a PDF has pages: the page of a
+        // chunk of another format is a placeholder (ADR 0013).
+        sql.push_str(
+            " AND c.page_start <= ? AND c.page_end >= ?
+              AND c.document_id IN (SELECT id FROM documents WHERE format = 'pdf')",
+        );
         values.push(Value::from(pages.to));
         values.push(Value::from(pages.from));
     }

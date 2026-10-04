@@ -149,6 +149,9 @@ mod tests {
 
     fn ingestion(files: FakeFileStore, engine: FakeDocumentEngine) -> DocumentIngestion {
         DocumentIngestion {
+            pipeline: None,
+            progress: None,
+            viewer: None,
             engine: Arc::new(engine),
             files: Arc::new(files),
             documents: Arc::new(FakeDocumentRepository::default()),
@@ -461,6 +464,7 @@ mod tests {
                     original_path: String::new(),
                     library_path: String::new(),
                     file_size: 1,
+                    document_type: nlmx_domain::document_type::DocumentType::Pdf,
                 })
                 .await
                 .unwrap();
@@ -480,6 +484,7 @@ mod tests {
                 documents: documents.clone(),
                 embeddings: source.clone(),
                 embedder: Arc::new(EmbedDocuments {
+                    progress: None,
                     embeddings: source,
                     vectors: Arc::new(nlmx_testing::FakeVectorStore::default()),
                     chunks: Arc::new(nlmx_testing::FakeCorpus::default()),
@@ -571,6 +576,9 @@ mod tests {
         );
         let documents = Arc::new(FakeDocumentRepository::default());
         let ingestion = Arc::new(DocumentIngestion {
+            pipeline: None,
+            progress: None,
+            viewer: None,
             engine: Arc::new(engine),
             files: files.clone(),
             documents: documents.clone(),
@@ -988,6 +996,9 @@ mod tests {
         ));
         let documents = Arc::new(FakeDocumentRepository::default());
         let ingestion = Arc::new(DocumentIngestion {
+            pipeline: None,
+            progress: None,
+            viewer: None,
             engine: engine.clone(),
             files: Arc::new(files),
             documents: documents.clone(),

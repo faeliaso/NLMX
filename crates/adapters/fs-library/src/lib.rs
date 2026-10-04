@@ -1,4 +1,5 @@
-//! `FileStore`: hashes imported PDFs and copies them into the app library as `<sha256>.pdf`.
+//! `FileStore`: hashes imported documents and copies them into the app library as `<sha256>.<ext>`
+//! (the extension of the original file; `.bin` when it has none that is usable).
 
 use std::{
     fs::{self, File},
@@ -21,9 +22,38 @@ impl FsLibrary {
         Self { dir: dir.into() }
     }
 
-    pub fn path_for(&self, sha256: &str) -> PathBuf {
-        self.dir.join(format!("{sha256}.pdf"))
+    /// Where the library keeps the file of a document whose original had this extension.
+    pub fn path_for(&self, sha256: &str, source: &Path) -> PathBuf {
+        self.dir
+            .join(format!("{sha256}.{}", library_extension(source)))
     }
+
+    /// The library file of a hash, whatever its extension.
+    fn existing(&self, sha256: &str) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(&self.dir) else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .and_then(library_hash)
+                    .is_some_and(|sha| sha == sha256)
+            })
+            .map(|e| e.path())
+            .collect()
+    }
+}
+
+/// Lowercase alphanumeric extension of the original file (at most 8 characters).
+fn library_extension(source: &Path) -> String {
+    source
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|e| !e.is_empty() && e.len() <= 8 && e.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .unwrap_or_else(|| "bin".to_string())
 }
 
 fn error(action: &str, path: &Path, err: io::Error) -> StorageError {
@@ -66,7 +96,11 @@ fn store_file(dir: &Path, source: &Path, destination: &Path) -> Result<(), Stora
         return Ok(()); // Same content hash and size: already in the library.
     }
     // Copy to a temporary name first so a crash never leaves a truncated library file.
-    let temporary = destination.with_extension(format!("pdf.tmp-{}", std::process::id()));
+    let extension = destination
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin");
+    let temporary = destination.with_extension(format!("{extension}.tmp-{}", std::process::id()));
     fs::copy(source, &temporary).map_err(|err| error("copiar", source, err))?;
     fs::rename(&temporary, destination).map_err(|err| {
         let _ = fs::remove_file(&temporary);
@@ -85,12 +119,19 @@ fn remove_file(path: &Path) -> Result<(), StorageError> {
 /// into the library a moment before its document is recorded.
 const PRUNE_GRACE_SECS: i64 = 10 * 60;
 
-/// The hash of a library file name: `<sha>.pdf` or a leftover `<sha>.pdf.tmp-<pid>`.
+/// The hash of a library file name: `<sha>.<ext>` or a leftover `<sha>.<ext>.tmp-<pid>`.
 fn library_hash(name: &str) -> Option<&str> {
     let sha = name.get(..64)?;
-    let rest = &name[64..];
-    let valid = sha.bytes().all(|b| b.is_ascii_hexdigit());
-    (valid && (rest == ".pdf" || rest.starts_with(".pdf.tmp-"))).then_some(sha)
+    let rest = name[64..].strip_prefix('.')?;
+    let (extension, temporary) = match rest.split_once('.') {
+        Some((extension, tail)) => (extension, Some(tail)),
+        None => (rest, None),
+    };
+    let valid = sha.bytes().all(|b| b.is_ascii_hexdigit())
+        && !extension.is_empty()
+        && extension.bytes().all(|b| b.is_ascii_alphanumeric())
+        && temporary.is_none_or(|tail| tail.starts_with("tmp-"));
+    valid.then_some(sha)
 }
 
 fn prune(
@@ -134,16 +175,23 @@ impl FileStore for FsLibrary {
         path: &'a Path,
         sha256: &'a str,
     ) -> BoxFuture<'a, Result<PathBuf, StorageError>> {
-        let (dir, source, destination) =
-            (self.dir.clone(), path.to_path_buf(), self.path_for(sha256));
+        let (dir, source) = (self.dir.clone(), path.to_path_buf());
+        // The same content may already be here under another extension: reuse it.
+        let destination = self
+            .existing(sha256)
+            .into_iter()
+            .find(|p| !p.to_string_lossy().contains(".tmp-"))
+            .unwrap_or_else(|| self.path_for(sha256, path));
         Box::pin(async move {
             blocking(move || store_file(&dir, &source, &destination).map(|()| destination)).await
         })
     }
 
     fn remove<'a>(&'a self, sha256: &'a str) -> BoxFuture<'a, Result<(), StorageError>> {
-        let path = self.path_for(sha256);
-        Box::pin(async move { blocking(move || remove_file(&path)).await })
+        let paths = self.existing(sha256);
+        Box::pin(
+            async move { blocking(move || paths.iter().try_for_each(|p| remove_file(p))).await },
+        )
     }
 
     fn prune(&self, keep: Vec<String>) -> BoxFuture<'_, Result<u32, StorageError>> {
@@ -217,6 +265,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn keeps_the_extension_of_each_format_and_removes_it_by_hash() {
+        let dir = temp_dir("formats");
+        let library = FsLibrary::new(dir.join(LIBRARY_DIR));
+        let source = dir.join("Notas.MD");
+        fs::write(&source, "# Notas").unwrap();
+        let sha = library.digest(&source).await.unwrap().sha256;
+        let stored = library.store(&source, &sha).await.unwrap();
+        assert_eq!(stored, dir.join(LIBRARY_DIR).join(format!("{sha}.md")));
+
+        // Same content under another name reuses the stored file.
+        let copy = dir.join("copia.markdown");
+        fs::write(&copy, "# Notas").unwrap();
+        assert_eq!(library.store(&copy, &sha).await.unwrap(), stored);
+        assert_eq!(fs::read_dir(dir.join(LIBRARY_DIR)).unwrap().count(), 1);
+
+        library.remove(&sha).await.unwrap();
+        assert!(!stored.exists());
+    }
+
+    #[tokio::test]
     async fn removes_a_document_file() {
         let dir = temp_dir("remove");
         let source = dir.join("a.pdf");
@@ -256,6 +324,12 @@ mod tests {
         left.sort();
         assert_eq!(left, [format!("{kept}.pdf"), "notes.txt".to_string()]);
         assert_eq!(library_hash(&format!("{}.pdf", "z".repeat(64))), None);
+        assert_eq!(library_hash(&format!("{kept}.epub")), Some(kept.as_str()));
+        assert_eq!(
+            library_hash(&format!("{kept}.md.tmp-9")),
+            Some(kept.as_str())
+        );
+        assert_eq!(library_hash(&format!("{kept}.md.bak")), None);
         let _ = (orphan, tmp);
     }
 

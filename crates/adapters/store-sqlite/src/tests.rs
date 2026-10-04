@@ -10,7 +10,7 @@ use rusqlite::{Connection, params};
 
 use crate::{Database, LATEST_VERSION, connection, migrations};
 
-fn temp_db() -> PathBuf {
+pub(crate) fn temp_db() -> PathBuf {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
         "nlmx-store-{}-{}",
@@ -28,7 +28,7 @@ fn migrated() -> Connection {
     conn
 }
 
-fn tables(conn: &Connection) -> Vec<String> {
+pub(crate) fn tables(conn: &Connection) -> Vec<String> {
     let mut stmt = conn
         .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         .unwrap();
@@ -38,14 +38,14 @@ fn tables(conn: &Connection) -> Vec<String> {
         .collect()
 }
 
-fn count(conn: &Connection, sql: &str) -> i64 {
+pub(crate) fn count(conn: &Connection, sql: &str) -> i64 {
     conn.query_row(sql, [], |row| row.get(0)).unwrap()
 }
 
 const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 /// One document with a page, two chunks, a collection link, a job and a cited answer.
-fn seed(conn: &Connection) -> i64 {
+pub(crate) fn seed(conn: &Connection) -> i64 {
     conn.execute_batch(&format!(
         "INSERT INTO documents (id, sha256, original_filename, library_path, file_size)
              VALUES (1, '{SHA}', 'manual.pdf', 'library/{SHA}.pdf', 1024);
@@ -91,6 +91,8 @@ fn migrates_to_latest_and_creates_every_table() {
         "embedding_jobs",
         "embedding_models",
         "messages",
+        "document_sections",
+        "chunk_provenance",
     ] {
         assert!(
             tables.iter().any(|t| t == expected),
@@ -449,6 +451,7 @@ mod documents {
             original_path: "/Users/x/contrato.pdf".into(),
             library_path: format!("/lib/{}.pdf", sha.to_string().repeat(64)),
             file_size: 2048,
+            document_type: nlmx_domain::document_type::DocumentType::Pdf,
         }
     }
 
@@ -1359,6 +1362,7 @@ mod conversations {
                 original_path: "/x/relatorio.pdf".into(),
                 library_path: "/lib/x.pdf".into(),
                 file_size: 10,
+                document_type: nlmx_domain::document_type::DocumentType::Pdf,
             })
             .await
             .unwrap()

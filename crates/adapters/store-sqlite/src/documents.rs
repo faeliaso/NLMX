@@ -2,10 +2,14 @@
 
 use nlmx_application::ports::{
     BoxFuture, DocumentRecord, DocumentRepository, Extraction, InsertOutcome, NewDocument,
-    PageRecord, RemovedDocument, StorageError,
+    PageRecord, RemovedDocument, SectionRecord, StorageError, StoredExtraction,
 };
-use nlmx_domain::ingestion::{
-    ChunkDraft, DocumentId, DocumentStatus, DocumentSummary, RemovalImpact, SECTION_SEPARATOR,
+use nlmx_domain::{
+    document_type::DocumentType,
+    ingestion::{
+        DocumentId, DocumentStatus, DocumentSummary, PageBox, RemovalImpact, SECTION_SEPARATOR,
+    },
+    parsed::DocumentChunk,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -25,6 +29,16 @@ fn parse_status(value: String) -> rusqlite::Result<DocumentStatus> {
     })
 }
 
+pub(crate) fn parse_type(value: String) -> rusqlite::Result<DocumentType> {
+    DocumentType::parse(&value).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            format!("formato desconhecido: {value}").into(),
+        )
+    })
+}
+
 /// The ingest job mirrors the document status (no embedding model yet ⇒ `waiting_model`).
 fn job_stage(status: DocumentStatus) -> &'static str {
     match status {
@@ -38,7 +52,7 @@ fn job_stage(status: DocumentStatus) -> &'static str {
     }
 }
 
-fn update_job(
+pub(crate) fn update_job(
     tx: &Transaction<'_>,
     id: DocumentId,
     status: DocumentStatus,
@@ -80,9 +94,8 @@ fn set_status(
 }
 
 /// `[{"page":1,"left":72.00,"top":55.71,"right":253.03,"bottom":75.80}, …]`
-fn boxes_json(chunk: &ChunkDraft) -> String {
-    let items: Vec<String> = chunk
-        .boxes
+pub(crate) fn boxes_json(boxes: &[PageBox]) -> String {
+    let items: Vec<String> = boxes
         .iter()
         .map(|b| {
             format!(
@@ -149,7 +162,7 @@ fn save_extraction(conn: &mut Connection, id: DocumentId, ex: &Extraction) -> ru
                 c.page_start,
                 c.page_end,
                 section,
-                boxes_json(c),
+                boxes_json(&c.boxes),
                 c.content_hash
             ])?;
         }
@@ -162,11 +175,19 @@ fn insert(conn: &mut Connection, doc: &NewDocument) -> rusqlite::Result<InsertOu
     let tx = conn.transaction()?;
     let inserted: Option<DocumentId> = tx
         .query_row(
-            "INSERT INTO documents (sha256, original_filename, original_path, library_path, file_size)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO documents (sha256, original_filename, original_path, library_path, file_size, format, mime_type)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (sha256) DO NOTHING
              RETURNING id",
-            params![doc.sha256, doc.original_filename, doc.original_path, doc.library_path, doc.file_size as i64],
+            params![
+                doc.sha256,
+                doc.original_filename,
+                doc.original_path,
+                doc.library_path,
+                doc.file_size as i64,
+                doc.document_type.as_str(),
+                doc.document_type.mime_types()[0]
+            ],
             |row| row.get(0),
         )
         .optional()?;
@@ -186,6 +207,35 @@ fn insert(conn: &mut Connection, doc: &NewDocument) -> rusqlite::Result<InsertOu
     };
     tx.commit()?;
     Ok(outcome)
+}
+
+fn replace_source(
+    conn: &mut Connection,
+    id: DocumentId,
+    doc: &NewDocument,
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+    let changed = tx.execute(
+        "UPDATE documents SET sha256 = ?2, original_filename = ?3, original_path = ?4,
+             library_path = ?5, file_size = ?6, format = ?7, mime_type = ?8,
+             status = 'queued', error = NULL
+         WHERE id = ?1",
+        params![
+            id,
+            doc.sha256,
+            doc.original_filename,
+            doc.original_path,
+            doc.library_path,
+            doc.file_size as i64,
+            doc.document_type.as_str(),
+            doc.document_type.mime_types()[0]
+        ],
+    )?;
+    if changed == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    update_job(&tx, id, DocumentStatus::Queued, None)?;
+    tx.commit()
 }
 
 /// The chat history a document removal takes with it.
@@ -336,6 +386,33 @@ impl DocumentRepository for Database {
         }))
     }
 
+    fn find_by_original_path<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Option<DocumentId>, StorageError>> {
+        let path = path.to_string();
+        Box::pin(self.run(move |conn| {
+            conn.query_row(
+                "SELECT id FROM documents WHERE original_path = ?1
+                 ORDER BY imported_at DESC, id DESC LIMIT 1",
+                [&path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(err("procurar o documento"))
+        }))
+    }
+
+    fn replace_source(
+        &self,
+        id: DocumentId,
+        source: NewDocument,
+    ) -> BoxFuture<'_, Result<(), StorageError>> {
+        Box::pin(self.run(move |conn| {
+            replace_source(conn, id, &source).map_err(err("atualizar o documento"))
+        }))
+    }
+
     fn insert(&self, document: NewDocument) -> BoxFuture<'_, Result<InsertOutcome, StorageError>> {
         Box::pin(
             self.run(move |conn| insert(conn, &document).map_err(err("registrar o documento"))),
@@ -345,9 +422,12 @@ impl DocumentRepository for Database {
     fn get(&self, id: DocumentId) -> BoxFuture<'_, Result<Option<DocumentRecord>, StorageError>> {
         Box::pin(self.run(move |conn| {
             conn.query_row(
-                "SELECT id, sha256, original_filename, library_path, status, file_size FROM documents WHERE id = ?1",
+                "SELECT id, sha256, original_filename, library_path, status, file_size, format, mime_type
+                 FROM documents WHERE id = ?1",
                 [id],
                 |row| {
+                    let document_type = parse_type(row.get(6)?)?;
+                    let mime_type: Option<String> = row.get(7)?;
                     Ok(DocumentRecord {
                         id: row.get(0)?,
                         sha256: row.get(1)?,
@@ -355,6 +435,10 @@ impl DocumentRepository for Database {
                         library_path: row.get(3)?,
                         status: parse_status(row.get(4)?)?,
                         file_size: row.get::<_, i64>(5)?.max(0) as u64,
+                        document_type,
+                        // Rows from before multi-format support have no media type stored.
+                        mime_type: mime_type
+                            .unwrap_or_else(|| document_type.mime_types()[0].to_string()),
                     })
                 },
             )
@@ -381,6 +465,34 @@ impl DocumentRepository for Database {
     ) -> BoxFuture<'_, Result<(), StorageError>> {
         Box::pin(self.run(move |conn| {
             save_extraction(conn, id, &extraction).map_err(err("salvar a extração"))
+        }))
+    }
+
+    fn save_processed(
+        &self,
+        id: DocumentId,
+        extraction: StoredExtraction,
+    ) -> BoxFuture<'_, Result<(), StorageError>> {
+        Box::pin(self.run(move |conn| {
+            crate::sections::save_processed(conn, id, &extraction)
+                .map_err(err("salvar o documento"))
+        }))
+    }
+
+    fn chunks_of(&self, id: DocumentId) -> BoxFuture<'_, Result<Vec<DocumentChunk>, StorageError>> {
+        Box::pin(
+            self.run(move |conn| {
+                crate::sections::chunks_of(conn, id).map_err(err("ler os trechos"))
+            }),
+        )
+    }
+
+    fn sections_of(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Vec<SectionRecord>, StorageError>> {
+        Box::pin(self.run(move |conn| {
+            crate::sections::sections_of(conn, id).map_err(err("ler a estrutura"))
         }))
     }
 

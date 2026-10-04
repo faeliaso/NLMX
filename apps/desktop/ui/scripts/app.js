@@ -79,6 +79,75 @@
     document.body.dispatchEvent(new CustomEvent("indexing-changed", { bubbles: true }));
   });
 
+  // ── Indexing progress: one row per document, driven by "ingest-progress" events ──
+  // Rows are built with textContent only (file names are user data) and live outside the
+  // HTMX-swapped body of Indexação.
+  const PHASES = {
+    parsing: "Lendo o arquivo",
+    structuring: "Analisando a estrutura",
+    chunking: "Dividindo em trechos",
+    saving: "Salvando",
+    embedding: "Gerando embeddings",
+    waiting: "Aguardando o modelo de embeddings",
+    indexed: "Indexado",
+    failed: "Falhou",
+  };
+  const FORMATS = { pdf: "PDF", markdown: "Markdown", text: "TXT", csv: "CSV", epub: "EPUB" };
+  const ingestTimers = new Map();
+
+  function renderIngest(list, p) {
+    let row = list.querySelector(`[data-ingest-doc="${p.document_id}"]`);
+    if (!row) {
+      row = document.createElement("li");
+      row.className = "list-row ingest-row";
+      row.dataset.ingestDoc = String(p.document_id);
+      row.innerHTML =
+        '<div class="list-row-title"><p class="selectable truncate" data-ingest-name></p>' +
+        '<p class="list-row-meta tabular" data-ingest-meta></p>' +
+        '<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+        '<div class="progress-bar" style="--value: 0%"></div></div></div>';
+      list.append(row);
+    }
+    const percent = Math.round(p.fraction * 100);
+    row.querySelector("[data-ingest-name]").textContent = p.file_name;
+    const chunks = p.chunks != null ? ` · ${p.chunks} trechos` : "";
+    row.querySelector("[data-ingest-meta]").textContent =
+      `${FORMATS[p.format] ?? p.format} · ${PHASES[p.phase] ?? p.phase} · ${percent}%${chunks}`;
+    const bar = row.querySelector(".progress");
+    bar.setAttribute("aria-valuenow", String(percent));
+    bar.setAttribute("aria-label", `Progresso de ${p.file_name}`);
+    bar.classList.toggle("progress-danger", p.phase === "failed");
+    bar.classList.toggle("progress-success", p.phase === "indexed");
+    bar.querySelector(".progress-bar").style.setProperty("--value", `${percent}%`);
+    clearTimeout(ingestTimers.get(p.document_id));
+    if (["indexed", "failed", "waiting"].includes(p.phase) || p.status === "needs_ocr") {
+      ingestTimers.set(p.document_id, setTimeout(() => {
+        row.remove();
+        const box = document.querySelector("[data-ingest-progress]");
+        if (box && !box.querySelector("[data-ingest-doc]")) box.setAttribute("hidden", "");
+      }, 5000));
+    }
+  }
+  function showIngest(progress) {
+    const box = document.querySelector("[data-ingest-progress]");
+    const list = box?.querySelector("[data-ingest-list]");
+    if (!list) return;
+    box.removeAttribute("hidden");
+    renderIngest(list, progress);
+  }
+  window.__TAURI__?.event?.listen("ingest-progress", ({ payload }) => showIngest(payload));
+  // A screen opened midway shows what is already running.
+  async function restoreIngest() {
+    const box = document.querySelector("[data-ingest-progress]");
+    if (!box || box.dataset.restored || !invoke) return;
+    box.dataset.restored = "1"; // once per rendering of the screen (no id: see the HTMX 4 note)
+    try {
+      (await invoke("ingest_progress")).forEach(showIngest);
+    } catch (_) { /* nothing to restore */ }
+  }
+  new MutationObserver(restoreIngest).observe(document.body, { childList: true, subtree: true });
+  restoreIngest();
+
   // ── Model downloads: progress bar driven by "model-download-progress" events ──
   const megabytes = (bytes) => `${(bytes / 1e6).toFixed(0)} MB`;
   function showDownload(id) {

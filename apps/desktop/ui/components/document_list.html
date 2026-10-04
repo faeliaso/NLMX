@@ -4,8 +4,8 @@
 {% call ds::alert("danger", "Biblioteca indisponível", reason) %}{% endcall %}
 {%- when Library::Documents(rows) %}
 {%- if rows.is_empty() %}
-{% call ds::empty_state("document", "Nenhum documento", "Importe PDFs para começar. Eles são copiados para a biblioteca local e divididos em trechos para a busca.") %}
-  <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar PDFs</button>
+{% call ds::empty_state("document", "Nenhum documento", "Importe documentos (PDF, Markdown, TXT, CSV ou EPUB) para começar. Eles são copiados para a biblioteca local e divididos em trechos para a busca.") %}
+  <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar documentos</button>
 {% endcall %}
 {%- else %}
 <ul class="list" aria-label="Documentos">

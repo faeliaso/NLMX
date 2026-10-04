@@ -54,7 +54,7 @@
           </div>
           {% endcall %}
           {%- elif documents.is_empty() %}
-          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac. Para perguntar sobre seus PDFs, com citações, importe-os em Documentos.") %}
+          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac. Para perguntar sobre seus documentos, com citações, importe-os em Documentos.") %}
             <a class="btn btn-secondary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{% call ds::icon("document") %}{% endcall %}Ir para Documentos</a>
           {% endcall %}
           {%- else %}

@@ -66,6 +66,9 @@ impl Library {
         let engine =
             Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"));
         let ingestion = DocumentIngestion {
+            pipeline: None,
+            progress: None,
+            viewer: None,
             engine: engine.clone(),
             files: Arc::new(FsLibrary::new(dir.join("library"))),
             documents: db.clone(),
@@ -74,6 +77,7 @@ impl Library {
             tokens: Arc::new(HeuristicTokenCounter),
             policy: ChunkPolicy::default(),
             embedder: Some(Arc::new(EmbedDocuments {
+                progress: None,
                 embeddings: embeddings.clone(),
                 vectors: db.clone(),
                 chunks: db.clone(),

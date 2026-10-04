@@ -53,6 +53,8 @@ tests/                    testes de workspace: arquitetura, E2E, qualidade do RA
 | Port | Para quê | Adapter |
 |---|---|---|
 | `DocumentEngine` | abrir PDF, metadados, spans de texto com bbox, imagens, renderizar página | `pdf-pdfium` |
+| `DocumentParser` | ler um formato (PDF, Markdown, TXT, CSV, EPUB) em `ParsedDocument`: metadados, seções, blocos tipados e localização; registro por formato em `ParserRegistry` (ainda não ligado à ingestão, ADR 0011) | `PdfDocumentParser` (em `application`, sobre `DocumentEngine` + `StructureAnalyzer`), `parser-text` (Markdown, TXT, CSV), `parser-epub` |
+| `DocumentNormalizer` · `DocumentChunker` | limpar o texto de um `ParsedDocument` e cortá-lo em `DocumentChunk`s que mantêm caminho de seção e `SourceLocation`; compostos com o parser por `ContentPipeline` (parse → normalize → chunk, sem embeddings; ADR 0012; ligado à ingestão pelo ADR 0014) | `normalizer-text`, `chunker-structural` (`MultiFormatChunker`) |
 | `FileStore` | hash e cópia do PDF para a biblioteca | `fs-library` |
 | `StructureAnalyzer` · `Chunker` · `TokenCounter` | layout → seções/blocos → chunks | `structure-heuristic`, `chunker-structural` |
 | `DocumentRepository` | documentos, páginas, `save_extraction` atômico, pendentes | `store-sqlite` |
@@ -199,6 +201,7 @@ Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref=
 | 0008 | `message_page_refs` |
 | 0009 | opção `secure-delete` do `document_chunks_fts` (ADR 0008) |
 | 0010 | `conversations.mode` (livre/documentos) e `messages.grounding` (ADR 0009) |
+| 0011 | `documents.format`/`mime_type`/`metadata`/`normalizer_version`/`previewable` (gerada), `document_sections`, `chunk_provenance` — só aditiva (ADR 0013) |
 
 Vetores: uma tabela vec0 `chunk_vectors_<embedding_model_id>` por espaço vetorial (modelo + revisão + dimensão), criada em runtime por `create_index`; rowid = id do chunk (ADR 0005).
 

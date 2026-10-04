@@ -32,6 +32,7 @@ async fn setup(source: Arc<FixedEmbeddingSource>) -> Setup {
                 original_path: String::new(),
                 library_path: String::new(),
                 file_size: 1,
+                document_type: nlmx_domain::document_type::DocumentType::Pdf,
             })
             .await
             .unwrap();
@@ -49,6 +50,7 @@ async fn setup(source: Arc<FixedEmbeddingSource>) -> Setup {
             .with_chunk(3, 2),
     );
     let embed = EmbedDocuments {
+        progress: None,
         embeddings: source,
         vectors: vectors.clone(),
         chunks: Arc::new(corpus),

@@ -107,6 +107,9 @@ async fn import_ask_cite_open_and_measure() {
             Arc::new(FakeRuntime::llama()),
         )),
         ingestion: Ok(Arc::new(nlmx_application::use_cases::DocumentIngestion {
+            pipeline: None,
+            progress: None,
+            viewer: None,
             engine: library.ingestion.engine.clone(),
             files: library.ingestion.files.clone(),
             documents: library.ingestion.documents.clone(),

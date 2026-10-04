@@ -11,6 +11,7 @@ mod documents;
 mod indexing;
 mod lexical;
 mod migrations;
+mod sections;
 mod settings;
 mod vector;
 mod vectors;
@@ -128,5 +129,7 @@ fn storage_error(action: &str, err: impl std::fmt::Display) -> StorageError {
     StorageError::new(format!("Não foi possível {action}: {err}"))
 }
 
+#[cfg(test)]
+mod multiformat_tests;
 #[cfg(test)]
 mod tests;

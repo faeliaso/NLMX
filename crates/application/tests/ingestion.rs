@@ -77,6 +77,9 @@ fn setup(files_and_pages: Vec<FakeFile<'_>>) -> Setup {
     }
     let documents = Arc::new(FakeDocumentRepository::default());
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: Arc::new(engine),
         files: files.clone(),
         documents: documents.clone(),

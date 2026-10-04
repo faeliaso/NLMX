@@ -20,6 +20,7 @@ pub fn run() {
             commands::open_download_page,
             commands::report_client_error,
             commands::import_documents,
+            commands::ingest_progress,
             commands::retry_document,
             commands::retry_failed,
             commands::embed_pending_now,
@@ -84,6 +85,14 @@ pub fn run() {
                 async move { wiring::report_models(models.as_ref()).await },
             );
 
+            {
+                use tauri::Emitter;
+                let emitter = app.handle().clone();
+                services.progress.attach(move |progress| {
+                    let _ = emitter.emit("ingest-progress", progress);
+                });
+            }
+            app.manage(wiring::IngestProgressState(services.progress.clone()));
             app.manage(services.ui);
             app.manage(services.ingestion);
             app.manage(services.embeddings);

@@ -1,5 +1,10 @@
 {% import "components/page.html" as page %}
 <div class="page">
   {% call page::header("Indexação", "Extração, divisão em trechos e embeddings, em segundo plano.") %}{% endcall %}
+  {#- Filled by app.js from the "ingest-progress" events; outside the polled body so a refresh does not wipe it. -#}
+  <section class="ingest-now" data-ingest-progress hidden aria-labelledby="ingest-now-heading">
+    <h2 class="section-heading" id="ingest-now-heading">Processando agora</h2>
+    <ul class="list" data-ingest-list aria-live="polite"></ul>
+  </section>
   {% include "components/indexing_body.html" %}
 </div>

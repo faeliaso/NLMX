@@ -29,6 +29,9 @@ async fn semantic_search_over_an_ingested_pdf() {
 
     let db = Database::open(dir.join("nlmx.sqlite3")).unwrap();
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: Arc::new(PdfiumDocumentEngine::from_default_location().unwrap()),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: Arc::new(db.clone()),

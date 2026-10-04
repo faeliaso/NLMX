@@ -35,6 +35,9 @@ fn app(name: &str) -> App {
     let engine =
         PdfiumDocumentEngine::from_default_location().expect("PDFium — run `make bootstrap`");
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: Arc::new(engine),
         files: Arc::new(FsLibrary::new(&library)),
         documents: Arc::new(Database::open(&db_path).unwrap()),

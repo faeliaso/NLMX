@@ -27,6 +27,7 @@ async fn imported_pdfs_are_embedded_indexed_and_searchable() {
     let source = FixedEmbeddingSource::of(FakeEmbeddingProvider { dimensions: 64 });
 
     let embedder = Arc::new(EmbedDocuments {
+        progress: None,
         embeddings: source.clone(),
         vectors: db.clone(),
         chunks: db.clone(),
@@ -34,6 +35,9 @@ async fn imported_pdfs_are_embedded_indexed_and_searchable() {
         batch_size: 16,
     });
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap")),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: db.clone(),

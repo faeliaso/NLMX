@@ -32,6 +32,7 @@ async fn duplicated_documents_yield_one_passage_with_citation_data() {
     let db = Arc::new(Database::open(dir.join("nlmx.sqlite3")).unwrap());
     let source = FixedEmbeddingSource::of(FakeEmbeddingProvider { dimensions: 64 });
     let embedder = Arc::new(EmbedDocuments {
+        progress: None,
         embeddings: source.clone(),
         vectors: db.clone(),
         chunks: db.clone(),
@@ -39,6 +40,9 @@ async fn duplicated_documents_yield_one_passage_with_citation_data() {
         batch_size: 16,
     });
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap")),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: db.clone(),

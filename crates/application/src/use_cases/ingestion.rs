@@ -1,22 +1,35 @@
-//! The ingestion pipeline: PDF → metadata → pages → text → normalization → structure → chunks.
+//! The ingestion pipeline of a document of any supported format: file → parser (picked by the
+//! `ParserRegistry`) → normalization → structure → chunks → (embeddings) → indexed. Without a
+//! `ContentPipeline` it falls back to the legacy PDF-only path (PDF → pages → structure → chunks).
 //!
 //! Idempotent: a file already in the library (same SHA-256) is reported as a duplicate, and
 //! re-running `ingest` for a document replaces its pages and chunks with an identical result.
 
-use std::{path::Path, sync::Arc, time::Instant};
+use std::{fmt::Display, path::Path, sync::Arc, time::Instant};
 
 use nlmx_domain::{
     document::{DocumentError, DocumentHandle, DocumentMetadata},
+    document_type::DocumentType,
     ingestion::{
-        ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, ImportOutcome, PageLayout,
+        ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, ImportOutcome, IngestPhase,
+        IngestProgress, PageLayout,
     },
+    parsed::ParseError,
     telemetry::{ErrorKind, IngestStage, Measurement},
 };
 
-use super::embeddings::{EmbedDocuments, EmbedOutcome};
+use super::{
+    embeddings::{EMBED_START, EmbedDocuments, EmbedOutcome},
+    viewer::ViewDocument,
+};
 use crate::ports::{
-    Chunker, DocumentEngine, DocumentRepository, Extraction, FileStore, InsertOutcome, NewDocument,
-    PageRecord, StorageError, StructureAnalyzer, TokenCounter,
+    BoxFuture, Chunker, DocumentEngine, DocumentRecord, DocumentRepository, DocumentSource,
+    Extraction, FileDigest, FileStore, InsertOutcome, NewDocument, PageRecord, ProgressSink,
+    StorageError, StructureAnalyzer, TokenCounter,
+};
+use crate::services::{
+    parsing::read_layouts,
+    pipeline::{ContentPipeline, PipelineStage, StageObserver},
 };
 use crate::telemetry::{ms, record};
 
@@ -30,6 +43,12 @@ pub struct DocumentIngestion {
     pub policy: ChunkPolicy,
     /// Embeds the chunks right after they are stored (`None`: documents wait for embeddings).
     pub embedder: Option<Arc<EmbedDocuments>>,
+    /// The multi-format content pipeline. `None`: the legacy path, which only reads PDFs.
+    pub pipeline: Option<Arc<ContentPipeline>>,
+    /// Told what the pipeline is doing (`None`: nobody listens).
+    pub progress: Option<Arc<dyn ProgressSink>>,
+    /// Drops its cached text of a document whose file changed.
+    pub viewer: Option<Arc<ViewDocument>>,
 }
 
 impl DocumentIngestion {
@@ -50,6 +69,30 @@ impl DocumentIngestion {
             return self.retry(id).await;
         }
 
+        // Without parsers the only format is PDF (legacy path); with them, the registry decides.
+        let document_type = match &self.pipeline {
+            None => DocumentType::Pdf,
+            Some(pipeline) => match DocumentType::from_path(path)
+                .filter(|kind| pipeline.parsers.parser_for(*kind).is_some())
+            {
+                Some(kind) => kind,
+                None => return failed(ParseError::Unsupported.to_string()),
+            },
+        };
+
+        let original_path = path.display().to_string();
+        if self.pipeline.is_some() {
+            match self.documents.find_by_original_path(&original_path).await {
+                Ok(Some(id)) => {
+                    return self
+                        .update_changed(id, path, digest, document_type, original_path)
+                        .await;
+                }
+                Ok(None) => {}
+                Err(err) => return failed(err.message),
+            }
+        }
+
         let library_path = match self.files.store(path, &digest.sha256).await {
             Ok(library_path) => library_path,
             Err(err) => return failed(err.message),
@@ -57,9 +100,10 @@ impl DocumentIngestion {
         let new = NewDocument {
             sha256: digest.sha256,
             original_filename: file_name(path),
-            original_path: path.display().to_string(),
+            original_path,
             library_path: library_path.display().to_string(),
             file_size: digest.size,
+            document_type,
         };
         match self.documents.insert(new).await {
             Ok(InsertOutcome::Inserted(id)) => self.ingest(id).await,
@@ -67,6 +111,79 @@ impl DocumentIngestion {
             Ok(InsertOutcome::AlreadyExists(id)) => ImportOutcome::Duplicate { id },
             Err(err) => failed(err.message),
         }
+    }
+
+    /// The file of an imported document was changed (same original path, new hash): the document
+    /// keeps its id, points at the new copy and is indexed again, replacing its chunks, lexical
+    /// entries and vectors instead of adding to them.
+    async fn update_changed(
+        &self,
+        id: DocumentId,
+        path: &Path,
+        digest: FileDigest,
+        document_type: DocumentType,
+        original_path: String,
+    ) -> ImportOutcome {
+        let failed = |reason: String| ImportOutcome::Failed {
+            id: Some(id),
+            reason,
+        };
+        let old = match self.documents.get(id).await {
+            Ok(Some(old)) => old,
+            Ok(None) => return failed(format!("documento {id} não encontrado")),
+            Err(err) => return failed(err.message),
+        };
+        let library_path = match self.files.store(path, &digest.sha256).await {
+            Ok(library_path) => library_path,
+            Err(err) => return failed(err.message),
+        };
+        let new_sha = digest.sha256.clone();
+        let new = NewDocument {
+            sha256: digest.sha256,
+            original_filename: file_name(path),
+            original_path,
+            library_path: library_path.display().to_string(),
+            file_size: digest.size,
+            document_type,
+        };
+        if let Err(err) = self.documents.replace_source(id, new).await {
+            // Nobody references the copy just made.
+            let _ = self.files.remove(&new_sha).await;
+            return failed(err.message);
+        }
+        // The previous version's copy is no longer referenced by any document.
+        let _ = self.files.remove(&old.sha256).await;
+        if let Some(viewer) = &self.viewer {
+            viewer.forget(id);
+        }
+        self.ingest(id).await
+    }
+
+    /// Runs the whole pipeline again for a document, whatever its status. The previous chunks,
+    /// lexical entries and vectors are replaced, never added to.
+    pub async fn reindex(&self, id: DocumentId) -> ImportOutcome {
+        self.ingest(id).await
+    }
+
+    /// The formats the app can import: the ones with a parser, or just PDF on the legacy path.
+    pub fn supported_types(&self) -> Vec<DocumentType> {
+        match &self.pipeline {
+            Some(pipeline) => pipeline.parsers.supported_types(),
+            None => vec![DocumentType::Pdf],
+        }
+    }
+
+    /// Imports each file in turn. A file that fails does not stop the others: its outcome is
+    /// `Failed` and the next one goes on.
+    pub async fn import_many(
+        &self,
+        paths: &[std::path::PathBuf],
+    ) -> Vec<(std::path::PathBuf, ImportOutcome)> {
+        let mut outcomes = Vec::with_capacity(paths.len());
+        for path in paths {
+            outcomes.push((path.clone(), self.import(path).await));
+        }
+        outcomes
     }
 
     /// Re-runs the pipeline of a failed or interrupted document; any other one is reported as a
@@ -88,7 +205,10 @@ impl DocumentIngestion {
     /// written until the final atomic save, so an interruption leaves no partial chunks.
     pub async fn ingest(&self, id: DocumentId) -> ImportOutcome {
         let started = Instant::now();
-        let result = self.run_pipeline(id).await;
+        let result = match &self.pipeline {
+            Some(pipeline) => self.run_content_pipeline(pipeline, id).await,
+            None => self.run_pipeline(id).await,
+        };
         match &result {
             Ok(run) => record(&Measurement::Ingested {
                 document_id: id,
@@ -122,6 +242,9 @@ impl DocumentIngestion {
                     },
                     None => DocumentStatus::Embedding,
                 };
+                if status == DocumentStatus::Embedding {
+                    self.report_waiting(id, chunks).await;
+                }
                 ImportOutcome::Imported { id, chunks, status }
             }
             Ok((chunks, status)) => ImportOutcome::Imported { id, chunks, status },
@@ -131,6 +254,7 @@ impl DocumentIngestion {
                     .documents
                     .set_status(id, DocumentStatus::Failed, Some(reason.clone()))
                     .await;
+                self.report_failure(id).await;
                 ImportOutcome::Failed {
                     id: Some(id),
                     reason,
@@ -237,29 +361,134 @@ impl DocumentIngestion {
         })
     }
 
+    /// The multi-format path: parse → normalize → chunk (the `ContentPipeline`) → save. The
+    /// status follows each stage; nothing derived from the file is written before the final
+    /// atomic save, so an interruption leaves no partial chunks.
+    async fn run_content_pipeline(
+        &self,
+        pipeline: &ContentPipeline,
+        id: DocumentId,
+    ) -> Result<PipelineRun, Failure> {
+        let storage = |stage| move |err: StorageError| Failure::storage(stage, err);
+        let document = self
+            .documents
+            .get(id)
+            .await
+            .map_err(storage(IngestStage::Read))?
+            .ok_or_else(|| Failure {
+                reason: format!("documento {id} não encontrado"),
+                stage: IngestStage::Read,
+                kind: ErrorKind::NotFound,
+            })?;
+
+        self.documents
+            .set_status(id, DocumentStatus::Extracting, None)
+            .await
+            .map_err(storage(IngestStage::Extract))?;
+        let observer = Observer::new(self, &document);
+        let source = DocumentSource::of_type(&document.library_path, document.document_type);
+        let processed = pipeline
+            .run_with(
+                &source,
+                id,
+                Some(document.original_filename.as_str()),
+                &observer,
+            )
+            .await
+            .map_err(Failure::parse)?;
+        let (extract_ms, structure_ms, chunk_ms) = observer.timings();
+
+        let page_count = processed.pages.len() as u32;
+        let title = processed
+            .metadata
+            .title
+            .clone()
+            .filter(|title| !title.trim().is_empty())
+            .unwrap_or_else(|| title_from_filename(&document.original_filename));
+        let stored = processed.into_stored(title);
+        let (chunk_count, status) = (stored.chunks.len() as u32, stored.status);
+
+        let save_started = Instant::now();
+        self.documents
+            .save_processed(id, stored)
+            .await
+            .map_err(storage(IngestStage::Save))?;
+        self.report(
+            &document,
+            IngestPhase::Saving,
+            SAVED,
+            Some(chunk_count),
+            status,
+        );
+        Ok(PipelineRun {
+            chunks: chunk_count,
+            status,
+            bytes: document.file_size,
+            pages: page_count,
+            extract_ms,
+            structure_ms,
+            chunk_ms,
+            save_ms: ms(save_started),
+        })
+    }
+
+    fn report(
+        &self,
+        document: &DocumentRecord,
+        phase: IngestPhase,
+        fraction: f32,
+        chunks: Option<u32>,
+        status: DocumentStatus,
+    ) {
+        if let Some(sink) = &self.progress {
+            sink.report(IngestProgress::new(
+                document.id,
+                document.original_filename.clone(),
+                document.document_type,
+                phase,
+                fraction,
+                chunks,
+                status,
+            ));
+        }
+    }
+
+    /// The chunks are stored but the embeddings have to wait (no model, or it failed).
+    async fn report_waiting(&self, id: DocumentId, chunks: u32) {
+        if self.progress.is_none() {
+            return;
+        }
+        if let Ok(Some(document)) = self.documents.get(id).await {
+            self.report(
+                &document,
+                IngestPhase::Waiting,
+                SAVED,
+                Some(chunks),
+                DocumentStatus::Embedding,
+            );
+        }
+    }
+
+    async fn report_failure(&self, id: DocumentId) {
+        if self.progress.is_none() {
+            return;
+        }
+        if let Ok(Some(document)) = self.documents.get(id).await {
+            self.report(
+                &document,
+                IngestPhase::Failed,
+                0.0,
+                None,
+                DocumentStatus::Failed,
+            );
+        }
+    }
+
     async fn read(
         &self,
         handle: DocumentHandle,
     ) -> Result<(DocumentMetadata, Vec<PageLayout>), DocumentError> {
-        let metadata = self.engine.metadata(handle).await?;
-        let mut pages = Vec::with_capacity(metadata.page_count as usize);
-        for number in 1..=metadata.page_count {
-            let info = self.engine.page_info(handle, number).await?;
-            let spans = if info.has_text {
-                self.engine.text_spans(handle, number).await?
-            } else {
-                Vec::new()
-            };
-            pages.push(PageLayout {
-                number,
-                width: info.width,
-                height: info.height,
-                has_text: info.has_text,
-                char_count: info.char_count,
-                spans,
-            });
-        }
-        Ok((metadata, pages))
+        read_layouts(self.engine.as_ref(), handle).await
     }
 
     /// Re-runs every document whose ingestion was interrupted (e.g. the app quit mid-import).
@@ -313,6 +542,23 @@ impl Failure {
         }
     }
 
+    fn parse(err: ParseError) -> Self {
+        let kind = match &err {
+            ParseError::NotFound => ErrorKind::NotFound,
+            ParseError::Invalid(_) | ParseError::Encoding => ErrorKind::Corrupt,
+            ParseError::Encrypted | ParseError::Drm => ErrorKind::Refused,
+            ParseError::Unsupported | ParseError::Empty | ParseError::TooLarge => {
+                ErrorKind::Invalid
+            }
+            ParseError::Engine(_) => ErrorKind::Other,
+        };
+        Self {
+            reason: describe(err),
+            stage: IngestStage::Extract,
+            kind,
+        }
+    }
+
     fn document(err: DocumentError) -> Self {
         let kind = match &err {
             DocumentError::NotFound => ErrorKind::NotFound,
@@ -331,7 +577,7 @@ impl Failure {
     }
 }
 
-fn describe(err: DocumentError) -> String {
+fn describe(err: impl Display) -> String {
     let message = err.to_string();
     let mut chars = message.chars();
     chars
@@ -347,9 +593,77 @@ fn file_name(path: &Path) -> String {
 }
 
 fn title_from_filename(name: &str) -> String {
-    let stem = name
-        .strip_suffix(".pdf")
-        .or_else(|| name.strip_suffix(".PDF"))
-        .unwrap_or(name);
+    let stem = Path::new(name)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.to_string());
     stem.replace(['_', '-'], " ").trim().to_string()
+}
+
+/// Where saving ends in a document's overall progress (embedding goes from `EMBED_START` to 1).
+const SAVED: f32 = EMBED_START;
+
+/// Records the status and reports the progress as each stage of the content pipeline starts.
+struct Observer<'a> {
+    ingestion: &'a DocumentIngestion,
+    document: &'a DocumentRecord,
+    stages: std::sync::Mutex<Vec<(PipelineStage, Instant)>>,
+    started: Instant,
+}
+
+impl<'a> Observer<'a> {
+    fn new(ingestion: &'a DocumentIngestion, document: &'a DocumentRecord) -> Self {
+        Self {
+            ingestion,
+            document,
+            stages: Default::default(),
+            started: Instant::now(),
+        }
+    }
+
+    /// Milliseconds spent parsing, normalizing and chunking.
+    fn timings(&self) -> (u64, u64, u64) {
+        let stages = self.stages.lock().unwrap();
+        let end = Instant::now();
+        let spent = |stage: PipelineStage| {
+            let at = stages.iter().position(|(s, _)| *s == stage)?;
+            let to = stages.get(at + 1).map_or(end, |(_, t)| *t);
+            Some(ms_between(stages[at].1, to))
+        };
+        let _ = self.started;
+        (
+            spent(PipelineStage::Parsing).unwrap_or(0),
+            spent(PipelineStage::Structuring).unwrap_or(0),
+            spent(PipelineStage::Chunking).unwrap_or(0),
+        )
+    }
+}
+
+fn ms_between(from: Instant, to: Instant) -> u64 {
+    to.duration_since(from).as_millis() as u64
+}
+
+impl StageObserver for Observer<'_> {
+    fn started(&self, stage: PipelineStage) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            self.stages.lock().unwrap().push((stage, Instant::now()));
+            let (status, phase, fraction) = match stage {
+                PipelineStage::Parsing => (DocumentStatus::Extracting, IngestPhase::Parsing, 0.05),
+                PipelineStage::Structuring => {
+                    (DocumentStatus::Structuring, IngestPhase::Structuring, 0.3)
+                }
+                PipelineStage::Chunking => (DocumentStatus::Chunking, IngestPhase::Chunking, 0.45),
+            };
+            // Best effort: the status is for display; a failure here shows up at the save.
+            if stage != PipelineStage::Parsing {
+                let _ = self
+                    .ingestion
+                    .documents
+                    .set_status(self.document.id, status, None)
+                    .await;
+            }
+            self.ingestion
+                .report(self.document, phase, fraction, None, status);
+        })
+    }
 }

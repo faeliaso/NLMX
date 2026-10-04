@@ -28,9 +28,9 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | ID | Requisito | Status |
 |---|---|---|
 | **Biblioteca** | | |
-| RF01 | Importar PDFs via seletor, drag & drop ou pasta (recursiva) | ◐ só seletor (vários arquivos) |
+| RF01 | Importar documentos (PDF, Markdown, TXT, CSV, EPUB) via seletor, drag & drop ou pasta (recursiva) | ◐ só seletor (vários arquivos, vários formatos; ADR 0014) |
 | RF02 | Detectar duplicatas por SHA-256 do conteúdo | ✓ |
-| RF03 | Copiar o PDF para a biblioteca interna (`<data>/library/<sha>.pdf`) | ✓ |
+| RF03 | Copiar o arquivo para a biblioteca interna (`<data>/library/<sha>.<ext>`) | ✓ |
 | RF04 | Listar documentos com título, páginas, tamanho, data e status | ✓ |
 | RF05 | Remover documento e todos os dados derivados | ✓ com o histórico do Chat que o usou e sem rastro no arquivo do banco (ADR 0008) |
 | RF06 | Reindexar (ex.: troca do modelo de embeddings) | ✓ automático ao trocar o modelo; manual em Indexação ("Reindexar tudo", "Tentar novamente") |
