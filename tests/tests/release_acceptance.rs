@@ -23,7 +23,11 @@ use nlmx_application::{
     services::rag::{AnswerStatus, RagOptions},
     use_cases::GetSystemStatus,
 };
-use nlmx_domain::{chat::MessageStatus, ingestion::ImportOutcome, telemetry::Operation};
+use nlmx_domain::{
+    chat::{ConversationScope, MessageStatus},
+    ingestion::ImportOutcome,
+    telemetry::Operation,
+};
 use nlmx_telemetry::{DataLayout, MetricsLayer, MetricsRegistry, snapshot_json};
 use nlmx_testing::FixedEmbeddingSource;
 use serde_json::{Value, json};
@@ -311,7 +315,10 @@ async fn installed_app_end_to_end() {
     // ── 5. Chat (conversation, intents, follow-up) and the viewer, through the UI router ──
     let chat = Arc::new(library.chat(fm.clone(), RagOptions::default()));
     let report_id = library.documents["report.pdf"];
-    let conversation = chat.start(Some(report_id)).await.unwrap();
+    let conversation = chat
+        .start(ConversationScope::Document(report_id))
+        .await
+        .unwrap();
     let mut chat_results = Vec::new();
     for question in [
         "Explique este documento.",

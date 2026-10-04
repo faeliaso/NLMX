@@ -48,13 +48,14 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | RF16 | Registrar modelo/versão de cada vetor; nunca misturar espaços | ✓ |
 | **Busca e perguntas** | | |
 | RF17 | Busca semântica, lexical e híbrida | ✓ fusão ponderada (ADR 0007) |
-| RF18 | Escopo: biblioteca, documento ou coleção | ◐ documento por conversa; coleções só no backend |
+| RF18 | Escopo: biblioteca, documento ou coleção | ◐ conversa livre, todos os documentos ou um documento (ADR 0009); coleções só no backend |
 | RF19 | Resposta via Apple FM com streaming | ✓ |
 | RF20 | Citações `[n]` vinculadas a documento, página e trecho | ✓ (também `[página N]`) |
 | RF21 | Clicar na citação abre o PDF na página com o trecho destacado | ✓ |
-| RF22 | "Não encontrei" quando a relevância é baixa, sem chamar o modelo | ✓ |
+| RF22 | "Não encontrei" quando a relevância é baixa, sem chamar o modelo | ✓ no modo documento, com a opção "Responder sem os documentos" |
 | RF23 | Conversas salvas, com perguntas de acompanhamento | ✓ |
 | RF24 | Transparência: mostrar os trechos enviados ao modelo | ✓ lista de fontes na resposta |
+| RF29 | Conversa livre com o Apple FM, sem documentos, como padrão do Chat | ✓ isolada da biblioteca; respostas marcadas "Sem documentos" (ADR 0009) |
 | **Modelos** | | |
 | RF25 | Catálogo embarcado de modelos de embedding | ✓ |
 | RF26 | Download com confirmação, progresso, retomada (Range), SHA-256 e checagem de disco | ✓ |

@@ -51,15 +51,69 @@ pub struct LlmCapabilities {
     pub context_tokens: u32,
 }
 
-/// One generation: instructions (system) and the user turn. Provider-neutral.
+/// An earlier exchange of a conversation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatTurn {
+    pub user: String,
+    pub assistant: String,
+}
+
+/// One generation: instructions (system), earlier turns and the user turn. Provider-neutral.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenerationRequest {
     /// Instructions. Never contains document text.
     pub system: String,
+    /// Earlier turns, oldest first, sent as real conversation turns: given as text inside the
+    /// user turn, the on-device model repeats earlier answers in new ones.
+    pub history: Vec<ChatTurn>,
     pub user: String,
     pub temperature: f32,
     /// Upper bound for the answer, in tokens.
     pub max_tokens: u32,
+}
+
+impl GenerationRequest {
+    /// The user turn with `history` written before it, for interfaces that take a single
+    /// prompt (`fm respond`, `fm count-tokens`).
+    pub fn flat_user(&self) -> String {
+        if self.history.is_empty() {
+            return self.user.clone();
+        }
+        let mut text = String::from("Conversa até aqui:\n");
+        for turn in &self.history {
+            text.push_str(&format!(
+                "Usuário: {}\nAssistente: {}\n",
+                turn.user, turn.assistant
+            ));
+        }
+        text.push_str(&format!("\nMensagem atual do usuário:\n{}", self.user));
+        text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flat_user_writes_the_history_before_the_message() {
+        let mut request = GenerationRequest {
+            system: "s".into(),
+            history: Vec::new(),
+            user: "oi".into(),
+            temperature: 0.5,
+            max_tokens: 10,
+        };
+        assert_eq!(request.flat_user(), "oi");
+        request.history.push(ChatTurn {
+            user: "meu nome é Ana".into(),
+            assistant: "Olá, Ana!".into(),
+        });
+        assert_eq!(
+            request.flat_user(),
+            "Conversa até aqui:\nUsuário: meu nome é Ana\nAssistente: Olá, Ana!\n\nMensagem atual do usuário:\noi"
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

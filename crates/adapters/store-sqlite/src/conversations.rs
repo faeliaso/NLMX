@@ -3,8 +3,8 @@
 use nlmx_application::ports::{BoxFuture, ConversationRepository, FinishedAnswer, StorageError};
 use nlmx_domain::{
     chat::{
-        Conversation, ConversationId, ConversationSummary, Message, MessageId, MessagePageRef,
-        MessageSource, MessageStatus, Role,
+        AnswerGrounding, Conversation, ConversationId, ConversationScope, ConversationSummary,
+        Message, MessageId, MessagePageRef, MessageSource, MessageStatus, Role,
     },
     ingestion::{DocumentId, PageBox},
 };
@@ -55,15 +55,36 @@ fn boxes_json(boxes: &[PageBox]) -> String {
     serde_json::Value::Array(items).to_string()
 }
 
-const CONVERSATION: &str = "SELECT c.id, c.title, s.document_id, c.updated_at
+fn grounding_column(grounding: AnswerGrounding) -> &'static str {
+    match grounding {
+        AnswerGrounding::Documents => "documents",
+        AnswerGrounding::Free => "free",
+    }
+}
+
+fn parse_grounding(value: Option<&str>) -> Option<AnswerGrounding> {
+    match value {
+        Some("free") => Some(AnswerGrounding::Free),
+        Some(_) => Some(AnswerGrounding::Documents),
+        None => None,
+    }
+}
+
+const CONVERSATION: &str = "SELECT c.id, c.title, c.mode, s.document_id, c.updated_at
      FROM conversations c LEFT JOIN conversation_scopes s ON s.conversation_id = c.id";
 
 fn conversation(r: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
+    let mode: String = r.get(2)?;
+    let document: Option<DocumentId> = r.get(3)?;
     Ok(Conversation {
         id: r.get(0)?,
         title: r.get(1)?,
-        document_id: r.get(2)?,
-        updated_at: r.get(3)?,
+        scope: match (mode.as_str(), document) {
+            ("free", _) => ConversationScope::Free,
+            (_, Some(document)) => ConversationScope::Document(document),
+            (_, None) => ConversationScope::Library,
+        },
+        updated_at: r.get(4)?,
     })
 }
 
@@ -77,17 +98,27 @@ fn get(conn: &Connection, id: ConversationId) -> Result<Option<Conversation>, St
     .map_err(err("ler a conversa"))
 }
 
+/// Sets the mode and the document row; the caller touches the conversation.
 fn set_scope(
     conn: &Connection,
     id: ConversationId,
-    document: Option<DocumentId>,
+    scope: ConversationScope,
 ) -> Result<(), StorageError> {
+    let mode = match scope {
+        ConversationScope::Free => "free",
+        ConversationScope::Library | ConversationScope::Document(_) => "documents",
+    };
+    conn.execute(
+        "UPDATE conversations SET mode = ?2 WHERE id = ?1",
+        params![id, mode],
+    )
+    .map_err(err("mudar o escopo"))?;
     conn.execute(
         "DELETE FROM conversation_scopes WHERE conversation_id = ?1",
         [id],
     )
     .map_err(err("mudar o escopo"))?;
-    if let Some(document) = document {
+    if let Some(document) = scope.document() {
         conn.execute(
             "INSERT INTO conversation_scopes (conversation_id, document_id) VALUES (?1, ?2)",
             params![id, document],
@@ -125,7 +156,7 @@ fn sources(conn: &Connection, message: MessageId) -> Result<Vec<MessageSource>, 
 }
 
 const MESSAGE: &str =
-    "SELECT id, conversation_id, role, content, status, outcome, error, created_at
+    "SELECT id, conversation_id, role, content, status, outcome, error, created_at, grounding
      FROM messages";
 
 fn message_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
@@ -141,6 +172,7 @@ fn message_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
         },
         content: r.get(3)?,
         status: parse_status(&status, outcome.as_deref()),
+        grounding: parse_grounding(r.get::<_, Option<String>>(8)?.as_deref()),
         error: r.get(6)?,
         sources: Vec::new(),
         page_refs: Vec::new(),
@@ -184,14 +216,14 @@ fn touch(conn: &Connection, id: ConversationId) -> Result<(), StorageError> {
 impl ConversationRepository for Database {
     fn create(
         &self,
-        document: Option<DocumentId>,
+        scope: ConversationScope,
     ) -> BoxFuture<'_, Result<Conversation, StorageError>> {
         Box::pin(self.run(move |conn| {
             let tx = conn.transaction().map_err(err("criar a conversa"))?;
             tx.execute("INSERT INTO conversations DEFAULT VALUES", [])
                 .map_err(err("criar a conversa"))?;
             let id = tx.last_insert_rowid();
-            set_scope(&tx, id, document)?;
+            set_scope(&tx, id, scope)?;
             let created = get(&tx, id)?.expect("just inserted");
             tx.commit().map_err(err("criar a conversa"))?;
             Ok(created)
@@ -228,11 +260,13 @@ impl ConversationRepository for Database {
     fn set_scope(
         &self,
         id: ConversationId,
-        document: Option<DocumentId>,
+        scope: ConversationScope,
     ) -> BoxFuture<'_, Result<(), StorageError>> {
         Box::pin(self.run(move |conn| {
-            set_scope(conn, id, document)?;
-            touch(conn, id)
+            let tx = conn.transaction().map_err(err("mudar o escopo"))?;
+            set_scope(&tx, id, scope)?;
+            touch(&tx, id)?;
+            tx.commit().map_err(err("mudar o escopo"))
         }))
     }
 
@@ -294,14 +328,15 @@ impl ConversationRepository for Database {
         role: Role,
         content: &'a str,
         status: MessageStatus,
+        grounding: Option<AnswerGrounding>,
     ) -> BoxFuture<'a, Result<MessageId, StorageError>> {
         let content = content.to_string();
         Box::pin(self.run(move |conn| {
             let tx = conn.transaction().map_err(err("gravar a mensagem"))?;
             let (status, outcome) = status_columns(status);
             tx.execute(
-                "INSERT INTO messages (conversation_id, role, content, status, outcome)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO messages (conversation_id, role, content, status, outcome, grounding)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     conversation,
                     match role {
@@ -310,7 +345,8 @@ impl ConversationRepository for Database {
                     },
                     content,
                     status,
-                    outcome
+                    outcome,
+                    grounding.map(grounding_column)
                 ],
             )
             .map_err(err("gravar a mensagem"))?;
@@ -392,7 +428,11 @@ impl ConversationRepository for Database {
         }))
     }
 
-    fn reset_message(&self, id: MessageId) -> BoxFuture<'_, Result<(), StorageError>> {
+    fn reset_message(
+        &self,
+        id: MessageId,
+        grounding: AnswerGrounding,
+    ) -> BoxFuture<'_, Result<(), StorageError>> {
         Box::pin(self.run(move |conn| {
             let tx = conn.transaction().map_err(err("reiniciar a resposta"))?;
             tx.execute("DELETE FROM citations WHERE message_id = ?1", [id])
@@ -400,9 +440,10 @@ impl ConversationRepository for Database {
             tx.execute("DELETE FROM message_page_refs WHERE message_id = ?1", [id])
                 .map_err(err("reiniciar a resposta"))?;
             tx.execute(
-                "UPDATE messages SET content = '', status = 'streaming', outcome = NULL, error = NULL
+                "UPDATE messages SET content = '', status = 'streaming', outcome = NULL, error = NULL,
+                     grounding = ?2
                  WHERE id = ?1",
-                [id],
+                params![id, grounding_column(grounding)],
             )
             .map_err(err("reiniciar a resposta"))?;
             tx.commit().map_err(err("reiniciar a resposta"))

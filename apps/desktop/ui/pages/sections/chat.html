@@ -1,22 +1,25 @@
 {% import "components/ds.html" as ds %}
-<div class="chat-page" data-chat-page data-conversation="{{ conversation_id }}"{% if !viewer_html.is_empty() %} data-panel-open{% endif %}>
+<div class="chat-page" data-chat-page data-conversation="{{ conversation_id }}" data-scope="{% if free %}free{% else %}documents{% endif %}"{% if !viewer_html.is_empty() %} data-panel-open{% endif %}>
   <header class="page-header chat-header" data-tauri-drag-region>
     <div class="page-heading" data-tauri-drag-region>
       <h1 class="page-title chat-title" tabindex="-1" data-page-title>{{ title }}</h1>
-      <p class="page-description">Respostas com citações dos seus documentos.</p>
+      <p class="page-description">{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}</p>
     </div>
     <div class="page-actions chat-actions">
-      {%- if enabled %}
       <form class="chat-scope" hx-post="/chat/{{ conversation_id }}/scope" hx-trigger="change" hx-target="#content">
-        <label class="sr-only" for="chat-scope">Documento da conversa</label>
-        <select class="select" id="chat-scope" name="document" title="Documento da conversa">
-          <option value=""{% if scope_title == "Todos os documentos" %} selected{% endif %}>Todos os documentos</option>
-          {%- for d in documents %}
-          <option value="{{ d.id }}"{% if d.selected %} selected{% endif %}>{{ d.title }}</option>
-          {%- endfor %}
+        <label class="sr-only" for="chat-scope">Sobre o que é a conversa</label>
+        <select class="select" id="chat-scope" name="scope" title="Sobre o que é a conversa">
+          <option value="free"{% if free %} selected{% endif %}>Conversa livre</option>
+          {%- if !documents.is_empty() || !free %}
+          <optgroup label="Documentos">
+            <option value="all"{% if library %} selected{% endif %}>Todos os documentos</option>
+            {%- for d in documents %}
+            <option value="{{ d.id }}"{% if d.selected %} selected{% endif %}>{{ d.title }}</option>
+            {%- endfor %}
+          </optgroup>
+          {%- endif %}
         </select>
       </form>
-      {%- endif %}
       <button type="button" class="btn btn-secondary btn-icon" popovertarget="chat-recent" aria-label="Conversas recentes" title="Conversas recentes">{% call ds::icon("clock") %}{% endcall %}</button>
       <div popover class="menu chat-recent" id="chat-recent" role="menu" aria-label="Conversas recentes">
         <p class="menu-label">Conversas recentes</p>
@@ -27,7 +30,7 @@
         <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="delete-conversation">{% call ds::icon("trash") %}{% endcall %}<span>Excluir esta conversa</span></button>
       </div>
       <form hx-post="/chat/new" hx-target="#content">
-        {%- for d in documents %}{% if d.selected %}<input type="hidden" name="document" value="{{ d.id }}">{% endif %}{% endfor %}
+        <input type="hidden" name="scope" value="{{ scope_value }}">
         <button type="submit" class="btn btn-secondary">{% call ds::icon("plus") %}{% endcall %}Nova conversa</button>
       </form>
     </div>
@@ -42,18 +45,20 @@
       <div class="chat-log-inner" id="chat-turns">
         {%- if turns.is_empty() %}
         <div class="chat-empty" data-chat-empty>
-          {%- if enabled %}
-          {% call ds::empty_state("chat", "Pergunte sobre seus documentos", "As respostas citam os trechos e as páginas de origem. Escolha um documento acima para perguntas sobre ele.") %}
+          {%- if !free %}
+          {% call ds::empty_state("chat", "Pergunte sobre seus documentos", "As respostas citam os trechos e as páginas de origem. Se a informação não estiver nos documentos, a resposta avisa.") %}
           <div class="chat-suggestions">
             {%- for s in suggestions %}
             <button type="button" class="btn btn-secondary btn-sm" data-fill-question="{{ s }}">{{ s }}</button>
             {%- endfor %}
           </div>
           {% endcall %}
-          {%- else %}
-          {% call ds::empty_state("chat", "Converse com seus documentos", "Importe PDFs para fazer perguntas. Cada resposta indica o trecho e a página de origem.") %}
+          {%- elif documents.is_empty() %}
+          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac. Para perguntar sobre seus PDFs, com citações, importe-os em Documentos.") %}
             <a class="btn btn-secondary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{% call ds::icon("document") %}{% endcall %}Ir para Documentos</a>
           {% endcall %}
+          {%- else %}
+          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac, sem consultar seus documentos. Para respostas com citações, escolha um documento ou “Todos os documentos” acima.") %}{% endcall %}
           {%- endif %}
         </div>
         {%- endif %}
@@ -66,12 +71,12 @@
     <aside class="viewer-pane" id="viewer" aria-label="Documento" tabindex="-1">{{ viewer_html|safe }}</aside>
   </div>
 
-  <form class="composer" aria-label="Nova pergunta" id="chat-form"{% if enabled %} hx-post="/chat/{{ conversation_id }}/messages" hx-target="#chat-turns" hx-swap="beforeend"{% endif %}>
+  <form class="composer" aria-label="Nova pergunta" id="chat-form" hx-post="/chat/{{ conversation_id }}/messages" hx-target="#chat-turns" hx-swap="beforeend">
     <div class="composer-box">
       <label class="sr-only" for="question">Pergunta</label>
       <textarea class="textarea" id="question" name="q" rows="1" required data-submit-on-enter data-autogrow
-                {% if enabled %}placeholder="Pergunte algo sobre {% if scope_title == "Todos os documentos" %}seus documentos{% else %}{{ scope_title }}{% endif %}…"{% else %}disabled placeholder="Disponível quando houver documentos importados"{% endif %}></textarea>
-      <button type="submit" class="btn btn-primary btn-icon composer-action"{% if !enabled %} disabled{% endif %} aria-label="Enviar pergunta" title="Enviar pergunta">{% call ds::icon("send") %}{% endcall %}{% call ds::icon("stop") %}{% endcall %}</button>
+                placeholder="{% if free %}Pergunte qualquer coisa{% elif library %}Pergunte algo sobre seus documentos{% else %}Pergunte algo sobre {{ scope_title }}{% endif %}…"></textarea>
+      <button type="submit" class="btn btn-primary btn-icon composer-action" aria-label="Enviar pergunta" title="Enviar pergunta">{% call ds::icon("send") %}{% endcall %}{% call ds::icon("stop") %}{% endcall %}</button>
     </div>
     <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
   </form>

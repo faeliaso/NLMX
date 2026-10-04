@@ -13,6 +13,7 @@ use nlmx_application::{
         StorageDiagnostics, StorageError, StorageInfo,
     },
     services::{
+        free_chat::FreeChat,
         rag::{RagEngine, RagOptions},
         retrieval::HybridRetriever,
         retriever::Retriever,
@@ -227,6 +228,7 @@ pub fn build(
                     db.clone(),
                     language_model.clone(),
                 )),
+                free: Arc::new(FreeChat::new(language_model.clone())),
                 options: RagOptions::default(),
             })),
             (Err(e), _) => Err(e.clone()),

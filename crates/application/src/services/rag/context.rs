@@ -240,6 +240,7 @@ impl ContextBuilder {
         user.push_str(&question_block(question));
         let request = GenerationRequest {
             system: self.system(),
+            history: Vec::new(),
             user,
             temperature: self.temperature,
             max_tokens: self.budget.answer_tokens,

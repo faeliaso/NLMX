@@ -105,7 +105,7 @@ impl LlmProvider for FakeLlmProvider {
             if !scripted.is_empty() {
                 return Ok(scripted.remove(0));
             }
-            let chars = request.system.chars().count() + request.user.chars().count();
+            let chars = request.system.chars().count() + request.flat_user().chars().count();
             Ok((chars as u32).div_ceil(4))
         })
     }
@@ -1524,6 +1524,7 @@ where
 
     let request = |user: &str| GenerationRequest {
         system: "Responda só com base nos trechos.".into(),
+        history: Vec::new(),
         user: user.into(),
         temperature: 0.2,
         max_tokens: 200,
@@ -1633,8 +1634,8 @@ mod llm_contract {
 
 use nlmx_application::ports::ConversationRepository;
 use nlmx_domain::chat::{
-    Conversation, ConversationId, ConversationSummary, Message, MessageId, MessageSource,
-    MessageStatus, Role,
+    AnswerGrounding, Conversation, ConversationId, ConversationScope, ConversationSummary, Message,
+    MessageId, MessageSource, MessageStatus, Role,
 };
 
 /// In-memory conversations; timestamps are a counter (enough for ordering).
@@ -1667,7 +1668,7 @@ impl ConversationState {
 impl ConversationRepository for FakeConversations {
     fn create(
         &self,
-        document: Option<DocumentId>,
+        scope: ConversationScope,
     ) -> BoxFuture<'_, Result<Conversation, StorageError>> {
         Box::pin(async move {
             let mut s = self.state.lock().unwrap();
@@ -1675,7 +1676,7 @@ impl ConversationRepository for FakeConversations {
             let conversation = Conversation {
                 id: s.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1,
                 title: None,
-                document_id: document,
+                scope,
                 updated_at,
             };
             s.conversations.push(conversation.clone());
@@ -1722,12 +1723,12 @@ impl ConversationRepository for FakeConversations {
     fn set_scope(
         &self,
         id: ConversationId,
-        document: Option<DocumentId>,
+        scope: ConversationScope,
     ) -> BoxFuture<'_, Result<(), StorageError>> {
         Box::pin(async move {
             let mut s = self.state.lock().unwrap();
             if let Some(c) = s.conversations.iter_mut().find(|c| c.id == id) {
-                c.document_id = document;
+                c.scope = scope;
             }
             s.touch(id);
             Ok(())
@@ -1790,6 +1791,7 @@ impl ConversationRepository for FakeConversations {
         role: Role,
         content: &'a str,
         status: MessageStatus,
+        grounding: Option<AnswerGrounding>,
     ) -> BoxFuture<'a, Result<MessageId, StorageError>> {
         Box::pin(async move {
             let mut s = self.state.lock().unwrap();
@@ -1801,6 +1803,7 @@ impl ConversationRepository for FakeConversations {
                 role,
                 content: content.to_string(),
                 status,
+                grounding,
                 error: None,
                 sources: Vec::new(),
                 page_refs: Vec::new(),
@@ -1832,12 +1835,17 @@ impl ConversationRepository for FakeConversations {
         })
     }
 
-    fn reset_message(&self, id: MessageId) -> BoxFuture<'_, Result<(), StorageError>> {
+    fn reset_message(
+        &self,
+        id: MessageId,
+        grounding: AnswerGrounding,
+    ) -> BoxFuture<'_, Result<(), StorageError>> {
         Box::pin(async move {
             let mut s = self.state.lock().unwrap();
             if let Some(m) = s.messages.iter_mut().find(|m| m.id == id) {
                 m.content.clear();
                 m.status = MessageStatus::Streaming;
+                m.grounding = Some(grounding);
                 m.error = None;
                 m.sources.clear();
                 m.page_refs.clear();
@@ -1852,11 +1860,16 @@ pub async fn conversation_repository_contract(
     repo: &dyn ConversationRepository,
     document: DocumentId,
 ) {
-    let all = repo.create(None).await.unwrap();
-    assert_eq!(all.document_id, None);
-    let scoped = repo.create(Some(document)).await.unwrap();
-    assert_eq!(scoped.document_id, Some(document));
+    let all = repo.create(ConversationScope::Library).await.unwrap();
+    assert_eq!(all.scope, ConversationScope::Library);
+    let scoped = repo
+        .create(ConversationScope::Document(document))
+        .await
+        .unwrap();
+    assert_eq!(scoped.scope, ConversationScope::Document(document));
     assert_ne!(all.id, scoped.id);
+    let free = repo.create(ConversationScope::Free).await.unwrap();
+    assert_eq!(free.scope, ConversationScope::Free);
 
     let q = repo
         .add_message(
@@ -1864,11 +1877,18 @@ pub async fn conversation_repository_contract(
             Role::User,
             "Qual a carência?",
             MessageStatus::Answered,
+            None,
         )
         .await
         .unwrap();
     let a = repo
-        .add_message(all.id, Role::Assistant, "", MessageStatus::Streaming)
+        .add_message(
+            all.id,
+            Role::Assistant,
+            "",
+            MessageStatus::Streaming,
+            Some(AnswerGrounding::Documents),
+        )
         .await
         .unwrap();
     repo.set_title(all.id, "Qual a carência?").await.unwrap();
@@ -1925,8 +1945,10 @@ pub async fn conversation_repository_contract(
         "oldest first"
     );
     assert_eq!(messages[0].role, Role::User);
+    assert_eq!(messages[0].grounding, None);
     assert!(messages[0].sources.is_empty());
     let answer = &messages[1];
+    assert_eq!(answer.grounding, Some(AnswerGrounding::Documents));
     assert_eq!(answer.content, "Termina após 180 dias [1] [página 3].");
     assert_eq!(answer.status, MessageStatus::Answered);
     assert_eq!(answer.sources, [source.clone(), unused]);
@@ -1965,20 +1987,33 @@ pub async fn conversation_repository_contract(
         );
     }
 
-    repo.reset_message(a).await.unwrap();
+    repo.reset_message(a, AnswerGrounding::Free).await.unwrap();
     let m = repo.message(a).await.unwrap().unwrap();
     assert_eq!(
-        (m.status, m.content.as_str(), m.error.clone()),
-        (MessageStatus::Streaming, "", None)
+        (m.status, m.content.as_str(), m.error.clone(), m.grounding),
+        (
+            MessageStatus::Streaming,
+            "",
+            None,
+            Some(AnswerGrounding::Free)
+        )
     );
 
-    repo.set_scope(all.id, Some(document)).await.unwrap();
+    for scope in [
+        ConversationScope::Document(document),
+        ConversationScope::Free,
+        ConversationScope::Library,
+        ConversationScope::Free,
+        ConversationScope::Document(document),
+    ] {
+        repo.set_scope(all.id, scope).await.unwrap();
+        assert_eq!(repo.get(all.id).await.unwrap().unwrap().scope, scope);
+    }
     assert_eq!(
-        repo.get(all.id).await.unwrap().unwrap().document_id,
-        Some(document)
+        repo.message(a).await.unwrap().unwrap().grounding,
+        Some(AnswerGrounding::Free),
+        "answers keep their grounding when the scope changes"
     );
-    repo.set_scope(all.id, None).await.unwrap();
-    assert_eq!(repo.get(all.id).await.unwrap().unwrap().document_id, None);
 
     repo.delete(all.id).await.unwrap();
     assert!(repo.get(all.id).await.unwrap().is_none());

@@ -35,12 +35,48 @@ impl MessageStatus {
     }
 }
 
+/// What a conversation answers from (ADR 0009).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationScope {
+    /// Open conversation with the language model; the library is never searched.
+    Free,
+    /// Every document.
+    Library,
+    Document(DocumentId),
+}
+
+impl ConversationScope {
+    /// How answers to new questions are produced.
+    pub fn grounding(self) -> AnswerGrounding {
+        match self {
+            Self::Free => AnswerGrounding::Free,
+            Self::Library | Self::Document(_) => AnswerGrounding::Documents,
+        }
+    }
+
+    pub fn document(self) -> Option<DocumentId> {
+        match self {
+            Self::Document(id) => Some(id),
+            Self::Free | Self::Library => None,
+        }
+    }
+}
+
+/// What an answer was generated from. Kept per answer: changing the scope of a conversation
+/// does not change earlier answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnswerGrounding {
+    /// Retrieved passages, with citations and the relevance gate.
+    Documents,
+    /// The language model alone, without sources.
+    Free,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conversation {
     pub id: ConversationId,
     pub title: Option<String>,
-    /// The document the conversation is about; `None` = every document.
-    pub document_id: Option<DocumentId>,
+    pub scope: ConversationScope,
     pub updated_at: String,
 }
 
@@ -86,6 +122,8 @@ pub struct Message {
     pub role: Role,
     pub content: String,
     pub status: MessageStatus,
+    /// Assistant messages only.
+    pub grounding: Option<AnswerGrounding>,
     pub error: Option<String>,
     /// Assistant messages only, by `n`.
     pub sources: Vec<MessageSource>,

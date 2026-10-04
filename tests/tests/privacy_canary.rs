@@ -11,6 +11,7 @@ use nlmx_application::{
     ports::{CancelFlag, EmbeddingSource, LlmProvider},
     services::{rag::RagOptions, retriever::RetrieverOptions},
 };
+use nlmx_domain::chat::ConversationScope;
 use nlmx_telemetry::{Format, LogLayer, MemorySink, MetricsLayer, MetricsRegistry};
 use nlmx_testing::FakeLlmProvider;
 use support::{Library, deterministic_embeddings, fixture, temp_dir};
@@ -66,7 +67,7 @@ async fn exercise(
             ..Default::default()
         },
     );
-    let c = chat.start(Some(id)).await.unwrap();
+    let c = chat.start(ConversationScope::Document(id)).await.unwrap();
     for question in [
         format!("O que diz o prontuário {CANARY}?"),
         "Explique este documento.".into(),
@@ -77,6 +78,30 @@ async fn exercise(
             .await
             .unwrap();
         assert!(m.status.is_final());
+    }
+    // A free conversation, and a question "not found" in the document answered without it.
+    let free = chat.start(ConversationScope::Free).await.unwrap();
+    let (_, answer) = chat
+        .ask(free.id, &format!("Quem é {CANARY}?"))
+        .await
+        .unwrap();
+    let m = chat
+        .answer(answer, &|_| {}, CancelFlag::default())
+        .await
+        .unwrap();
+    assert!(m.status.is_final());
+    let (_, answer) = chat
+        .ask(c.id, &format!("Qual a capital de {CANARY}?"))
+        .await
+        .unwrap();
+    let m = chat
+        .answer(answer, &|_| {}, CancelFlag::default())
+        .await
+        .unwrap();
+    if chat.answer_freely(m.id).await.is_ok() {
+        chat.answer(answer, &|_| {}, CancelFlag::default())
+            .await
+            .unwrap();
     }
     let viewer = library.viewer();
     assert!(!viewer.search(id, CANARY).await.unwrap().hits.is_empty());

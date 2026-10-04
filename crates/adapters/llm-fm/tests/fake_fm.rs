@@ -36,6 +36,7 @@ fn provider(name: &str, env: &[(&str, &str)]) -> (FoundationModelsProvider, Path
 fn request() -> GenerationRequest {
     GenerationRequest {
         system: "Responda com base nos trechos.".into(),
+        history: Vec::new(),
         user: "<pergunta>\nQual a carência?\n</pergunta>".into(),
         temperature: 0.2,
         max_tokens: 100,
@@ -93,6 +94,74 @@ async fn streams_the_answer_and_sends_system_and_user_messages() {
         .unwrap();
     assert_eq!(std::fs::read_to_string(&record).unwrap().lines().count(), 2);
     fm.shutdown().await;
+}
+
+/// Earlier turns go to `fm serve` as conversation turns; `fm respond` gets them in the prompt.
+#[tokio::test]
+async fn earlier_turns_are_sent_as_conversation_turns() {
+    let mut with_history = request();
+    with_history.history = vec![nlmx_domain::generation::ChatTurn {
+        user: "meu nome é Ana".into(),
+        assistant: "Olá, Ana!".into(),
+    }];
+    with_history.user = "qual é o meu nome?".into();
+
+    let record = dir("turns-record").join("requests.jsonl");
+    let record_s = record.display().to_string();
+    let (fm, _) = provider("turns", &[("FAKE_FM_RECORD", &record_s)]);
+    fm.generate(&with_history, &|_| {}, CancelFlag::default())
+        .await
+        .unwrap();
+    fm.shutdown().await;
+    let body: serde_json::Value = serde_json::from_str(
+        std::fs::read_to_string(&record)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let messages: Vec<(&str, &str)> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| (m["role"].as_str().unwrap(), m["content"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            ("system", "Responda com base nos trechos."),
+            ("user", "meu nome é Ana"),
+            ("assistant", "Olá, Ana!"),
+            ("user", "qual é o meu nome?"),
+        ]
+    );
+
+    let record = dir("turns-fallback-record").join("requests.jsonl");
+    let record_s = record.display().to_string();
+    let (fm, _) = provider(
+        "turns-fallback",
+        &[("FAKE_FM_SERVE_EXIT", "1"), ("FAKE_FM_RECORD", &record_s)],
+    );
+    fm.generate(&with_history, &|_| {}, CancelFlag::default())
+        .await
+        .unwrap();
+    let line: serde_json::Value = serde_json::from_str(
+        std::fs::read_to_string(&record)
+            .unwrap()
+            .lines()
+            .last()
+            .unwrap(),
+    )
+    .unwrap();
+    let args: Vec<&str> = line["respond"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    let i = args.iter().position(|a| *a == "-i").unwrap();
+    assert_eq!(args[i + 2], with_history.flat_user());
 }
 
 #[tokio::test]

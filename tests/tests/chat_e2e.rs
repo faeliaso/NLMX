@@ -7,6 +7,7 @@ use std::{path::Path, sync::Arc};
 use nlmx_application::{
     ports::{CancelFlag, LlmProvider},
     services::{
+        free_chat::FreeChat,
         rag::{RagEngine, RagOptions},
         retrieval::HybridRetriever,
         retriever::Retriever,
@@ -15,7 +16,7 @@ use nlmx_application::{
 };
 use nlmx_chunker_structural::{HeuristicTokenCounter, StructuralChunker};
 use nlmx_domain::{
-    chat::MessageStatus,
+    chat::{ConversationScope, MessageStatus},
     ingestion::{ChunkPolicy, ImportOutcome},
 };
 use nlmx_fs_library::FsLibrary;
@@ -71,7 +72,8 @@ async fn app(name: &str, llm: Arc<dyn LlmProvider>) -> App {
     App {
         chat: ChatService {
             conversations: db.clone(),
-            rag: Arc::new(RagEngine::new(retriever, db.clone(), llm)),
+            rag: Arc::new(RagEngine::new(retriever, db.clone(), llm.clone())),
+            free: Arc::new(FreeChat::new(llm)),
             options: RagOptions::default(),
         },
         pages: ViewDocument::new(engine, db),
@@ -88,7 +90,7 @@ async fn explain_and_section_questions_use_the_document_structure() {
     let app = app("fake", llm.clone()).await;
 
     // Without a chosen document (two in the library) the overview asks for one.
-    let all = app.chat.start(None).await.unwrap();
+    let all = app.chat.start(ConversationScope::Library).await.unwrap();
     let (_, a) = app.chat.ask(all.id, EXPLAIN).await.unwrap();
     let m = app
         .chat
@@ -98,7 +100,11 @@ async fn explain_and_section_questions_use_the_document_structure() {
     assert_eq!(m.status, MessageStatus::NotFound);
     assert!(llm.requests().is_empty());
 
-    let c = app.chat.start(Some(app.report)).await.unwrap();
+    let c = app
+        .chat
+        .start(ConversationScope::Document(app.report))
+        .await
+        .unwrap();
     let (_, a) = app.chat.ask(c.id, EXPLAIN).await.unwrap();
     let m = app
         .chat
@@ -192,7 +198,11 @@ fn real_fm() -> Arc<FoundationModelsProvider> {
 async fn real_fm_explains_the_document_and_its_section_3() {
     let fm = real_fm();
     let app = app("real", fm.clone()).await;
-    let c = app.chat.start(Some(app.report)).await.unwrap();
+    let c = app
+        .chat
+        .start(ConversationScope::Document(app.report))
+        .await
+        .unwrap();
 
     let (_, a) = app.chat.ask(c.id, EXPLAIN).await.unwrap();
     let m = app

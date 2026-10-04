@@ -168,7 +168,7 @@ impl FoundationModelsProvider {
             .command()
             .args(["count-tokens", "-q", "-i"])
             .arg(&request.system)
-            .arg(&request.user)
+            .arg(request.flat_user())
             .output();
         let output = tokio::time::timeout(COUNT_TIMEOUT, output)
             .await
@@ -272,15 +272,18 @@ impl FoundationModelsProvider {
         on_token: &(dyn Fn(&str) + Send + Sync),
         cancel: CancelFlag,
     ) -> Result<Generation, LlmError> {
+        let mut messages = vec![serde_json::json!({ "role": "system", "content": request.system })];
+        for turn in &request.history {
+            messages.push(serde_json::json!({ "role": "user", "content": turn.user }));
+            messages.push(serde_json::json!({ "role": "assistant", "content": turn.assistant }));
+        }
+        messages.push(serde_json::json!({ "role": "user", "content": request.user }));
         let body = serde_json::json!({
             "model": "system",
             "stream": true,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
-            "messages": [
-                { "role": "system", "content": request.system },
-                { "role": "user", "content": request.user },
-            ],
+            "messages": messages,
         });
         let send = client
             .post("http://localhost/v1/chat/completions")
@@ -450,6 +453,7 @@ mod tests {
         ));
         let request = GenerationRequest {
             system: "s".into(),
+            history: Vec::new(),
             user: "u".into(),
             temperature: 0.2,
             max_tokens: 10,

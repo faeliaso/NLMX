@@ -254,6 +254,7 @@ async fn real_fm_respond_path_keeps_instructions_separate_and_cancels() {
     let fm = FoundationModelsProvider::new(config);
     let request = GenerationRequest {
         system: "Responda somente com a palavra pedida, em maiúsculas, sem pontuação.".into(),
+        history: Vec::new(),
         user: "A palavra é: LARANJA".into(),
         temperature: 0.0,
         max_tokens: 20,
@@ -268,6 +269,7 @@ async fn real_fm_respond_path_keeps_instructions_separate_and_cancels() {
 
     let long = GenerationRequest {
         system: "Responda em português.".into(),
+        history: Vec::new(),
         user:
             "Escreva um texto longo, com dez parágrafos, sobre a história dos contratos de seguro."
                 .into(),

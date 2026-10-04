@@ -121,6 +121,44 @@ fn migrations_are_reversible() {
     migrations::migrate_to_latest(&mut conn).unwrap();
 }
 
+/// Conversations from before the free chat (0010) keep answering from the documents.
+#[test]
+fn free_chat_migration_keeps_existing_conversations_on_the_documents() {
+    let mut conn = connection::open(&temp_db()).unwrap();
+    migrations::migrate_to(&mut conn, 9).unwrap();
+    conn.execute_batch(
+        "INSERT INTO conversations (id) VALUES (1);
+         INSERT INTO messages (conversation_id, role, content) VALUES (1, 'user', 'q');
+         INSERT INTO messages (conversation_id, role, content) VALUES (1, 'assistant', 'a');",
+    )
+    .unwrap();
+    migrations::migrate_to_latest(&mut conn).unwrap();
+    let mode: String = conn
+        .query_row("SELECT mode FROM conversations WHERE id = 1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(mode, "documents");
+    let grounding = |role: &str| -> Option<String> {
+        conn.query_row(
+            "SELECT grounding FROM messages WHERE role = ?1",
+            [role],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(grounding("user"), None);
+    assert_eq!(grounding("assistant").as_deref(), Some("documents"));
+    assert!(
+        conn.execute("UPDATE conversations SET mode = 'outro' WHERE id = 1", [])
+            .is_err()
+    );
+    assert!(
+        conn.execute("UPDATE messages SET grounding = 'outro'", [])
+            .is_err()
+    );
+}
+
 #[test]
 fn connection_pragmas() {
     let conn = migrated();
@@ -1285,7 +1323,9 @@ mod conversations {
     use nlmx_application::ports::{
         ConversationRepository, DocumentRepository, InsertOutcome, NewDocument,
     };
-    use nlmx_domain::chat::{MessageSource, MessageStatus, Role};
+    use nlmx_domain::chat::{
+        AnswerGrounding, ConversationScope, MessageSource, MessageStatus, Role,
+    };
 
     use super::{count, temp_db};
     use crate::{Database, connection};
@@ -1319,13 +1359,14 @@ mod conversations {
         let path = temp_db();
         let db = Database::open(&path).unwrap();
         let doc = document(&db, 'd').await;
-        let conversation = db.create(Some(doc)).await.unwrap();
+        let conversation = db.create(ConversationScope::Document(doc)).await.unwrap();
         let answer = db
             .add_message(
                 conversation.id,
                 Role::Assistant,
                 "",
                 MessageStatus::Streaming,
+                Some(AnswerGrounding::Documents),
             )
             .await
             .unwrap();
@@ -1370,7 +1411,7 @@ mod conversations {
         let reloaded = ConversationRepository::get(&db, conversation.id)
             .await
             .unwrap();
-        assert_eq!(reloaded.unwrap().document_id, None);
+        assert_eq!(reloaded.unwrap().scope, ConversationScope::Library);
         assert_eq!(count(&conn, "SELECT count(*) FROM citations"), 0);
         assert_eq!(count(&conn, "SELECT count(*) FROM message_page_refs"), 0);
         assert_eq!(
@@ -1415,11 +1456,18 @@ mod conversations {
                 Role::User,
                 "pergunta",
                 MessageStatus::Answered,
+                None,
             )
             .await
             .unwrap();
         let a = db
-            .add_message(conversation, Role::Assistant, "", MessageStatus::Streaming)
+            .add_message(
+                conversation,
+                Role::Assistant,
+                "",
+                MessageStatus::Streaming,
+                Some(AnswerGrounding::Documents),
+            )
             .await
             .unwrap();
         let sources: Vec<MessageSource> = sources
@@ -1483,15 +1531,15 @@ mod conversations {
         add_chunks(&path, y, &["reajuste anual"]);
 
         // A: restricted to X. B: mixed. C: only X, unrestricted. D: restricted to Y.
-        let a = db.create(Some(x)).await.unwrap().id;
+        let a = db.create(ConversationScope::Document(x)).await.unwrap().id;
         turn(&db, a, &[x], None).await;
-        let b = db.create(None).await.unwrap().id;
+        let b = db.create(ConversationScope::Library).await.unwrap().id;
         turn(&db, b, &[x, y], None).await;
         let (kept_q, kept_a) = turn(&db, b, &[y], None).await;
         turn(&db, b, &[y], Some(x)).await; // only a `[página N]` of X
-        let c = db.create(None).await.unwrap().id;
+        let c = db.create(ConversationScope::Library).await.unwrap().id;
         turn(&db, c, &[x], None).await;
-        let d = db.create(Some(y)).await.unwrap().id;
+        let d = db.create(ConversationScope::Document(y)).await.unwrap().id;
         let d_turn = turn(&db, d, &[y], None).await;
 
         let expected = RemovalImpact {
@@ -1519,8 +1567,8 @@ mod conversations {
                 .await
                 .unwrap()
                 .unwrap()
-                .document_id,
-            Some(y)
+                .scope,
+            ConversationScope::Document(y)
         );
 
         let conn = connection::open(&path).unwrap();
@@ -1554,7 +1602,7 @@ mod conversations {
         let doc = document(&db, 'k').await;
         let filler = "texto de enchimento ".repeat(200);
         add_chunks(&path, doc, &[&format!("{filler} {CANARY} {filler}")]);
-        let conversation = db.create(None).await.unwrap().id;
+        let conversation = db.create(ConversationScope::Library).await.unwrap().id;
         let (_, answer) = turn(&db, conversation, &[doc], None).await;
         let conn = connection::open(&path).unwrap();
         conn.execute(

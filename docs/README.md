@@ -2,7 +2,7 @@
 
 | Documento | Para quê |
 |---|---|
-| [`PRODUCT.md`](PRODUCT.md) | Visão, restrições, requisitos RF01–RF28 com status, metas medidas, riscos e próximos passos |
+| [`PRODUCT.md`](PRODUCT.md) | Visão, restrições, requisitos RF01–RF29 com status, metas medidas, riscos e próximos passos |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Como o sistema é hoje: camadas, ports, fluxos (ingestão, busca, RAG, viewer), processos, modelos, banco |
 | [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) | Tokens, componentes, estados e regras de acessibilidade da UI |
 | [`TESTING.md`](TESTING.md) | Suítes de teste, o que cada uma cobre, métricas e logs |

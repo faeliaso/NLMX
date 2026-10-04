@@ -512,13 +512,15 @@ mod tests {
             corpus.clone(),
             corpus.clone(),
         );
+        let llm = Arc::new(llm);
         let service = ChatService {
             conversations: Arc::new(FakeConversations::default()),
             rag: Arc::new(RagEngine::new(
                 Arc::new(Retriever::new(Arc::new(hybrid))),
                 corpus,
-                Arc::new(llm),
+                llm.clone(),
             )),
+            free: Arc::new(nlmx_application::services::free_chat::FreeChat::new(llm)),
             options: RagOptions {
                 retriever: RetrieverOptions {
                     min_score: 0.0,

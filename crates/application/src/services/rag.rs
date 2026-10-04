@@ -118,6 +118,21 @@ impl std::fmt::Display for RagError {
     }
 }
 
+/// How a failed answer is recorded.
+pub(crate) fn failure_kind(e: &RagError) -> ErrorKind {
+    match e {
+        RagError::Retrieval(_) => ErrorKind::Storage,
+        RagError::ModelUnavailable { .. } => ErrorKind::Unavailable,
+        RagError::Generation(LlmError::Timeout) => ErrorKind::Timeout,
+        RagError::Generation(LlmError::Refused(_)) => ErrorKind::Refused,
+        RagError::Generation(LlmError::Unavailable(_) | LlmError::LicenseRequired) => {
+            ErrorKind::Unavailable
+        }
+        RagError::Generation(LlmError::ContextTooLong { .. }) => ErrorKind::Invalid,
+        RagError::Generation(LlmError::Protocol(_)) => ErrorKind::Other,
+    }
+}
+
 /// Search results added to a section's passages.
 const SECTION_EXTRA_PASSAGES: usize = 3;
 
@@ -430,6 +445,7 @@ impl RagEngine {
         ));
         let request = GenerationRequest {
             system: REWRITE_INSTRUCTIONS.into(),
+            history: Vec::new(),
             user,
             temperature: 0.0,
             max_tokens: 120,
@@ -489,17 +505,7 @@ impl RagEngine {
                 total_ms: ms(started),
             }),
             Err(e) => record(&Measurement::GenerationFailed {
-                kind: match e {
-                    RagError::Retrieval(_) => ErrorKind::Storage,
-                    RagError::ModelUnavailable { .. } => ErrorKind::Unavailable,
-                    RagError::Generation(LlmError::Timeout) => ErrorKind::Timeout,
-                    RagError::Generation(LlmError::Refused(_)) => ErrorKind::Refused,
-                    RagError::Generation(LlmError::Unavailable(_) | LlmError::LicenseRequired) => {
-                        ErrorKind::Unavailable
-                    }
-                    RagError::Generation(LlmError::ContextTooLong { .. }) => ErrorKind::Invalid,
-                    RagError::Generation(LlmError::Protocol(_)) => ErrorKind::Other,
-                },
+                kind: failure_kind(e),
                 total_ms: ms(started),
             }),
         }

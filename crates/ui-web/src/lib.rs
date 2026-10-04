@@ -64,6 +64,7 @@ pub fn router(state: AppState) -> Router {
         .route("/chat/{id}/messages", post(chat::ask))
         .route("/chat/messages/{id}", get(chat::answer))
         .route("/chat/messages/{id}/regenerate", post(chat::regenerate))
+        .route("/chat/messages/{id}/free", post(chat::answer_freely))
         .route("/viewer/{doc}", get(viewer::open))
         .route("/viewer/{doc}/pages/{page}/text", get(viewer::text))
         .route("/viewer/{doc}/search", get(viewer::search))
@@ -106,6 +107,7 @@ mod tests {
     use http::{Request, StatusCode};
     use http_body_util::BodyExt;
     use nlmx_application::use_cases::DocumentIngestion;
+    use nlmx_domain::chat::ConversationScope;
     use nlmx_domain::document::{BoundingBox, DocumentMetadata, TextSpan};
     use nlmx_domain::generation::LanguageModelStatus;
     use nlmx_testing::{
@@ -559,6 +561,7 @@ mod tests {
         llm: FakeLlmProvider,
     ) -> Arc<ChatService> {
         use nlmx_application::services::{
+            free_chat::FreeChat,
             rag::{RagEngine, RagOptions},
             retrieval::HybridRetriever,
             retriever::{Retriever, RetrieverOptions},
@@ -577,13 +580,15 @@ mod tests {
             corpus.clone(),
             corpus.clone(),
         );
+        let llm = Arc::new(llm);
         Arc::new(ChatService {
             conversations,
             rag: Arc::new(RagEngine::new(
                 Arc::new(Retriever::new(Arc::new(hybrid))),
                 corpus,
-                Arc::new(llm),
+                llm.clone(),
             )),
+            free: Arc::new(FreeChat::new(llm)),
             options: RagOptions {
                 retriever: RetrieverOptions {
                     min_score: 0.0,
@@ -646,23 +651,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chat_composer_is_enabled_only_with_documents() {
-        let (_, _, body) = get("/chat").await;
-        assert!(
-            body.contains("disabled")
-                && body.contains("Disponível quando houver documentos importados")
-        );
-
-        let app = chat_app(chat_service(FakeLlmProvider::available()), Err("x".into())).await;
+    async fn a_new_chat_is_a_free_conversation_even_without_documents() {
+        let chat = chat_service(FakeLlmProvider::available());
+        let app = router(AppState {
+            system_status: status(LanguageModelStatus::Available, FakeStorage::healthy()),
+            ingestion: Err("sem documentos".into()),
+            chat: Ok(chat),
+            viewer: Err("x".into()),
+            remover: Err("x".into()),
+            diagnostics: None,
+            models: None,
+        });
         let (_, _, body) = send(app, "/chat", true).await;
+        assert!(body.contains(r#"data-scope="free""#), "{body}");
+        assert!(body.contains(r#"<option value="free" selected>Conversa livre</option>"#));
+        assert!(
+            !body.contains("Todos os documentos"),
+            "no documents to choose"
+        );
+        assert!(body.contains(r#"hx-post="/chat/1/messages""#));
+        assert!(body.contains(r#"placeholder="Pergunte qualquer coisa…""#));
+        assert!(!body.contains("disabled placeholder"));
+        assert!(body.contains("Converse livremente") && body.contains("Ir para Documentos"));
+        assert!(!body.contains("data-fill-question"), "document suggestions");
+    }
+
+    #[tokio::test]
+    async fn chat_scope_selector_offers_free_and_the_documents() {
+        let app = chat_app(chat_service(FakeLlmProvider::available()), Err("x".into())).await;
+        let (_, _, body) = send(app.clone(), "/chat", true).await;
         assert!(body.contains(r#"hx-post="/chat/1/messages""#), "{body}");
         assert!(
             body.contains(r#"hx-swap="beforeend""#),
             "turns are appended to the log"
         );
-        assert!(!body.contains("Disponível quando houver documentos importados"));
-        // Scope selector, suggestions, new conversation, recent conversations.
-        assert!(body.contains(r#"name="document""#) && body.contains("Todos os documentos"));
+        // Scope selector, new conversation, recent conversations.
+        assert!(body.contains(r#"name="scope""#) && body.contains("Conversa livre"));
+        assert!(body.contains(r#"<optgroup label="Documentos">"#));
+        assert!(body.contains(r#"<option value="all">Todos os documentos</option>"#));
+        assert!(!body.contains("Ir para Documentos"));
+
+        let (_, body) = post_form(app, "/chat/1/scope", "scope=all").await;
+        assert!(body.contains(r#"data-scope="documents""#));
+        assert!(body.contains(r#"<option value="all" selected>Todos os documentos</option>"#));
+        assert!(body.contains(r#"placeholder="Pergunte algo sobre seus documentos…""#));
         assert!(body.contains(r#"data-fill-question="Explique este documento.""#));
         assert!(!body.contains("principais pontos da seção 3"));
         assert!(body.contains(r#"hx-post="/chat/new""#));
@@ -678,6 +710,7 @@ mod tests {
         );
         let app = chat_app(chat.clone(), Err("x".into())).await;
         send(app.clone(), "/chat", true).await; // opens (creates) conversation 1
+        post_form(app.clone(), "/chat/1/scope", "scope=all").await;
         let (status, body) =
             post_form(app.clone(), "/chat/1/messages", "q=Qual+a+car%C3%AAncia%3F").await;
         assert_eq!(status, StatusCode::OK);
@@ -718,6 +751,50 @@ mod tests {
         assert!(body.contains(r#"data-status="streaming""#));
     }
 
+    fn answer_id(body: &str) -> i64 {
+        body.split(r#"data-answer=""#)
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .and_then(|n| n.parse().ok())
+            .expect("answer id")
+    }
+
+    #[tokio::test]
+    async fn an_answer_not_in_the_documents_offers_to_answer_without_them() {
+        let chat = chat_service(FakeLlmProvider::available().answering("Paris."));
+        let app = chat_app(chat.clone(), Err("x".into())).await;
+        send(app.clone(), "/chat", true).await;
+        post_form(app.clone(), "/chat/1/scope", "scope=all").await;
+        let (_, body) = post_form(
+            app.clone(),
+            "/chat/1/messages",
+            "q=Qual+a+capital+da+Fran%C3%A7a%3F",
+        )
+        .await;
+        let id = answer_id(&body);
+        assert!(body.contains("Buscando nos documentos"));
+        chat.answer(id, &|_| {}, Default::default()).await.unwrap();
+        let (_, _, body) = send(app.clone(), &format!("/chat/messages/{id}"), true).await;
+        assert!(body.contains(r#"data-status="not_found""#), "{body}");
+        assert!(body.contains("Não encontrei essa informação nos documentos."));
+        assert!(body.contains(&format!(r#"hx-post="/chat/messages/{id}/free""#)));
+        assert!(body.contains("Responder sem os documentos"));
+
+        let (status, body) = post_form(app.clone(), &format!("/chat/messages/{id}/free"), "").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains(r#"data-status="streaming""#));
+        assert!(body.contains("Gerando resposta…"));
+        chat.answer(id, &|_| {}, Default::default()).await.unwrap();
+        let (_, _, body) = send(app.clone(), &format!("/chat/messages/{id}"), true).await;
+        assert!(body.contains(r#"data-status="answered""#) && body.contains("Paris."));
+        assert!(body.contains("Sem documentos") && !body.contains(">Fontes<"));
+        assert!(!body.contains("Responder sem os documentos"));
+
+        // Only once.
+        let (status, _) = post_form(app, &format!("/chat/messages/{id}/free"), "").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
     #[tokio::test]
     async fn failed_answers_show_the_reason_and_retry() {
         let chat = chat_service(FakeLlmProvider::new(LanguageModelStatus::LicenseRequired));
@@ -729,6 +806,7 @@ mod tests {
         .await;
         let (_, _, page) = send(app.clone(), "/chat", true).await;
         assert!(page.contains("sudo fm license"), "model notice on the page");
+        post_form(app.clone(), "/chat/1/scope", "scope=all").await;
         let (_, body) = post_form(app.clone(), "/chat/1/messages", "q=car%C3%AAncia").await;
         let id: i64 = body
             .split(r#"data-answer=""#)
@@ -763,7 +841,10 @@ mod tests {
     async fn viewer_app() -> (Router, i64, i64) {
         use nlmx_application::ports::{ConversationRepository, FinishedAnswer};
         use nlmx_domain::{
-            chat::{MessagePageRef, MessageSource, MessageStatus, Role},
+            chat::{
+                AnswerGrounding, ConversationScope, MessagePageRef, MessageSource, MessageStatus,
+                Role,
+            },
             ingestion::PageBox,
         };
         let files = FakeFileStore::default();
@@ -810,13 +891,22 @@ mod tests {
         let doc = 1;
 
         let conversations = Arc::new(nlmx_testing::FakeConversations::default());
-        let c = conversations.create(None).await.unwrap();
+        let c = conversations
+            .create(ConversationScope::Library)
+            .await
+            .unwrap();
         conversations
-            .add_message(c.id, Role::User, "Prazo?", MessageStatus::Answered)
+            .add_message(c.id, Role::User, "Prazo?", MessageStatus::Answered, None)
             .await
             .unwrap();
         let a = conversations
-            .add_message(c.id, Role::Assistant, "", MessageStatus::Streaming)
+            .add_message(
+                c.id,
+                Role::Assistant,
+                "",
+                MessageStatus::Streaming,
+                Some(AnswerGrounding::Documents),
+            )
             .await
             .unwrap();
         let source = MessageSource {
@@ -1017,18 +1107,31 @@ mod tests {
         let app = chat_app(chat.clone(), Err("x".into())).await;
         let (_, first) = post_form(app.clone(), "/chat/new", "").await;
         assert!(first.contains(r#"data-conversation="1""#), "{first}");
-        let (_, scoped) = post_form(app.clone(), "/chat/1/scope", "document=1").await;
+        assert_eq!(
+            chat.conversation(1).await.unwrap().scope,
+            ConversationScope::Free
+        );
+        let (_, scoped) = post_form(app.clone(), "/chat/1/scope", "scope=1").await;
         assert!(
             scoped.contains(r#"<option value="1" selected>"#),
             "{scoped}"
         );
-        assert_eq!(chat.conversation(1).await.unwrap().document_id, Some(1));
-        let (_, second) = post_form(app.clone(), "/chat/new", "document=1").await;
+        assert!(scoped.contains(r#"<input type="hidden" name="scope" value="1">"#));
+        assert_eq!(
+            chat.conversation(1).await.unwrap().scope,
+            ConversationScope::Document(1)
+        );
+        let (_, second) = post_form(app.clone(), "/chat/new", "scope=1").await;
         assert!(second.contains(r#"data-conversation="2""#));
         assert_eq!(
-            chat.conversation(2).await.unwrap().document_id,
-            Some(1),
+            chat.conversation(2).await.unwrap().scope,
+            ConversationScope::Document(1),
             "new keeps the scope"
+        );
+        post_form(app.clone(), "/chat/2/scope", "scope=free").await;
+        assert_eq!(
+            chat.conversation(2).await.unwrap().scope,
+            ConversationScope::Free
         );
         let (_, after) = post_form(app, "/chat/2/delete", "").await;
         assert!(!after.contains(r#"data-conversation="2""#));

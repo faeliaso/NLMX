@@ -11,7 +11,10 @@ use nlmx_application::{
     services::{rag::RagOptions, retriever::RetrieverOptions},
     use_cases::{PageError, RemoveDocument},
 };
-use nlmx_domain::ingestion::{DocumentStatus, ImportOutcome};
+use nlmx_domain::{
+    chat::ConversationScope,
+    ingestion::{DocumentStatus, ImportOutcome},
+};
 use nlmx_fs_library::FsLibrary;
 use nlmx_testing::FakeLlmProvider;
 use support::{Library, deterministic_embeddings, fixture, temp_dir};
@@ -42,15 +45,27 @@ async fn removing_a_document_leaves_nothing_of_it_behind() {
             .unwrap()
     };
     // A conversation about the report only, and one that used both documents.
-    let scoped = chat.start(Some(report)).await.unwrap().id;
+    let scoped = chat
+        .start(ConversationScope::Document(report))
+        .await
+        .unwrap()
+        .id;
     answer(scoped, "Explique este documento.").await;
-    let mixed = chat.start(Some(report)).await.unwrap().id;
+    let mixed = chat
+        .start(ConversationScope::Document(report))
+        .await
+        .unwrap()
+        .id;
     let about_report = answer(mixed, PRAZO).await;
     assert!(about_report.sources.iter().any(|s| s.document_id == report));
-    chat.set_scope(mixed, Some(text)).await.unwrap();
+    chat.set_scope(mixed, ConversationScope::Document(text))
+        .await
+        .unwrap();
     let about_text = answer(mixed, "Explique este documento.").await;
     assert!(about_text.sources.iter().all(|s| s.document_id == text));
-    chat.set_scope(mixed, None).await.unwrap();
+    chat.set_scope(mixed, ConversationScope::Library)
+        .await
+        .unwrap();
 
     let viewer = Arc::new(library.viewer());
     viewer.text_layer(report, 1).await.unwrap(); // cached

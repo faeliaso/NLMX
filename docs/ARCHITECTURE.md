@@ -29,7 +29,7 @@ crates/
   domain/                 tipos e funções puras: document, ingestion, retrieval (fuse, join_adjacent,
                           jaccard…), rag_intent, viewer (find_in_spans), telemetry (Measurement)
   application/            ports.rs · use_cases/ (DocumentIngestion, EmbedDocuments, ChatService,
-                          ViewDocument, GetSystemStatus) · services/ (retrieval, retriever, rag/)
+                          ViewDocument, GetSystemStatus) · services/ (retrieval, retriever, rag/, free_chat)
   ui-web/                 router axum in-process, handlers, markdown seguro, view models
   testing/                fakes de todos os ports + suítes de contrato
   adapters/
@@ -114,9 +114,14 @@ Documentos ─► menu "Remover…" ─► diálogo (RemoveDocument::impact) ─
 ```
 POST /chat/{id}/messages ─► pergunta + resposta "streaming" salvas ─► turno HTML
 app.js ─► comando answer_message({messageId, onEvent: Channel})
-        ─► ChatService::answer ─► RagEngine::ask ─► {kind:"token"}… {kind:"done"}
+        ─► ChatService::answer ─► RagEngine (modo documento) | FreeChat (livre) ─► {kind:"token"}… {kind:"done"}
 done ─► GET /chat/messages/{id} (HTML final)      cancel_answer ─► CancelFlag (parcial salvo)
 ```
+
+**Escopo e modo (ADR 0009).** A conversa é livre (padrão), sobre todos os documentos ou sobre um documento (`ConversationScope`). Cada resposta guarda o modo em que foi gerada (`messages.grounding`), e `ChatService::answer` escolhe por ele:
+
+- **Livre** — `FreeChat` (`application::services::free_chat`) recebe só o `LlmProvider`, sem acesso à biblioteca. Instruções fixas no `system`. Os últimos 6 turnos (cada um com até 1 500 caracteres, neutralizados) vão em `GenerationRequest::history`, que o `fm serve` recebe como mensagens `user`/`assistant`; o `user` leva só a pergunta. `fm respond` e `fm count-tokens` recebem `flat_user()`. Os turnos mais antigos saem até `count_tokens` caber. "Explique este documento." pede um documento sem chamar o modelo. A resposta não tem fontes.
+- **Documento** — `RagEngine`, abaixo. Uma resposta `NotFound` pode ser refeita sem os documentos (`POST /chat/messages/{id}/free` → `ChatService::answer_freely`), e passa a ser livre.
 
 `RagEngine::ask` (`application::services::rag`):
 
@@ -178,6 +183,7 @@ Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref=
 | 0006 | `chunk_embeddings` (chunk → modelo → vetor, com o `content_hash` do chunk) |
 | 0008 | `message_page_refs` |
 | 0009 | opção `secure-delete` do `document_chunks_fts` (ADR 0008) |
+| 0010 | `conversations.mode` (livre/documentos) e `messages.grounding` (ADR 0009) |
 
 Vetores: uma tabela vec0 `chunk_vectors_<embedding_model_id>` por espaço vetorial (modelo + revisão + dimensão), criada em runtime por `create_index`; rowid = id do chunk (ADR 0005).
 

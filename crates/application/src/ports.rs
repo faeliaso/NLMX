@@ -463,23 +463,21 @@ pub trait ChunkReader: Send + Sync {
 // ── Conversations ────────────────────────────────────────────────────────────
 
 use nlmx_domain::chat::{
-    Conversation, ConversationId, ConversationSummary, Message, MessageId, MessagePageRef,
-    MessageSource, MessageStatus, Role,
+    AnswerGrounding, Conversation, ConversationId, ConversationScope, ConversationSummary, Message,
+    MessageId, MessagePageRef, MessageSource, MessageStatus, Role,
 };
 
 /// Conversations, their messages and the sources of each answer.
 pub trait ConversationRepository: Send + Sync {
-    fn create(
-        &self,
-        document: Option<nlmx_domain::ingestion::DocumentId>,
-    ) -> BoxFuture<'_, Result<Conversation, StorageError>>;
+    fn create(&self, scope: ConversationScope)
+    -> BoxFuture<'_, Result<Conversation, StorageError>>;
     fn get(&self, id: ConversationId) -> BoxFuture<'_, Result<Option<Conversation>, StorageError>>;
     /// Most recently updated first.
     fn recent(&self, limit: u32) -> BoxFuture<'_, Result<Vec<ConversationSummary>, StorageError>>;
     fn set_scope(
         &self,
         id: ConversationId,
-        document: Option<nlmx_domain::ingestion::DocumentId>,
+        scope: ConversationScope,
     ) -> BoxFuture<'_, Result<(), StorageError>>;
     fn set_title<'a>(
         &'a self,
@@ -490,13 +488,14 @@ pub trait ConversationRepository: Send + Sync {
     /// Oldest first, with their sources.
     fn messages(&self, id: ConversationId) -> BoxFuture<'_, Result<Vec<Message>, StorageError>>;
     fn message(&self, id: MessageId) -> BoxFuture<'_, Result<Option<Message>, StorageError>>;
-    /// Adds a message and touches the conversation.
+    /// Adds a message and touches the conversation. `grounding` is for assistant messages.
     fn add_message<'a>(
         &'a self,
         conversation: ConversationId,
         role: Role,
         content: &'a str,
         status: MessageStatus,
+        grounding: Option<AnswerGrounding>,
     ) -> BoxFuture<'a, Result<MessageId, StorageError>>;
     /// Final content, status, error, sources and page references of an assistant message
     /// (previous ones replaced).
@@ -505,8 +504,13 @@ pub trait ConversationRepository: Send + Sync {
         id: MessageId,
         answer: FinishedAnswer<'a>,
     ) -> BoxFuture<'a, Result<(), StorageError>>;
-    /// Back to `Streaming` with no content or sources (regeneration).
-    fn reset_message(&self, id: MessageId) -> BoxFuture<'_, Result<(), StorageError>>;
+    /// Back to `Streaming` with no content or sources, to be generated with `grounding`
+    /// (regeneration).
+    fn reset_message(
+        &self,
+        id: MessageId,
+        grounding: AnswerGrounding,
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 }
 
 /// What `ConversationRepository::finish_message` saves.

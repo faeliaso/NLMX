@@ -1,5 +1,6 @@
 //! Fallback generation through `fm respond --stream` (one process per request), used when
-//! `fm serve` can't be started. Same contract: instructions in `-i`, context in the prompt.
+//! `fm serve` can't be started. Same contract: instructions in `-i`, context in the prompt; earlier
+//! turns, which `fm respond` can't take, are written into the prompt.
 
 use std::{process::Stdio, time::Instant};
 
@@ -23,7 +24,7 @@ pub async fn generate(
     command
         .arg("-i")
         .arg(&request.system)
-        .arg(&request.user)
+        .arg(request.flat_user())
         .env("NO_COLOR", "1")
         .envs(config.extra_env.iter().map(|(k, v)| (k, v)))
         .stdin(Stdio::null())

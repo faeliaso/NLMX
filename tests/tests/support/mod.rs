@@ -12,6 +12,7 @@ use std::{
 use nlmx_application::{
     ports::{EmbeddingSource, LlmProvider},
     services::{
+        free_chat::FreeChat,
         rag::{RagEngine, RagOptions},
         retrieval::HybridRetriever,
         retriever::Retriever,
@@ -118,7 +119,8 @@ impl Library {
     pub fn chat(&self, llm: Arc<dyn LlmProvider>, options: RagOptions) -> ChatService {
         ChatService {
             conversations: self.db.clone(),
-            rag: Arc::new(self.rag(llm)),
+            rag: Arc::new(self.rag(llm.clone())),
+            free: Arc::new(FreeChat::new(llm)),
             options,
         }
     }

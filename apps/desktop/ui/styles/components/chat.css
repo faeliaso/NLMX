@@ -62,7 +62,10 @@
   .answer-stream { white-space: pre-wrap; }
   .answer-stream:empty { display: none; }
   .answer-muted { color: var(--color-fg-muted); }
-  .answer-flag { margin-top: -0.25rem; }
+  .answer-flag { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: -0.25rem; }
+  /* In a free conversation every answer is free: the flag only matters among cited answers. */
+  [data-scope="free"] .answer-free-flag,
+  [data-scope="free"] .answer-flag:has(> .answer-free-flag:only-child) { display: none; }
   .answer-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-left: -0.5rem; }
 
   .citation {

@@ -135,9 +135,13 @@ async fn import_ask_cite_open_and_measure() {
         "the failed import shows its reason"
     );
 
-    // 3. Ask in the chat: the turn comes back streaming…
+    // 3. Ask in the chat about the documents (a new chat is a free conversation): the turn
+    // comes back streaming…
     let (_, page) = get(&app, "/chat").await;
+    assert!(page.contains(r#"data-scope="free""#));
     let conversation = attr(&page, "data-chat-page", "data-conversation").to_string();
+    let (_, page) = post(&app, &format!("/chat/{conversation}/scope"), "scope=all").await;
+    assert!(page.contains(r#"data-scope="documents""#));
     let (status, turn) = post(
         &app,
         &format!("/chat/{conversation}/messages"),
