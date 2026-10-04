@@ -68,7 +68,7 @@ async fn neighbouring_chunks_become_one_passage_without_the_overlap() {
         ),
         (2, 2, 3)
     );
-    assert_eq!(joined.source.label, "Documento 1, pp. 2–3");
+    assert_eq!(joined.source.label, "documento-1.pdf · pp. 2–3");
     assert_eq!(ctx.passages.len(), 2, "chunk 5 is not a neighbour");
     assert!(joined.metadata.matched_by.lexical && !joined.metadata.matched_by.semantic);
 
@@ -108,7 +108,8 @@ async fn neighbours_from_different_sections_are_not_joined() {
     assert!(
         ctx.passages
             .iter()
-            .any(|p| p.source.label == "Documento 1, p. 1 · 2. Internação")
+            .any(|p| p.source.label == "documento-1.pdf · p. 1"
+                && p.source.section.as_deref() == Some("2. Internação"))
     );
 }
 
@@ -269,7 +270,7 @@ async fn passages_are_grouped_by_document_in_page_order() {
     // Each passage carries the fields the RAG needs.
     let p = &ctx.passages[0];
     assert!(!p.content.is_empty() && p.chunk_id == 10 && p.page == 9 && p.score > 0.0);
-    assert_eq!(p.source.label, "Documento 2, p. 9");
+    assert_eq!(p.source.label, "documento-2.pdf · p. 9");
 }
 
 #[tokio::test]

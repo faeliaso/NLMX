@@ -28,6 +28,7 @@ const STEPS: &[M<'static>] = &[
     migration!("0009_secure_delete"),
     migration!("0010_free_chat"),
     migration!("0011_multiformat"),
+    migration!("0012_citation_provenance"),
 ];
 
 pub const LATEST_VERSION: u32 = STEPS.len() as u32;

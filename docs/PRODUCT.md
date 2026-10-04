@@ -50,8 +50,8 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | RF17 | Busca semântica, lexical e híbrida | ✓ fusão ponderada (ADR 0007) |
 | RF18 | Escopo: biblioteca, documento ou coleção | ◐ conversa livre, todos os documentos ou um documento (ADR 0009); coleções só no backend |
 | RF19 | Resposta via Apple FM com streaming | ✓ |
-| RF20 | Citações `[n]` vinculadas a documento, página e trecho | ✓ (também `[página N]`) |
-| RF21 | Clicar na citação abre o PDF na página com o trecho destacado | ✓ |
+| RF20 | Citações `[n]` vinculadas a documento, localização (página, seção, intervalo, linhas, capítulo) e trecho, de qualquer formato | ✓ (também `[página N]` em PDF; ADR 0015) |
+| RF21 | Clicar na citação abre o PDF na página com o trecho destacado; nos outros formatos seleciona a fonte e mostra suas informações (sem viewer) | ✓ (ADR 0016) |
 | RF22 | "Não encontrei" quando a relevância é baixa, sem chamar o modelo | ✓ no modo documento, com a opção "Responder sem os documentos" |
 | RF23 | Conversas salvas, com perguntas de acompanhamento | ✓ |
 | RF24 | Transparência: mostrar os trechos enviados ao modelo | ✓ lista de fontes na resposta |

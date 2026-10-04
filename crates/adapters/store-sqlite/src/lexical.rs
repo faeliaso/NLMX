@@ -4,12 +4,17 @@ use nlmx_application::ports::{
     BoxFuture, Candidates, ChunkReader, ChunkView, LexicalIndex, StorageError,
 };
 use nlmx_domain::{
+    document_type::DocumentType,
+    parsed::ChunkMetadata,
     retrieval::{LexicalCandidate, LexicalQuery, RetrievalFilter},
     vectors::ChunkId,
 };
 use rusqlite::{Connection, params_from_iter, types::Value};
 
-use crate::Database;
+use crate::{
+    Database,
+    sections::{from_json, location_of},
+};
 
 fn err(action: &str) -> impl Fn(rusqlite::Error) -> StorageError + '_ {
     move |e| StorageError::new(format!("Falha ao {action}: {e}"))
@@ -139,23 +144,49 @@ pub(crate) fn parse_boxes(json: &str) -> Vec<nlmx_domain::ingestion::PageBox> {
         .collect()
 }
 
+/// Everything a `ChunkView` needs; `FROM` and `WHERE` are added by the callers.
 const CHUNK_VIEW: &str =
     "SELECT c.id, c.document_id, coalesce(d.title, d.original_filename), c.page_start, c.page_end,
-            c.section_path, c.text, c.bboxes, c.ordinal, c.content_hash
-     FROM document_chunks c JOIN documents d ON d.id = c.document_id";
+            c.section_path, c.text, c.bboxes, c.ordinal, c.content_hash,
+            d.original_filename, d.format, p.locator, p.metadata, d.title, d.language
+     FROM document_chunks c
+     JOIN documents d ON d.id = c.document_id
+     LEFT JOIN chunk_provenance p ON p.chunk_id = c.id";
 
 fn chunk_view(r: &rusqlite::Row<'_>) -> rusqlite::Result<ChunkView> {
+    let document_type = r
+        .get::<_, String>(11)
+        .map(|f| DocumentType::parse(&f).unwrap_or(DocumentType::Pdf))?;
+    let boxes = parse_boxes(&r.get::<_, String>(7)?);
+    let (page_start, page_end): (u32, u32) = (r.get(3)?, r.get(4)?);
+    let locator: Option<String> = r.get(12)?;
+    let location = location_of(locator.as_deref(), page_start, page_end, boxes.clone())?;
+    let file_name: String = r.get(10)?;
+    let metadata = match r.get::<_, Option<String>>(13)? {
+        Some(text) => from_json::<ChunkMetadata>(&text)?,
+        None => ChunkMetadata {
+            document_type,
+            document_title: r.get(14)?,
+            file_name: Some(file_name.clone()),
+            language: r.get(15)?,
+            columns: Vec::new(),
+        },
+    };
     Ok(ChunkView {
         chunk_id: r.get(0)?,
         document_id: r.get(1)?,
         document_title: r.get(2)?,
+        document_name: file_name,
+        document_type,
         ordinal: r.get(8)?,
         content_hash: r.get(9)?,
-        page_start: r.get(3)?,
-        page_end: r.get(4)?,
+        page_start,
+        page_end,
         section: r.get(5)?,
         text: r.get(6)?,
-        bboxes: parse_boxes(&r.get::<_, String>(7)?),
+        bboxes: boxes,
+        location,
+        metadata,
     })
 }
 
@@ -175,28 +206,12 @@ fn get_many(conn: &Connection, ids: &[ChunkId]) -> Result<Vec<ChunkView>, Storag
         return Ok(Vec::new());
     }
     let sql = format!(
-        "SELECT c.id, c.document_id, coalesce(d.title, d.original_filename), c.page_start, c.page_end,
-                c.section_path, c.text, c.bboxes, c.ordinal, c.content_hash
-         FROM document_chunks c JOIN documents d ON d.id = c.document_id
-         WHERE c.id IN ({})",
+        "{CHUNK_VIEW} WHERE c.id IN ({})",
         vec!["?"; ids.len()].join(", ")
     );
     let mut stmt = conn.prepare(&sql).map_err(err("ler trechos"))?;
     let mut found: Vec<ChunkView> = stmt
-        .query_map(params_from_iter(ids.iter()), |r| {
-            Ok(ChunkView {
-                chunk_id: r.get(0)?,
-                document_id: r.get(1)?,
-                document_title: r.get(2)?,
-                ordinal: r.get(8)?,
-                content_hash: r.get(9)?,
-                page_start: r.get(3)?,
-                page_end: r.get(4)?,
-                section: r.get(5)?,
-                text: r.get(6)?,
-                bboxes: parse_boxes(&r.get::<_, String>(7)?),
-            })
-        })
+        .query_map(params_from_iter(ids.iter()), chunk_view)
         .and_then(|rows| rows.collect())
         .map_err(err("ler trechos"))?;
     let position = |id: ChunkId| ids.iter().position(|&x| x == id).unwrap_or(usize::MAX);

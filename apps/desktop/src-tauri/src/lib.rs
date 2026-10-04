@@ -2,6 +2,7 @@
 //! answered in-process by the `ui-web` router (no TCP server, ADR 0003).
 
 mod commands;
+mod importer;
 mod legacy_data;
 mod protocol;
 pub mod self_check;
@@ -90,8 +91,21 @@ pub fn run() {
                 let emitter = app.handle().clone();
                 services.progress.attach(move |progress| {
                     let _ = emitter.emit("ingest-progress", progress);
+                    // A document moved to another stage: the library list refreshes (the
+                    // interface debounces this).
+                    let _ = emitter.emit("documents-changed", ());
                 });
             }
+            // Picking files only queues them: this worker imports them one at a time.
+            app.manage(importer::ImportQueueState(
+                services.ingestion.0.clone().ok().map(|ingestion| {
+                    importer::ImportQueue::start(
+                        ingestion,
+                        services.indexing.activity.clone(),
+                        std::sync::Arc::new(importer::TauriNotifier(app.handle().clone())),
+                    )
+                }),
+            ));
             app.manage(wiring::IngestProgressState(services.progress.clone()));
             app.manage(services.ui);
             app.manage(services.ingestion);

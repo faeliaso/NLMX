@@ -202,6 +202,7 @@ Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref=
 | 0009 | opção `secure-delete` do `document_chunks_fts` (ADR 0008) |
 | 0010 | `conversations.mode` (livre/documentos) e `messages.grounding` (ADR 0009) |
 | 0011 | `documents.format`/`mime_type`/`metadata`/`normalizer_version`/`previewable` (gerada), `document_sections`, `chunk_provenance` — só aditiva (ADR 0013) |
+| 0012 | `citations.document_type`/`document_name`/`locator` — proveniência da fonte de qualquer formato (ADR 0015) |
 
 Vetores: uma tabela vec0 `chunk_vectors_<embedding_model_id>` por espaço vetorial (modelo + revisão + dimensão), criada em runtime por `create_index`; rowid = id do chunk (ADR 0005).
 

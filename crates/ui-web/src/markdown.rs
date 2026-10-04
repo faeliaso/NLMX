@@ -3,9 +3,19 @@
 //! citation markers `[n]` are turned into markup. Raw HTML from the model never reaches the page.
 
 /// How markers become links to the viewer: `[n]` → source `n`, `[página N]` → page `N`.
+/// Where the marker of a source leads: its label and the URL that opens it in the side panel — the
+/// PDF viewer for a PDF, the source information for any other format.
+pub struct SourceLink {
+    /// "relatorio.pdf · pp. 2–3".
+    pub label: String,
+    pub url: String,
+    /// Opens the PDF viewer (otherwise: the information panel).
+    pub previewable: bool,
+}
+
 pub struct Citations<'a> {
-    /// Label ("Relatório, pp. 2–3") and viewer URL of source `n`.
-    pub source: &'a dyn Fn(usize) -> Option<(String, String)>,
+    /// Where marker `[n]` leads.
+    pub source: &'a dyn Fn(usize) -> Option<SourceLink>,
     /// Viewer URL of a `[página N]` reference.
     pub page: &'a dyn Fn(u32) -> Option<String>,
 }
@@ -139,11 +149,16 @@ fn inline(line: &str, citations: &Citations<'_>) -> String {
         };
         let inner = &from[1..close];
         let button = if let Ok(n) = inner.parse::<usize>() {
-            (citations.source)(n).map(|(label, url)| {
+            (citations.source)(n).map(|link| {
+                let (what, tip) = if link.previewable {
+                    (format!("Abrir a fonte {n} no PDF"), "Abrir no PDF")
+                } else {
+                    (format!("Ver informações da fonte {n}"), "Ver informações da fonte")
+                };
                 format!(
-                    r##"<button type="button" class="citation" hx-get="{url}" hx-target="#viewer" aria-label="Abrir a fonte {n} no PDF: {label}" title="Abrir no PDF · {label}">{n}</button>"##,
-                    url = escape(&url),
-                    label = escape(&label),
+                    r##"<button type="button" class="citation" hx-get="{url}" hx-target="#viewer" aria-label="{what}: {label}" title="{tip} · {label}">{n}</button>"##,
+                    url = escape(&link.url),
+                    label = escape(&link.label),
                 )
             })
         } else if let Some(page) = inner
@@ -192,13 +207,22 @@ pub fn plain(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn cites(n: usize) -> Option<(String, String)> {
-        (n <= 2).then(|| {
-            (
-                format!("Relatório, p. {n}"),
-                format!("/viewer/1?cite=7-{n}"),
-            )
-        })
+    /// Sources 1 and 2 are PDF pages (they open the viewer); source 3 is a CSV (it opens the
+    /// information panel).
+    fn cites(n: usize) -> Option<SourceLink> {
+        match n {
+            1 | 2 => Some(SourceLink {
+                label: format!("Relatório, p. {n}"),
+                url: format!("/viewer/1?cite=7-{n}"),
+                previewable: true,
+            }),
+            3 => Some(SourceLink {
+                label: "dados.csv · linhas 2–9".to_string(),
+                url: "/sources/3?cite=7-3".to_string(),
+                previewable: false,
+            }),
+            _ => None,
+        }
     }
 
     fn page(p: u32) -> Option<String> {
@@ -251,12 +275,31 @@ mod tests {
     }
 
     #[test]
+    fn every_format_is_a_button_that_leads_to_its_own_panel() {
+        let out = html("A tabela diz isso [3] e o PDF também [1].");
+        assert_eq!(out.matches("<button").count(), 2, "{out}");
+        // The PDF opens the viewer; the CSV opens the source information, never the viewer.
+        assert!(
+            out.contains(r##"hx-get="/viewer/1?cite=7-1" hx-target="#viewer""##),
+            "{out}"
+        );
+        assert!(
+            out.contains(r##"hx-get="/sources/3?cite=7-3" hx-target="#viewer""##),
+            "{out}"
+        );
+        assert!(out.contains(r#"aria-label="Abrir a fonte 1 no PDF: Relatório, p. 1""#));
+        assert!(out.contains(r#"aria-label="Ver informações da fonte 3: dados.csv · linhas 2–9""#));
+        assert!(!out.contains("viewer/3"));
+    }
+
+    #[test]
     fn citation_labels_are_escaped() {
         let evil = |_: usize| {
-            Some((
-                "\"><script>x</script>".to_string(),
-                "/v?a=1&b=2".to_string(),
-            ))
+            Some(SourceLink {
+                label: "\"><script>x</script>".to_string(),
+                url: "/v?a=1&b=2".to_string(),
+                previewable: true,
+            })
         };
         let out = render(
             "Ver [1].",

@@ -13,7 +13,7 @@ pub use embeddings::{EmbedDocuments, EmbedOutcome};
 pub use indexing::{
     ActivityGuard, Indexing, IndexingActivity, IndexingError, IndexingReport, RetryOutcome,
 };
-pub use ingestion::DocumentIngestion;
+pub use ingestion::{DocumentIngestion, Enqueued};
 pub use remove_document::{RemoveDocument, RemoveError};
 pub use system_status::{GetSystemStatus, SystemStatus};
 pub use viewer::{

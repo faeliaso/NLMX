@@ -4,210 +4,18 @@
 
 mod support;
 
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-};
+use std::path::{Path, PathBuf};
 
-use nlmx_application::{
-    ports::{DocumentRepository, EmbeddingProvider, EmbeddingSource, LexicalIndex, ProgressSink},
-    services::{
-        parsing::{ParserRegistry, PdfDocumentParser},
-        pipeline::ContentPipeline,
-    },
-    use_cases::{DocumentIngestion, EmbedDocuments},
-};
-use nlmx_chunker_structural::{HeuristicTokenCounter, MultiFormatChunker};
+use nlmx_application::ports::DocumentRepository;
 use nlmx_domain::{
     document_type::DocumentType,
-    ingestion::{ChunkPolicy, DocumentId, DocumentStatus, ImportOutcome},
-    retrieval::{LexicalQuery, RetrievalFilter},
+    ingestion::{DocumentStatus, ImportOutcome},
     source::SourceLocation,
 };
-use nlmx_fs_library::FsLibrary;
-use nlmx_normalizer_text::TextNormalizer;
-use nlmx_parser_epub::EpubDocumentParser;
-use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
-use nlmx_pdf_pdfium::PdfiumDocumentEngine;
-use nlmx_store_sqlite::Database;
-use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
-use nlmx_testing::{FakeEmbeddingProvider, FakeProgressSink};
-use support::{fixture, root, temp_dir};
-
-/// PDFium can be initialized once per process, so every test shares one engine.
-fn engine() -> Arc<PdfiumDocumentEngine> {
-    static ENGINE: std::sync::OnceLock<Arc<PdfiumDocumentEngine>> = std::sync::OnceLock::new();
-    ENGINE
-        .get_or_init(|| {
-            Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"))
-        })
-        .clone()
-}
-
-/// The embedding model of the app, which a test can install or take away.
-#[derive(Default)]
-struct SwitchableModel(Mutex<Option<Arc<dyn EmbeddingProvider>>>);
-
-impl SwitchableModel {
-    fn install(&self) {
-        *self.0.lock().unwrap() = Some(Arc::new(FakeEmbeddingProvider { dimensions: 64 }));
-    }
-}
-
-impl EmbeddingSource for SwitchableModel {
-    fn current(&self) -> Option<Arc<dyn EmbeddingProvider>> {
-        self.0.lock().unwrap().clone()
-    }
-}
-
-struct App {
-    dir: PathBuf,
-    db: Arc<Database>,
-    ingestion: DocumentIngestion,
-    embedder: Arc<EmbedDocuments>,
-    model: Arc<SwitchableModel>,
-    progress: Arc<FakeProgressSink>,
-}
-
-impl App {
-    fn new(name: &str, with_model: bool) -> Self {
-        let dir = temp_dir(name);
-        let db = Arc::new(Database::open(dir.join("nlmx.sqlite3")).unwrap());
-        let model = Arc::new(SwitchableModel::default());
-        if with_model {
-            model.install();
-        }
-        let progress = Arc::new(FakeProgressSink::default());
-        let sink: Arc<dyn ProgressSink> = progress.clone();
-        let embedder = Arc::new(EmbedDocuments {
-            progress: Some(sink.clone()),
-            embeddings: model.clone(),
-            vectors: db.clone(),
-            chunks: db.clone(),
-            documents: db.clone(),
-            batch_size: 4,
-        });
-        let engine = engine();
-        let parsers = ParserRegistry::new()
-            .with(Arc::new(PdfDocumentParser::new(
-                engine.clone(),
-                Arc::new(HeuristicStructureAnalyzer),
-            )))
-            .with(Arc::new(MarkdownDocumentParser))
-            .with(Arc::new(TextDocumentParser))
-            .with(Arc::new(CsvDocumentParser))
-            .with(Arc::new(EpubDocumentParser::default()));
-        let tokens = Arc::new(HeuristicTokenCounter);
-        let ingestion = DocumentIngestion {
-            pipeline: Some(Arc::new(ContentPipeline {
-                parsers,
-                normalizer: Arc::new(TextNormalizer),
-                chunker: Arc::new(MultiFormatChunker),
-                tokens: tokens.clone(),
-                policy: ChunkPolicy::default(),
-            })),
-            progress: Some(sink),
-            viewer: None,
-            engine,
-            files: Arc::new(FsLibrary::new(dir.join("library"))),
-            documents: db.clone(),
-            analyzer: Arc::new(HeuristicStructureAnalyzer),
-            chunker: Arc::new(nlmx_chunker_structural::StructuralChunker),
-            tokens,
-            policy: ChunkPolicy::default(),
-            embedder: Some(embedder.clone()),
-        };
-        Self {
-            dir,
-            db,
-            ingestion,
-            embedder,
-            model,
-            progress,
-        }
-    }
-
-    /// A file of the user's, copied to a folder of its own (some tests edit it).
-    fn user_file(&self, source: &Path, name: &str) -> PathBuf {
-        let inbox = self.dir.join("inbox");
-        std::fs::create_dir_all(&inbox).unwrap();
-        let path = inbox.join(name);
-        std::fs::copy(source, &path).unwrap();
-        path
-    }
-
-    fn sql(&self) -> rusqlite::Connection {
-        rusqlite::Connection::open(self.dir.join("nlmx.sqlite3")).unwrap()
-    }
-
-    fn count(&self, query: &str) -> i64 {
-        self.sql().query_row(query, [], |r| r.get(0)).unwrap()
-    }
-
-    /// `[chunks, embeddings, lexical entries]` of the whole database.
-    fn index_sizes(&self) -> [i64; 3] {
-        [
-            self.count("SELECT count(*) FROM document_chunks"),
-            self.count("SELECT count(*) FROM chunk_embeddings"),
-            self.count("SELECT count(*) FROM document_chunks_fts_docsize"),
-        ]
-    }
-
-    fn library_files(&self) -> Vec<String> {
-        std::fs::read_dir(self.dir.join("library"))
-            .map(|entries| {
-                entries
-                    .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    async fn status(&self, id: DocumentId) -> DocumentStatus {
-        self.db.get(id).await.unwrap().unwrap().status
-    }
-
-    async fn hits(&self, word: &str) -> Vec<DocumentId> {
-        LexicalIndex::search(
-            self.db.as_ref(),
-            &LexicalQuery::from_query(word),
-            20,
-            &RetrievalFilter::default(),
-        )
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|h| h.document_id)
-        .collect()
-    }
-}
-
-fn text_fixture(name: &str) -> PathBuf {
-    root()
-        .join("crates/adapters/parser-text/tests/fixtures")
-        .join(name)
-}
-
-fn epub_fixture(name: &str) -> PathBuf {
-    root()
-        .join("crates/adapters/parser-epub/tests/fixtures")
-        .join(name)
-}
-
-fn imported(outcome: ImportOutcome) -> (DocumentId, u32, DocumentStatus) {
-    match outcome {
-        ImportOutcome::Imported { id, chunks, status } => (id, chunks, status),
-        other => panic!("{other:?}"),
-    }
-}
-
-/// The first word of at least six letters of a text: something the lexical index must find.
-fn a_word_of(text: &str) -> String {
-    text.split(|c: char| !c.is_alphabetic())
-        .find(|w| w.chars().count() >= 6)
-        .unwrap_or_else(|| panic!("no long word in {text:?}"))
-        .to_string()
-}
+use support::{
+    fixture,
+    multiformat::{App, a_word_of, epub_fixture, imported, text_fixture},
+};
 
 #[tokio::test]
 async fn every_format_goes_from_file_to_indexed() {
@@ -558,4 +366,54 @@ async fn nothing_from_any_format_reaches_logs() {
     assert!(leaks.is_empty(), "canary in logs: {leaks:#?}");
     let metrics_json = nlmx_telemetry::snapshot_json(&metrics.snapshot()).to_string();
     assert!(!metrics_json.contains(CANARY));
+}
+
+#[tokio::test]
+async fn enqueued_files_are_listed_at_once_and_indexed_one_by_one() {
+    use nlmx_application::use_cases::Enqueued;
+    let app = App::new("enqueue", true);
+    let files = [
+        app.user_file(&text_fixture("guia.md"), "guia.md"),
+        app.user_file(&text_fixture("vendas.csv"), "vendas.csv"),
+        app.user_file(&epub_fixture("livro.epub"), "livro.epub"),
+    ];
+    let mut queue = Vec::new();
+    for file in &files {
+        queue.push(app.ingestion.enqueue(file).await);
+    }
+    // All of them are in the library, waiting, before any is processed.
+    let listed = app.db.list().await.unwrap();
+    assert_eq!(listed.len(), 3);
+    assert!(
+        listed
+            .iter()
+            .all(|d| d.status == DocumentStatus::Queued && d.chunk_count == 0)
+    );
+    assert_eq!(app.library_files().len(), 3);
+    assert_eq!(app.index_sizes(), [0, 0, 0]);
+
+    for enqueued in queue {
+        let Enqueued::New(id) = enqueued else {
+            panic!("{enqueued:?}")
+        };
+        assert!(matches!(
+            app.ingestion.process(enqueued).await,
+            ImportOutcome::Imported {
+                status: DocumentStatus::Indexed,
+                ..
+            }
+        ));
+        assert_eq!(app.status(id).await, DocumentStatus::Indexed);
+    }
+
+    // An edited file goes through the same two steps and keeps its document.
+    std::fs::write(&files[0], "# Guia\n\nTexto novo sobre melancia.\n").unwrap();
+    let updated = app.ingestion.enqueue(&files[0]).await;
+    let Enqueued::Updated(id) = updated else {
+        panic!("{updated:?}")
+    };
+    assert_eq!(app.status(id).await, DocumentStatus::Queued);
+    app.ingestion.process(updated).await;
+    assert_eq!(app.status(id).await, DocumentStatus::Indexed);
+    assert!(app.hits("melancia").await.contains(&id));
 }

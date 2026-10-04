@@ -6,11 +6,30 @@ use nlmx_domain::{
         AnswerGrounding, Conversation, ConversationId, ConversationScope, ConversationSummary,
         Message, MessageId, MessagePageRef, MessageSource, MessageStatus, Role,
     },
-    ingestion::{DocumentId, PageBox},
+    ingestion::{DocumentId, PageBox, SECTION_SEPARATOR},
+    source::{SourceLocation, SourceReference},
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{Database, lexical::parse_boxes};
+use crate::{Database, lexical::parse_boxes, sections::location_of};
+
+/// The JSON stored in `citations.locator`. A PDF's boxes live in the `bboxes` column.
+fn locator_json(location: &SourceLocation) -> Result<String, StorageError> {
+    let location = match location {
+        SourceLocation::Pdf {
+            page_start,
+            page_end,
+            ..
+        } => SourceLocation::Pdf {
+            page_start: *page_start,
+            page_end: *page_end,
+            boxes: Vec::new(),
+        },
+        other => other.clone(),
+    };
+    serde_json::to_string(&location)
+        .map_err(|e| StorageError::new(format!("Falha ao gravar as fontes: {e}")))
+}
 
 fn err(action: &str) -> impl Fn(rusqlite::Error) -> StorageError + '_ {
     move |e| StorageError::new(format!("Falha ao {action}: {e}"))
@@ -132,23 +151,48 @@ fn sources(conn: &Connection, message: MessageId) -> Result<Vec<MessageSource>, 
     let mut stmt = conn
         .prepare(
             "SELECT ordinal, cited, document_id, chunk_id, document_title, page_number,
-                    coalesce(page_end, page_number), section, label, quote, bboxes
+                    coalesce(page_end, page_number), section, label, quote, bboxes,
+                    document_name, locator
              FROM citations WHERE message_id = ?1 ORDER BY ordinal",
         )
         .map_err(err("ler fontes"))?;
     stmt.query_map([message], |r| {
+        let (document_id, chunk_id, title): (i64, Option<i64>, String) =
+            (r.get(2)?, r.get(3)?, r.get(4)?);
+        let (page_start, page_end): (u32, u32) = (r.get(5)?, r.get(6)?);
+        let section: Option<String> = r.get(7)?;
+        let bboxes = parse_boxes(&r.get::<_, String>(10)?);
+        // A citation without a locator is a PDF one (from before provenance): its pages.
+        let location = location_of(
+            r.get::<_, Option<String>>(12)?.as_deref(),
+            page_start,
+            page_end,
+            bboxes.clone(),
+        )?;
+        let reference = SourceReference {
+            document_id,
+            document_title: title.clone(),
+            chunk_id,
+            location,
+            section_path: section
+                .as_deref()
+                .map(|s| s.split(SECTION_SEPARATOR).map(str::to_string).collect())
+                .unwrap_or_default(),
+        };
         Ok(MessageSource {
             n: r.get(0)?,
             cited: r.get::<_, i64>(1)? == 1,
-            document_id: r.get(2)?,
-            chunk_id: r.get(3)?,
-            document_title: r.get(4)?,
-            page_start: r.get(5)?,
-            page_end: r.get(6)?,
-            section: r.get(7)?,
+            document_id,
+            chunk_id,
+            document_title: title,
+            page_start,
+            page_end,
+            section,
             label: r.get(8)?,
             quote: r.get(9)?,
-            bboxes: parse_boxes(&r.get::<_, String>(10)?),
+            bboxes,
+            reference,
+            document_name: r.get(11)?,
         })
     })
     .and_then(|rows| rows.collect())
@@ -381,10 +425,11 @@ impl ConversationRepository for Database {
                 let mut insert = tx
                     .prepare(
                         "INSERT INTO citations (message_id, ordinal, cited, chunk_id, document_id,
-                             document_title, page_number, page_end, section, label, quote, bboxes)
+                             document_title, page_number, page_end, section, label, quote, bboxes,
+                             document_type, document_name, locator)
                          VALUES (?1, ?2, ?3,
                              (SELECT id FROM document_chunks WHERE id = ?4),
-                             ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                             ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                     )
                     .map_err(err("gravar as fontes"))?;
                 for s in &sources {
@@ -401,7 +446,10 @@ impl ConversationRepository for Database {
                             s.section,
                             s.label,
                             s.quote,
-                            boxes_json(&s.bboxes)
+                            boxes_json(&s.bboxes),
+                            s.document_type().as_str(),
+                            s.document_name,
+                            locator_json(&s.reference.location)?
                         ])
                         .map_err(err("gravar as fontes"))?;
                 }

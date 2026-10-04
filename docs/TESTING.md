@@ -64,6 +64,7 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
 - **E2E**:
   - `app_e2e` cobre o app inteiro, menos a casca nativa: importação (com uma falha), Documentos, Chat (turno, geração, citação clicável, `[página N]`), viewer (posição, destaque, busca, camada de texto, imagem) e métricas coletadas;
   - `indexing_pipeline_e2e`: arquivo → `indexed` para os 5 formatos com adaptadores reais, erros isolados, progresso, reindexação sem duplicar, arquivo alterado e canário de privacidade multiformato.
+  - `rag_multiformat_e2e`: recuperação, ranking, prompt, citações e mensagens salvas dos 5 formatos com proveniência preservada (e canário de privacidade).
   - os demais `*_e2e` cobrem ingestão, retriever, RAG e chat.
 - **Privacidade** (`privacy_canary`): um marcador no texto, no título e no nome do arquivo de um PDF, e também na pergunta e na resposta, nunca aparece:
   - nos logs (capturados em TRACE pela camada JSON do app);

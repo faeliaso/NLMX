@@ -260,11 +260,33 @@ pub struct DocumentSummary {
     pub id: DocumentId,
     pub title: String,
     pub original_filename: String,
+    pub document_type: crate::document_type::DocumentType,
     pub page_count: Option<u32>,
     pub chunk_count: u32,
     pub status: DocumentStatus,
     pub error: Option<String>,
     pub imported_at: String,
+}
+
+/// What the interface shows about a source (a document of any format): the facts of its
+/// indexing and use, not its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceDetails {
+    pub id: DocumentId,
+    pub title: String,
+    pub file_name: String,
+    pub document_type: crate::document_type::DocumentType,
+    pub status: DocumentStatus,
+    pub error: Option<String>,
+    pub chunks: u32,
+    pub file_size: u64,
+    /// Pages of a paged format (PDF).
+    pub page_count: Option<u32>,
+    pub imported_at: String,
+    /// When it last reached `indexed` (`None` before).
+    pub indexed_at: Option<String>,
+    /// Conversations that cited it.
+    pub conversations: u32,
 }
 
 /// What removing a document takes with it besides the document itself: its chunks (with their

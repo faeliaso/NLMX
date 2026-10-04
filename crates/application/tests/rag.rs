@@ -20,7 +20,12 @@ use nlmx_application::{
         },
     },
 };
-use nlmx_domain::generation::{LanguageModelStatus, LlmError};
+use nlmx_domain::{
+    document_type::DocumentType,
+    generation::{LanguageModelStatus, LlmError},
+    parsed::ChunkMetadata,
+    source::{RetrievedSource, SourceReference},
+};
 use nlmx_testing::{FakeCorpus, FakeLlmProvider, FakeVectorStore, FixedEmbeddingSource};
 
 fn passage(chunk: i64, doc: i64, pages: (u32, u32), score: f32, content: &str) -> Passage {
@@ -32,8 +37,8 @@ fn passage(chunk: i64, doc: i64, pages: (u32, u32), score: f32, content: &str) -
         content: content.into(),
         score,
         source: PassageSource {
-            label: format!("{title}, p. {}", pages.0),
-            document_title: title,
+            label: format!("documento-{doc}.pdf · p. {}", pages.0),
+            document_title: title.clone(),
             page_start: pages.0,
             page_end: pages.1,
             section: None,
@@ -46,6 +51,18 @@ fn passage(chunk: i64, doc: i64, pages: (u32, u32), score: f32, content: &str) -
             lexical: None,
             matched_by: MatchedBy::default(),
             duplicates: vec![],
+        },
+        provenance: RetrievedSource {
+            reference: SourceReference::pdf(doc, title, Some(chunk), pages.0, pages.1, vec![]),
+            document_name: format!("documento-{doc}.pdf"),
+            relevance_score: score,
+            metadata: ChunkMetadata {
+                document_type: DocumentType::Pdf,
+                document_title: None,
+                file_name: None,
+                language: None,
+                columns: vec![],
+            },
         },
     }
 }
@@ -706,7 +723,7 @@ fn page_references_open_the_source_covering_the_page() {
     // Page 9 is in no source and the context has two documents: plain text.
     assert_eq!(cited.unresolved_pages, [9]);
     // Citations open their first page with every box.
-    let citation = cited.citations[0].viewer_target();
+    let citation = cited.citations[0].viewer_target().unwrap();
     assert_eq!((citation.page, citation.highlights.len()), (2, 2));
 }
 
@@ -759,4 +776,101 @@ async fn a_section_number_naming_a_fact_elsewhere_also_gets_search_results() {
     let chunks: Vec<i64> = answer.sources.iter().map(|s| s.chunk_id).collect();
     assert!(chunks.contains(&1) && chunks.contains(&2), "{chunks:?}");
     assert!(llm.requests()[0].user.contains("180 dias"));
+}
+
+// ── Sources of any format ─────────────────────────────────────────────────────
+
+/// A passage of a document that is not a PDF.
+fn passage_in(
+    chunk: i64,
+    doc: i64,
+    name: &str,
+    location: nlmx_domain::source::SourceLocation,
+    content: &str,
+) -> Passage {
+    let mut p = passage(chunk, doc, (1, 1), 0.8, content);
+    p.provenance.document_name = name.to_string();
+    p.provenance.metadata.document_type = location.document_type();
+    p.provenance.reference.location = location;
+    p.source.label = p.provenance.label();
+    p
+}
+
+#[test]
+fn passages_of_other_formats_are_described_by_their_type_and_location() {
+    use nlmx_domain::source::SourceLocation;
+    let passages = [
+        passage(1, 1, (12, 12), 0.9, "Texto do PDF."),
+        passage_in(
+            2,
+            2,
+            "arquitetura.md",
+            SourceLocation::markdown(vec!["Embeddings".into(), "Normalização".into()], None)
+                .unwrap(),
+            "Texto do Markdown.",
+        ),
+        passage_in(
+            3,
+            3,
+            "dados.csv",
+            SourceLocation::csv(120, 145).unwrap(),
+            "Texto do CSV.",
+        ),
+        passage_in(
+            4,
+            4,
+            "livro.epub",
+            SourceLocation::epub(7, Some("Chegada".into()), None).unwrap(),
+            "Texto do EPUB.",
+        ),
+    ];
+    let built = builder().build("Pergunta?", &passages);
+    assert_eq!(built.sources.len(), 4);
+    let prompt = &built.request.user;
+    // A PDF keeps the header it always had.
+    assert!(
+        prompt.contains(r#"documento="Documento 1" paginas="12">"#),
+        "{prompt}"
+    );
+    assert!(prompt.contains(r#"tipo="markdown" localizacao="Embeddings › Normalização">"#));
+    assert!(prompt.contains(r#"tipo="csv" localizacao="linhas 120–145">"#));
+    assert!(prompt.contains(r#"tipo="epub" localizacao="cap. 7 — Chegada">"#));
+    assert_eq!(
+        prompt.matches("paginas=").count(),
+        1,
+        "pages exist only in a PDF"
+    );
+    // Every source carries its provenance to the answer.
+    let labels: Vec<String> = built.sources.iter().map(|s| s.provenance.label()).collect();
+    assert!(
+        labels.contains(&"documento-1.pdf · p. 12".to_string()),
+        "{labels:?}"
+    );
+    assert!(labels.contains(&"dados.csv · linhas 120–145".to_string()));
+}
+
+#[test]
+fn only_a_pdf_source_can_be_opened_or_answer_a_page_reference() {
+    use nlmx_domain::source::SourceLocation;
+    let passages = [passage_in(
+        1,
+        1,
+        "dados.csv",
+        SourceLocation::csv(2, 9).unwrap(),
+        "Linhas da tabela.",
+    )];
+    let built = builder().build("Pergunta?", &passages);
+    let cited =
+        CitationEngine::resolve("A tabela diz isso [1]. Veja a [página 1].", &built.sources);
+
+    assert_eq!(cited.citations.len(), 1);
+    assert!(
+        cited.citations[0].viewer_target().is_none(),
+        "no viewer for a CSV"
+    );
+    assert!(cited.documents[0].pages.is_empty() && cited.pages.is_empty());
+    // The "only document in context" fallback does not apply to a document without pages.
+    assert!(cited.page_refs.is_empty());
+    assert_eq!(cited.unresolved_pages, [1]);
+    assert_eq!(cited.text, "A tabela diz isso [1]. Veja a página 1.");
 }

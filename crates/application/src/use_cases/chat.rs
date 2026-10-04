@@ -283,6 +283,8 @@ fn sources(sources: &[Source], cited: &[usize]) -> Vec<MessageSource> {
             label: s.label.clone(),
             quote: s.content.clone(),
             bboxes: s.bboxes.clone(),
+            reference: s.provenance.reference.clone(),
+            document_name: s.provenance.document_name.clone(),
         })
         .collect()
 }

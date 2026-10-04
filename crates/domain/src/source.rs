@@ -9,7 +9,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    document_type::DocumentType, ingestion::DocumentId, ingestion::PageBox, vectors::ChunkId,
+    document_type::DocumentType, ingestion::DocumentId, ingestion::PageBox, parsed::ChunkMetadata,
+    vectors::ChunkId,
 };
 
 /// Separator between the headings of a section path in labels.
@@ -412,6 +413,28 @@ pub struct SourceReference {
 }
 
 impl SourceReference {
+    /// A reference to pages of a PDF (`page_end >= page_start >= 1`).
+    pub fn pdf(
+        document_id: DocumentId,
+        document_title: impl Into<String>,
+        chunk_id: Option<ChunkId>,
+        page_start: u32,
+        page_end: u32,
+        boxes: Vec<PageBox>,
+    ) -> Self {
+        Self {
+            document_id,
+            document_title: document_title.into(),
+            chunk_id,
+            location: SourceLocation::Pdf {
+                page_start,
+                page_end,
+                boxes,
+            },
+            section_path: Vec::new(),
+        }
+    }
+
     /// The format of the document, always the one of the location (they cannot disagree).
     pub fn document_type(&self) -> DocumentType {
         self.location.document_type()
@@ -428,6 +451,52 @@ impl SourceReference {
         } else {
             format!("{}, {}", self.document_title, self.location.label())
         }
+    }
+}
+
+/// A retrieved source: where a passage comes from (`reference`) plus what the retrieval knows
+/// about it. It carries provenance only: how to present it (open the PDF viewer, show a label)
+/// is up to the interface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RetrievedSource {
+    pub reference: SourceReference,
+    /// The file's name as it was imported (what the user recognizes).
+    pub document_name: String,
+    /// 0 to 1: how relevant the passage is to the question.
+    pub relevance_score: f32,
+    pub metadata: ChunkMetadata,
+}
+
+impl RetrievedSource {
+    pub fn document_id(&self) -> DocumentId {
+        self.reference.document_id
+    }
+
+    pub fn document_type(&self) -> DocumentType {
+        self.reference.document_type()
+    }
+
+    pub fn location(&self) -> &SourceLocation {
+        &self.reference.location
+    }
+
+    pub fn previewable(&self) -> bool {
+        self.reference.previewable()
+    }
+
+    /// "arquitetura.pdf · p. 12", "arquitetura.md · Embeddings › Normalização",
+    /// "dados.csv · linhas 120–145", "livro.epub · cap. 7 — Título".
+    pub fn label(&self) -> String {
+        source_label(&self.document_name, &self.reference.location)
+    }
+}
+
+/// `"<document> · <location>"` (just the location when the document has no name).
+pub fn source_label(document_name: &str, location: &SourceLocation) -> String {
+    if document_name.is_empty() {
+        location.label()
+    } else {
+        format!("{document_name} · {}", location.label())
     }
 }
 

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use nlmx_application::ports::{SectionRecord, StoredExtraction};
 use nlmx_domain::{
     document_type::DocumentType,
-    ingestion::{DocumentId, SECTION_SEPARATOR},
+    ingestion::{DocumentId, PageBox, SECTION_SEPARATOR},
     parsed::{ChunkMetadata, DocumentChunk, SectionKind},
     source::SourceLocation,
 };
@@ -44,7 +44,7 @@ fn json<T: serde::Serialize>(value: &T) -> rusqlite::Result<String> {
     serde_json::to_string(value).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
 }
 
-fn from_json<T: serde::de::DeserializeOwned>(text: &str) -> rusqlite::Result<T> {
+pub(crate) fn from_json<T: serde::de::DeserializeOwned>(text: &str) -> rusqlite::Result<T> {
     serde_json::from_str(text).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })
@@ -233,6 +233,36 @@ pub fn save_processed(
     tx.commit()
 }
 
+/// The location of a stored chunk: its provenance locator, or — for a PDF chunk saved before
+/// provenance existed — the pages in `document_chunks`. A PDF locator keeps only its pages; the
+/// boxes are in the legacy column.
+pub(crate) fn location_of(
+    locator: Option<&str>,
+    page_start: u32,
+    page_end: u32,
+    boxes: Vec<PageBox>,
+) -> rusqlite::Result<SourceLocation> {
+    Ok(match locator {
+        Some(text) => match from_json::<SourceLocation>(text)? {
+            SourceLocation::Pdf {
+                page_start,
+                page_end,
+                ..
+            } => SourceLocation::Pdf {
+                page_start,
+                page_end,
+                boxes,
+            },
+            other => other,
+        },
+        None => SourceLocation::Pdf {
+            page_start,
+            page_end,
+            boxes,
+        },
+    })
+}
+
 /// The stored chunks of a document in order, with their location.
 pub fn chunks_of(conn: &Connection, id: DocumentId) -> rusqlite::Result<Vec<DocumentChunk>> {
     let mut stmt = conn.prepare(
@@ -252,26 +282,7 @@ pub fn chunks_of(conn: &Connection, id: DocumentId) -> rusqlite::Result<Vec<Docu
         let metadata: Option<String> = r.get(10)?;
         let section_path_json: Option<String> = r.get(11)?;
         let section_text: Option<String> = r.get(6)?;
-        let location = match locator {
-            // A PDF locator keeps only its pages; the boxes are in the legacy column.
-            Some(text) => match from_json::<SourceLocation>(&text)? {
-                SourceLocation::Pdf {
-                    page_start,
-                    page_end,
-                    ..
-                } => SourceLocation::Pdf {
-                    page_start,
-                    page_end,
-                    boxes,
-                },
-                other => other,
-            },
-            None => SourceLocation::Pdf {
-                page_start: r.get(4)?,
-                page_end: r.get(5)?,
-                boxes,
-            },
-        };
+        let location = location_of(locator.as_deref(), r.get(4)?, r.get(5)?, boxes)?;
         let metadata = match metadata {
             Some(text) => from_json::<ChunkMetadata>(&text)?,
             None => ChunkMetadata {

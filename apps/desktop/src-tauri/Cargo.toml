@@ -35,7 +35,7 @@ axum.workspace = true
 http.workspace = true
 serde.workspace = true
 tower.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true
 nlmx-telemetry.workspace = true
 

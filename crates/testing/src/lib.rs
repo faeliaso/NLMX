@@ -415,7 +415,7 @@ use nlmx_application::ports::{
 };
 use nlmx_domain::ingestion::{
     Block, BlockKind, ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary,
-    PageBox, PageLayout, RemovalImpact, StructuredDocument,
+    PageBox, PageLayout, RemovalImpact, SourceDetails, StructuredDocument,
 };
 use nlmx_domain::parsed::{DocumentChunk, SectionKind};
 
@@ -781,6 +781,35 @@ impl DocumentRepository for FakeDocumentRepository {
         })
     }
 
+    fn source_details(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<SourceDetails>, StorageError>> {
+        Box::pin(async move {
+            let summary = self.list().await?.into_iter().find(|d| d.id == id);
+            let size = self
+                .rows
+                .lock()
+                .unwrap()
+                .get(id as usize - 1)
+                .map_or(0, |r| r.new.file_size);
+            Ok(summary.map(|d| SourceDetails {
+                id: d.id,
+                title: d.title,
+                file_name: d.original_filename,
+                document_type: d.document_type,
+                status: d.status,
+                error: d.error,
+                chunks: d.chunk_count,
+                file_size: size,
+                page_count: d.page_count,
+                imported_at: d.imported_at,
+                indexed_at: None,
+                conversations: 0,
+            }))
+        })
+    }
+
     fn list(&self) -> BoxFuture<'_, Result<Vec<DocumentSummary>, StorageError>> {
         Box::pin(async move {
             Ok(self
@@ -799,6 +828,7 @@ impl DocumentRepository for FakeDocumentRepository {
                         .or_else(|| r.processed.as_ref().map(|e| e.title.clone()))
                         .unwrap_or_else(|| r.new.original_filename.clone()),
                     original_filename: r.new.original_filename.clone(),
+                    document_type: r.new.document_type,
                     page_count: r.extraction.as_ref().map(|e| e.page_count).or_else(|| {
                         r.processed
                             .as_ref()
@@ -919,6 +949,7 @@ impl nlmx_application::ports::IndexingReader for FakeDocumentRepository {
                 .filter(|(_, r)| !r.removed)
                 .map(|(i, r)| nlmx_domain::indexing::IndexJob {
                     document_id: i as DocumentId + 1,
+                    document_type: r.new.document_type,
                     title: r
                         .extraction
                         .as_ref()
@@ -1531,6 +1562,24 @@ use nlmx_application::ports::{Candidates, ChunkReader, ChunkView, LexicalIndex};
 use nlmx_domain::retrieval::{LexicalCandidate, LexicalQuery, RetrievalFilter};
 
 /// Chunks in memory with a naive lexical score (term occurrences, accent-sensitive).
+use nlmx_domain::{
+    document_type::DocumentType,
+    source::{SourceLocation, SourceReference},
+};
+
+fn fake_chunk_metadata(
+    document_type: DocumentType,
+    document_id: DocumentId,
+) -> nlmx_domain::parsed::ChunkMetadata {
+    nlmx_domain::parsed::ChunkMetadata {
+        document_type,
+        document_title: Some(format!("Documento {document_id}")),
+        file_name: None,
+        language: None,
+        columns: Vec::new(),
+    }
+}
+
 #[derive(Default)]
 pub struct FakeCorpus {
     chunks: Vec<ChunkView>,
@@ -1543,6 +1592,8 @@ impl FakeCorpus {
             chunk_id,
             document_id,
             document_title: format!("Documento {document_id}"),
+            document_name: format!("documento-{document_id}.pdf"),
+            document_type: DocumentType::Pdf,
             ordinal: chunk_id as u32,
             content_hash: format!("hash-{chunk_id}"),
             page_start: page,
@@ -1550,6 +1601,41 @@ impl FakeCorpus {
             section: None,
             text: text.into(),
             bboxes: vec![],
+            location: SourceLocation::Pdf {
+                page_start: page,
+                page_end: page,
+                boxes: vec![],
+            },
+            metadata: fake_chunk_metadata(DocumentType::Pdf, document_id),
+        });
+        self
+    }
+
+    /// A chunk of a document that is not a PDF, at `location` (its format is the location's).
+    pub fn located(
+        mut self,
+        chunk_id: i64,
+        document_id: DocumentId,
+        document_name: &str,
+        location: SourceLocation,
+        text: &str,
+    ) -> Self {
+        let document_type = location.document_type();
+        self.chunks.push(ChunkView {
+            chunk_id,
+            document_id,
+            document_title: format!("Documento {document_id}"),
+            document_name: document_name.to_string(),
+            document_type,
+            ordinal: chunk_id as u32,
+            content_hash: format!("hash-{chunk_id}"),
+            page_start: 1,
+            page_end: 1,
+            section: None,
+            text: text.into(),
+            bboxes: vec![],
+            location,
+            metadata: fake_chunk_metadata(document_type, document_id),
         });
         self
     }
@@ -2116,6 +2202,27 @@ pub async fn conversation_repository_contract(
         .await
         .unwrap();
     repo.set_title(all.id, "Qual a carência?").await.unwrap();
+    let boxes = vec![PageBox {
+        page: 2,
+        bbox: nlmx_domain::document::BoundingBox {
+            left: 72.0,
+            top: 100.0,
+            right: 300.0,
+            bottom: 120.0,
+        },
+    }];
+    let reference = |page_start, page_end| {
+        let mut r = SourceReference::pdf(
+            document,
+            "Relatório",
+            None,
+            page_start,
+            page_end,
+            boxes.clone(),
+        );
+        r.section_path = vec!["3. Prazos".into()];
+        r
+    };
     let source = MessageSource {
         n: 1,
         cited: true,
@@ -2125,23 +2232,18 @@ pub async fn conversation_repository_contract(
         page_start: 2,
         page_end: 3,
         section: Some("3. Prazos".into()),
-        label: "Relatório, pp. 2–3 · 3. Prazos".into(),
+        label: "relatorio.pdf · pp. 2–3".into(),
         quote: "A carência termina após 180 dias.".into(),
-        bboxes: vec![PageBox {
-            page: 2,
-            bbox: nlmx_domain::document::BoundingBox {
-                left: 72.0,
-                top: 100.0,
-                right: 300.0,
-                bottom: 120.0,
-            },
-        }],
+        bboxes: boxes.clone(),
+        reference: reference(2, 3),
+        document_name: "relatorio.pdf".into(),
     };
     let unused = MessageSource {
         n: 2,
         cited: false,
         page_start: 5,
         page_end: 5,
+        reference: reference(5, 5),
         ..source.clone()
     };
     let refs = [nlmx_domain::chat::MessagePageRef {

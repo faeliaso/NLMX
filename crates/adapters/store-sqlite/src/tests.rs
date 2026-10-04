@@ -1380,6 +1380,145 @@ mod conversations {
     }
 
     #[tokio::test]
+    async fn source_details_count_the_conversations_that_cited_the_document() {
+        let db = Database::open(temp_db()).unwrap();
+        let doc = document(&db, 'f').await;
+        let details = db.source_details(doc).await.unwrap().unwrap();
+        assert_eq!((details.conversations, details.chunks), (0, 0));
+        assert_eq!(
+            details.document_type,
+            nlmx_domain::document_type::DocumentType::Pdf
+        );
+        assert!(db.source_details(doc + 100).await.unwrap().is_none());
+
+        // Two conversations cite it (one of them twice); a third only had it consulted.
+        let mut cited = source(1, doc);
+        cited.cited = true;
+        let mut consulted = source(1, doc);
+        consulted.cited = false;
+        for (times, source) in [(2, &cited), (1, &cited), (1, &consulted)] {
+            let c = db.create(ConversationScope::Library).await.unwrap();
+            for _ in 0..times {
+                let a = db
+                    .add_message(
+                        c.id,
+                        Role::Assistant,
+                        "",
+                        MessageStatus::Streaming,
+                        Some(AnswerGrounding::Documents),
+                    )
+                    .await
+                    .unwrap();
+                db.finish_message(
+                    a,
+                    nlmx_application::ports::FinishedAnswer {
+                        content: "ok [1]",
+                        status: MessageStatus::Answered,
+                        error: None,
+                        sources: std::slice::from_ref(source),
+                        page_refs: &[],
+                    },
+                )
+                .await
+                .unwrap();
+            }
+        }
+        assert_eq!(
+            db.source_details(doc).await.unwrap().unwrap().conversations,
+            2
+        );
+        let listed = db.list().await.unwrap();
+        assert_eq!(
+            listed[0].document_type,
+            nlmx_domain::document_type::DocumentType::Pdf
+        );
+    }
+
+    #[tokio::test]
+    async fn citations_keep_the_location_of_every_format() {
+        use nlmx_domain::{document_type::DocumentType, source::SourceLocation};
+        let path = temp_db();
+        let db = Database::open(&path).unwrap();
+        let doc = document(&db, 'e').await;
+        let conversation = db.create(ConversationScope::Library).await.unwrap();
+        let answer = db
+            .add_message(
+                conversation.id,
+                Role::Assistant,
+                "",
+                MessageStatus::Streaming,
+                Some(AnswerGrounding::Documents),
+            )
+            .await
+            .unwrap();
+        let pdf = source(1, doc);
+        let locations = [
+            SourceLocation::markdown(vec!["Guia".into(), "Uso".into()], Some((3, 9))).unwrap(),
+            SourceLocation::text(10, 90).unwrap(),
+            SourceLocation::csv(120, 145).unwrap(),
+            SourceLocation::epub(7, Some("Chegada".into()), None).unwrap(),
+        ];
+        let mut sources = vec![pdf.clone()];
+        for (i, location) in locations.iter().enumerate() {
+            let mut s = source(i as u32 + 2, doc);
+            s.document_name = format!("arquivo-{i}");
+            s.reference.location = location.clone();
+            s.section = None;
+            sources.push(s);
+        }
+        db.finish_message(
+            answer,
+            nlmx_application::ports::FinishedAnswer {
+                content: "ok [1][2][3][4][5]",
+                status: MessageStatus::Answered,
+                error: None,
+                sources: &sources,
+                page_refs: &[],
+            },
+        )
+        .await
+        .unwrap();
+
+        let read = db.message(answer).await.unwrap().unwrap().sources;
+        assert_eq!(read.len(), 5);
+        assert_eq!(read[0].reference.location, pdf.reference.location);
+        assert!(read[0].previewable());
+        let types: Vec<DocumentType> = read.iter().map(|s| s.document_type()).collect();
+        assert_eq!(
+            types,
+            [
+                DocumentType::Pdf,
+                DocumentType::Markdown,
+                DocumentType::Text,
+                DocumentType::Csv,
+                DocumentType::Epub
+            ]
+        );
+        for (s, location) in read[1..].iter().zip(&locations) {
+            assert_eq!(&s.reference.location, location);
+            assert!(!s.previewable());
+        }
+        assert_eq!(read[3].document_name, "arquivo-2");
+
+        // A citation saved before provenance existed (no format, name or locator) is a PDF one.
+        let conn = connection::open(&path).unwrap();
+        conn.execute(
+            "INSERT INTO citations (message_id, ordinal, document_id, page_number, page_end, quote,
+                                    document_title)
+             VALUES (?1, 9, ?2, 4, 6, 'antiga', 'Relatório')",
+            rusqlite::params![answer, doc],
+        )
+        .unwrap();
+        let old = db.message(answer).await.unwrap().unwrap().sources.remove(5);
+        assert_eq!(old.document_type(), DocumentType::Pdf);
+        assert_eq!(
+            old.reference.location,
+            SourceLocation::pdf(4, 6, vec![]).unwrap()
+        );
+        assert_eq!(old.document_name, "");
+    }
+
+    #[tokio::test]
     async fn removing_a_document_widens_the_scope_and_drops_its_sources() {
         let path = temp_db();
         let db = Database::open(&path).unwrap();
@@ -1404,9 +1543,18 @@ mod conversations {
             page_start: 1,
             page_end: 1,
             section: None,
-            label: "Relatório, p. 1".into(),
+            label: "relatorio.pdf · p. 1".into(),
             quote: "texto".into(),
             bboxes: vec![],
+            reference: nlmx_domain::source::SourceReference::pdf(
+                doc,
+                "Relatório",
+                None,
+                1,
+                1,
+                vec![],
+            ),
+            document_name: "relatorio.pdf".into(),
         };
         let refs = [nlmx_domain::chat::MessagePageRef {
             page: 1,
@@ -1484,9 +1632,18 @@ mod conversations {
             page_start: 1,
             page_end: 1,
             section: None,
-            label: "Doc, p. 1".into(),
+            label: "doc.pdf · p. 1".into(),
             quote: "trecho".into(),
             bboxes: vec![],
+            reference: nlmx_domain::source::SourceReference::pdf(
+                document_id,
+                "Doc",
+                None,
+                1,
+                1,
+                vec![],
+            ),
+            document_name: "doc.pdf".into(),
         }
     }
 

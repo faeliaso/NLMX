@@ -33,6 +33,23 @@ use crate::services::{
 };
 use crate::telemetry::{ms, record};
 
+/// What registering a file produced (see [`DocumentIngestion::enqueue`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Enqueued {
+    /// A new document, waiting in status `queued`.
+    New(DocumentId),
+    /// The file of a known document changed: it keeps its id and waits to be indexed again.
+    Updated(DocumentId),
+    /// The same file failed or was interrupted before: it is processed again.
+    Retry(DocumentId),
+    /// Already in the library, nothing to do.
+    Duplicate(DocumentId),
+    Failed {
+        id: Option<DocumentId>,
+        reason: String,
+    },
+}
+
 pub struct DocumentIngestion {
     pub engine: Arc<dyn DocumentEngine>,
     pub files: Arc<dyn FileStore>,
@@ -52,10 +69,18 @@ pub struct DocumentIngestion {
 }
 
 impl DocumentIngestion {
-    /// Imports a file: duplicate check by content hash, copy into the library, then ingestion.
-    /// A previously failed or interrupted import of the same file is retried.
+    /// Imports a file: [`enqueue`](Self::enqueue) it, then ingest it. A previously failed or
+    /// interrupted import of the same file is retried.
     pub async fn import(&self, path: &Path) -> ImportOutcome {
-        let failed = |reason: String| ImportOutcome::Failed { id: None, reason };
+        let enqueued = self.enqueue(path).await;
+        self.process(enqueued).await
+    }
+
+    /// Registers a file without processing it: duplicate check by content hash, copy into the
+    /// library, then the document exists in status `queued` (visible in the library) and waits
+    /// for [`process`](Self::process). Nothing derived from the file is written yet.
+    pub async fn enqueue(&self, path: &Path) -> Enqueued {
+        let failed = |reason: String| Enqueued::Failed { id: None, reason };
         let digest = match self.files.digest(path).await {
             Ok(digest) => digest,
             Err(err) => return failed(err.message),
@@ -66,7 +91,16 @@ impl DocumentIngestion {
             Err(err) => return failed(err.message),
         };
         if let Some(id) = existing {
-            return self.retry(id).await;
+            return match self.documents.get(id).await {
+                // Failed: do it again. A document still being read is already in the queue (an
+                // interrupted one is picked up at startup by `resume`): not a second run.
+                Ok(Some(doc)) if doc.status == DocumentStatus::Failed => Enqueued::Retry(id),
+                Ok(_) => Enqueued::Duplicate(id),
+                Err(err) => Enqueued::Failed {
+                    id: Some(id),
+                    reason: err.message,
+                },
+            };
         }
 
         // Without parsers the only format is PDF (legacy path); with them, the registry decides.
@@ -106,10 +140,21 @@ impl DocumentIngestion {
             document_type,
         };
         match self.documents.insert(new).await {
-            Ok(InsertOutcome::Inserted(id)) => self.ingest(id).await,
+            Ok(InsertOutcome::Inserted(id)) => Enqueued::New(id),
             // Imported concurrently by someone else between the check and the insert.
-            Ok(InsertOutcome::AlreadyExists(id)) => ImportOutcome::Duplicate { id },
+            Ok(InsertOutcome::AlreadyExists(id)) => Enqueued::Duplicate(id),
             Err(err) => failed(err.message),
+        }
+    }
+
+    /// Runs the pipeline for what [`enqueue`](Self::enqueue) registered.
+    pub async fn process(&self, enqueued: Enqueued) -> ImportOutcome {
+        match enqueued {
+            Enqueued::New(id) | Enqueued::Updated(id) | Enqueued::Retry(id) => {
+                self.ingest(id).await
+            }
+            Enqueued::Duplicate(id) => ImportOutcome::Duplicate { id },
+            Enqueued::Failed { id, reason } => ImportOutcome::Failed { id, reason },
         }
     }
 
@@ -123,8 +168,8 @@ impl DocumentIngestion {
         digest: FileDigest,
         document_type: DocumentType,
         original_path: String,
-    ) -> ImportOutcome {
-        let failed = |reason: String| ImportOutcome::Failed {
+    ) -> Enqueued {
+        let failed = |reason: String| Enqueued::Failed {
             id: Some(id),
             reason,
         };
@@ -156,7 +201,7 @@ impl DocumentIngestion {
         if let Some(viewer) = &self.viewer {
             viewer.forget(id);
         }
-        self.ingest(id).await
+        Enqueued::Updated(id)
     }
 
     /// Runs the whole pipeline again for a document, whatever its status. The previous chunks,

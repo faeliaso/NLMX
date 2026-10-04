@@ -79,7 +79,7 @@ pub async fn documents(State(state): State<AppState>, headers: HeaderMap) -> Res
 }
 
 /// `POST /documents/{id}/delete`: removes the document (confirmed in a dialog) and shows the
-/// library again, with the outcome above it.
+/// library again, announcing the outcome as a toast.
 pub async fn remove_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -88,19 +88,18 @@ pub async fn remove_document(
     let notice = match &state.remover {
         Err(reason) => Notice {
             kind: "danger",
-            title: "Não foi possível remover o documento".into(),
-            message: reason.clone(),
+            message: format!("Não foi possível remover o documento: {reason}"),
         },
         Ok(remover) => match remover.remove(id).await {
             Ok(_) => Notice {
                 kind: "success",
-                title: "Documento removido".into(),
-                message: "Ele e tudo o que derivava dele foram apagados deste Mac.".into(),
+                message:
+                    "Documento removido. Ele e tudo o que derivava dele foram apagados deste Mac."
+                        .into(),
             },
             Err(err) => Notice {
                 kind: "danger",
-                title: "Não foi possível remover o documento".into(),
-                message: err.to_string(),
+                message: format!("Não foi possível remover o documento: {err}"),
             },
         },
     };

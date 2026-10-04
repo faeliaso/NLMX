@@ -2,7 +2,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use nlmx_application::use_cases::DocumentIngestion;
+use nlmx_application::use_cases::{DocumentIngestion, Enqueued};
 use nlmx_domain::{
     document::{BoundingBox, DocumentMetadata, PageImage, TextSpan},
     ingestion::{ChunkPolicy, DocumentStatus, ImportOutcome},
@@ -317,4 +317,77 @@ async fn lists_documents() {
         (docs[0].title.as_str(), docs[0].chunk_count),
         ("Contrato A", 1)
     );
+}
+
+#[tokio::test]
+async fn enqueue_registers_the_document_and_process_indexes_it_later() {
+    let s = setup(vec![(
+        "/in/a.pdf",
+        b"pdf-a",
+        Some("A"),
+        vec![text_page(&["Carência de 180 dias."])],
+    )]);
+
+    let enqueued = s.ingestion.enqueue(Path::new("/in/a.pdf")).await;
+    assert_eq!(enqueued, Enqueued::New(1));
+    // It is in the library, waiting; nothing was derived from the file yet.
+    let row = s.documents.row(1);
+    assert_eq!(row.status, DocumentStatus::Queued);
+    assert_eq!(row.history, [DocumentStatus::Queued]);
+    assert!(row.extraction.is_none() && row.processed.is_none());
+    assert_eq!(s.documents.len(), 1);
+
+    let outcome = s.ingestion.process(enqueued).await;
+    assert!(matches!(
+        outcome,
+        ImportOutcome::Imported {
+            id: 1,
+            chunks: 1,
+            ..
+        }
+    ));
+    assert_eq!(s.documents.row(1).status, DocumentStatus::Embedding);
+
+    // The same file again: nothing to enqueue, nothing to process.
+    let again = s.ingestion.enqueue(Path::new("/in/a.pdf")).await;
+    assert_eq!(again, Enqueued::Duplicate(1));
+    assert_eq!(
+        s.ingestion.process(again).await,
+        ImportOutcome::Duplicate { id: 1 }
+    );
+}
+
+#[tokio::test]
+async fn enqueue_retries_a_failed_document_and_reports_unreadable_files() {
+    let s = setup(vec![(
+        "/in/a.pdf",
+        b"pdf-a",
+        None,
+        vec![text_page(&["Texto."])],
+    )]);
+    s.ingestion.enqueue(Path::new("/in/a.pdf")).await;
+    s.documents.force_status(1, DocumentStatus::Failed);
+    assert_eq!(
+        s.ingestion.enqueue(Path::new("/in/a.pdf")).await,
+        Enqueued::Retry(1)
+    );
+
+    // A document that is still queued (or being read) is already in the queue: not a second run.
+    s.documents.force_status(1, DocumentStatus::Chunking);
+    assert_eq!(
+        s.ingestion.enqueue(Path::new("/in/a.pdf")).await,
+        Enqueued::Duplicate(1)
+    );
+
+    let missing = s.ingestion.enqueue(Path::new("/in/nao-existe.pdf")).await;
+    assert!(matches!(missing, Enqueued::Failed { id: None, .. }));
+    assert_eq!(
+        s.documents.len(),
+        1,
+        "nothing is registered for a file that cannot be read"
+    );
+    assert!(matches!(
+        s.ingestion.process(missing).await,
+        ImportOutcome::Failed { id: None, .. }
+    ));
 }

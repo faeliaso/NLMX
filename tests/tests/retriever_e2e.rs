@@ -109,11 +109,7 @@ async fn duplicated_documents_yield_one_passage_with_citation_data() {
     assert_eq!(p.page, 2);
     assert_eq!((p.source.page_start, p.source.page_end), (2, 3));
     assert_eq!(p.source.section.as_deref(), Some("3. Prazos"));
-    assert!(
-        p.source.label.ends_with("pp. 2–3 · 3. Prazos"),
-        "{}",
-        p.source.label
-    );
+    assert!(p.source.label.ends_with(" · pp. 2–3"), "{}", p.source.label);
     let pages: Vec<u32> = p.metadata.bboxes.iter().map(|b| b.page).collect();
     assert!(
         pages.contains(&2) && pages.contains(&3),

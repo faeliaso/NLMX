@@ -147,7 +147,7 @@ pub struct ViewerQuery {
     pub page_ref: Option<String>,
 }
 
-fn pair(value: Option<&str>) -> Option<(i64, u32)> {
+pub(crate) fn pair(value: Option<&str>) -> Option<(i64, u32)> {
     let (a, b) = value?.split_once('-')?;
     Some((a.parse().ok()?, b.parse().ok()?))
 }

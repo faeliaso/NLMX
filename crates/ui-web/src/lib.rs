@@ -7,6 +7,7 @@ mod chat;
 mod diagnostics;
 mod documents;
 mod error;
+mod formats;
 #[cfg(debug_assertions)]
 mod gallery;
 mod indexing;
@@ -14,6 +15,7 @@ mod markdown;
 mod models;
 mod sections;
 mod shell;
+mod sources;
 mod status;
 mod viewer;
 
@@ -71,6 +73,7 @@ pub fn router(state: AppState) -> Router {
         .route("/chat/messages/{id}/regenerate", post(chat::regenerate))
         .route("/chat/messages/{id}/free", post(chat::answer_freely))
         .route("/viewer/{doc}", get(viewer::open))
+        .route("/sources/{id}", get(sources::open))
         .route("/viewer/{doc}/pages/{page}/text", get(viewer::text))
         .route("/viewer/{doc}/search", get(viewer::search))
         .route("/documents/{id}/pages/{file}", get(viewer::page_image))
@@ -380,7 +383,12 @@ mod tests {
         // Empty library: empty state with the import action.
         let (_, _, body) = get("/documents").await;
         assert!(body.contains("Nenhum documento"));
-        assert!(body.contains(r#"data-command="import_documents""#));
+        // The import action is the one in the page header, not another in the empty state.
+        assert_eq!(
+            body.matches(r#"data-command="import_documents""#).count(),
+            1,
+            "{body}"
+        );
 
         // One imported document.
         let files = FakeFileStore::default();
@@ -514,7 +522,11 @@ mod tests {
         // `b` is still being read: the page refreshes itself.
         let (_, _, body) = send(app(Ok(indexing(documents.clone()))), "/indexing", true).await;
         assert!(body.contains("Busca só por palavras-chave"));
-        assert!(body.contains("Em andamento") && body.contains("Na fila"));
+        assert!(!body.contains("Em andamento") && !body.contains("Processando agora"));
+        assert!(
+            !body.contains("progressbar"),
+            "no progress bars on this page"
+        );
         assert!(body.contains("Precisa de atenção") && body.contains("PDF protegido por senha"));
         assert!(body.contains(r#"data-command="retry_document" data-command-args='{"id":1}'"#));
         assert!(body.contains(r#"data-command="retry_failed""#));
@@ -620,17 +632,28 @@ mod tests {
         let (status_code, body) = post_form(app.clone(), "/documents/1/delete", "").await;
         assert_eq!(status_code, StatusCode::OK);
         assert!(body.contains("ainda está sendo processado"), "{body}");
+        assert!(body.contains(r#"data-toast-on-load="danger""#), "{body}");
+        assert!(
+            !body.contains("alert-danger"),
+            "an error is a toast, not a banner"
+        );
         assert!(files.removed().is_empty());
 
         documents.force_status(1, nlmx_domain::ingestion::DocumentStatus::Embedding);
         let (status_code, body) = post_form(app.clone(), "/documents/1/delete", "").await;
         assert_eq!(status_code, StatusCode::OK);
-        assert!(body.contains("Documento removido"), "{body}");
+        assert!(body.contains(r#"data-toast-on-load="success""#), "{body}");
+        assert!(body.contains("Documento removido."), "{body}");
+        assert!(
+            !body.contains("alert-success"),
+            "the outcome is a toast, not a banner"
+        );
         assert!(body.contains("Nenhum documento"), "the list is empty again");
         assert_eq!(files.removed(), [sha]);
 
         let (_, body) = post_form(app, "/documents/1/delete", "").await;
         assert!(body.contains("O documento não existe mais."));
+        assert!(body.contains(r#"data-toast-on-load="danger""#));
     }
 
     fn descriptor(id: &str) -> nlmx_domain::models::ModelDescriptor {
@@ -860,7 +883,9 @@ mod tests {
             "{body}"
         );
         assert!(!body.contains("<script>x"), "model HTML is escaped");
-        assert!(body.contains(">Fontes<") && body.contains("Documento 1") && body.contains("p. 2"));
+        assert!(
+            body.contains(">Fontes<") && body.contains("documento-1.pdf") && body.contains("p. 2")
+        );
         assert!(body.contains("data-copy-answer") && body.contains("data-copy-text"));
         assert!(body.contains(&format!(r#"hx-post="/chat/messages/{id}/regenerate""#)));
 
@@ -1030,6 +1055,26 @@ mod tests {
             )
             .await
             .unwrap();
+        let boxes = vec![
+            PageBox {
+                page: 1,
+                bbox: BoundingBox {
+                    left: 61.2,
+                    top: 79.2,
+                    right: 306.0,
+                    bottom: 158.4,
+                },
+            },
+            PageBox {
+                page: 2,
+                bbox: BoundingBox {
+                    left: 61.2,
+                    top: 396.0,
+                    right: 306.0,
+                    bottom: 475.2,
+                },
+            },
+        ];
         let source = MessageSource {
             n: 1,
             cited: true,
@@ -1039,28 +1084,18 @@ mod tests {
             page_start: 1,
             page_end: 2,
             section: Some("3. Prazos".into()),
-            label: "Relatório, pp. 1–2 · 3. Prazos".into(),
+            label: "relatorio.pdf · pp. 1–2".into(),
             quote: "A carência termina após 180 dias.".into(),
-            bboxes: vec![
-                PageBox {
-                    page: 1,
-                    bbox: BoundingBox {
-                        left: 61.2,
-                        top: 79.2,
-                        right: 306.0,
-                        bottom: 158.4,
-                    },
-                },
-                PageBox {
-                    page: 2,
-                    bbox: BoundingBox {
-                        left: 61.2,
-                        top: 396.0,
-                        right: 306.0,
-                        bottom: 475.2,
-                    },
-                },
-            ],
+            bboxes: boxes.clone(),
+            reference: nlmx_domain::source::SourceReference::pdf(
+                doc,
+                "Relatório",
+                Some(1),
+                1,
+                2,
+                boxes,
+            ),
+            document_name: "relatorio.pdf".into(),
         };
         conversations
             .finish_message(
@@ -1090,6 +1125,306 @@ mod tests {
             indexing: Err("indexação indisponível neste teste".into()),
         });
         (app, doc, a)
+    }
+
+    #[test]
+    fn every_source_has_an_icon_and_opens_its_own_panel() {
+        use nlmx_domain::{
+            chat::{AnswerGrounding, Message, MessageSource, MessageStatus, Role},
+            source::{SourceLocation, SourceReference},
+        };
+        let source = |n: u32, name: &str, location: SourceLocation| MessageSource {
+            n,
+            cited: true,
+            document_id: n as i64,
+            chunk_id: Some(n as i64),
+            document_title: format!("Título {n}"),
+            page_start: 1,
+            page_end: 1,
+            section: None,
+            label: format!("{name} · {}", location.label()),
+            quote: "Trecho citado.".into(),
+            bboxes: vec![],
+            reference: SourceReference {
+                document_id: n as i64,
+                document_title: format!("Título {n}"),
+                chunk_id: Some(n as i64),
+                location,
+                section_path: vec![],
+            },
+            document_name: name.into(),
+        };
+        let message = Message {
+            id: 5,
+            conversation_id: 1,
+            role: Role::Assistant,
+            content: "Está no PDF [1], na tabela [2] e no guia [3].".into(),
+            status: MessageStatus::Answered,
+            grounding: Some(AnswerGrounding::Documents),
+            error: None,
+            sources: vec![
+                source(
+                    1,
+                    "arquitetura.pdf",
+                    SourceLocation::pdf(12, 12, vec![]).unwrap(),
+                ),
+                source(2, "dados.csv", SourceLocation::csv(120, 145).unwrap()),
+                source(
+                    3,
+                    "arquitetura.md",
+                    SourceLocation::markdown(
+                        vec!["Embeddings".into(), "Normalização".into()],
+                        None,
+                    )
+                    .unwrap(),
+                ),
+            ],
+            page_refs: vec![],
+            created_at: String::new(),
+        };
+        let view = chat::answer_view(&message);
+        let shown: Vec<(&str, &str, &str, &str, bool)> = view
+            .cited
+            .iter()
+            .map(|s| {
+                (
+                    s.title.as_str(),
+                    s.format,
+                    s.icon,
+                    s.location.as_str(),
+                    s.previewable,
+                )
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("arquitetura.pdf", "PDF", "format-pdf", "p. 12", true),
+                ("dados.csv", "CSV", "format-csv", "linhas 120–145", false),
+                (
+                    "arquitetura.md",
+                    "Markdown",
+                    "format-markdown",
+                    "Embeddings › Normalização",
+                    false
+                ),
+            ]
+        );
+        // Only the PDF opens the viewer; the others open their information panel.
+        let urls: Vec<&str> = view.cited.iter().map(|s| s.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            [
+                "/viewer/1?page=1&cite=5-1",
+                "/sources/2?cite=5-2",
+                "/sources/3?cite=5-3"
+            ]
+        );
+        assert_eq!(view.html.matches("<button").count(), 3, "{}", view.html);
+        assert!(
+            view.html
+                .contains(r##"hx-get="/sources/2?cite=5-2" hx-target="#viewer""##)
+        );
+        assert!(!view.html.contains("/viewer/2") && !view.html.contains("/viewer/3"));
+        assert!(view.copy_text.contains("[2] dados.csv · linhas 120–145"));
+    }
+
+    /// A library with a Markdown file (1), a PDF (2) and a CSV (3); the conversations that cited
+    /// the Markdown one are in `conversations`.
+    async fn sources_app() -> (Router, i64) {
+        use nlmx_application::ports::{
+            ConversationRepository, DocumentRepository, FinishedAnswer, NewDocument,
+        };
+        use nlmx_domain::{
+            chat::{AnswerGrounding, MessageSource, MessageStatus, Role},
+            document_type::DocumentType,
+            ingestion::DocumentStatus,
+            source::{SourceLocation, SourceReference},
+        };
+        let documents = Arc::new(FakeDocumentRepository::default());
+        for (name, kind, sha) in [
+            ("arquitetura.md", DocumentType::Markdown, 'a'),
+            ("relatorio.pdf", DocumentType::Pdf, 'b'),
+            ("dados.csv", DocumentType::Csv, 'c'),
+        ] {
+            documents
+                .insert(NewDocument {
+                    sha256: sha.to_string().repeat(64),
+                    original_filename: name.into(),
+                    original_path: format!("/in/{name}"),
+                    library_path: format!("/lib/{name}"),
+                    file_size: 2048,
+                    document_type: kind,
+                })
+                .await
+                .unwrap();
+        }
+        documents.force_status(1, DocumentStatus::Indexed);
+        documents.force_status(3, DocumentStatus::Failed);
+        let conversations = Arc::new(nlmx_testing::FakeConversations::default());
+        let c = conversations
+            .create(nlmx_domain::chat::ConversationScope::Library)
+            .await
+            .unwrap();
+        let a = conversations
+            .add_message(
+                c.id,
+                Role::Assistant,
+                "",
+                MessageStatus::Streaming,
+                Some(AnswerGrounding::Documents),
+            )
+            .await
+            .unwrap();
+        let location =
+            SourceLocation::markdown(vec!["Embeddings".into(), "Normalização".into()], None)
+                .unwrap();
+        conversations
+            .finish_message(
+                a,
+                FinishedAnswer {
+                    content: "Há uma camada de normalização [1].",
+                    status: MessageStatus::Answered,
+                    error: None,
+                    sources: &[MessageSource {
+                        n: 1,
+                        cited: true,
+                        document_id: 1,
+                        chunk_id: Some(1),
+                        document_title: "Arquitetura".into(),
+                        page_start: 1,
+                        page_end: 1,
+                        section: None,
+                        label: "arquitetura.md · Embeddings › Normalização".into(),
+                        quote: "A camada de normalização vem antes dos embeddings.".into(),
+                        bboxes: vec![],
+                        reference: SourceReference {
+                            document_id: 1,
+                            document_title: "Arquitetura".into(),
+                            chunk_id: Some(1),
+                            location,
+                            section_path: vec![],
+                        },
+                        document_name: "arquitetura.md".into(),
+                    }],
+                    page_refs: &[],
+                },
+            )
+            .await
+            .unwrap();
+        let ingestion = Arc::new(DocumentIngestion {
+            pipeline: None,
+            progress: None,
+            viewer: None,
+            engine: Arc::new(FakeDocumentEngine::default()),
+            files: Arc::new(FakeFileStore::default()),
+            documents,
+            analyzer: Arc::new(FakeStructureAnalyzer),
+            chunker: Arc::new(FakeChunker),
+            tokens: Arc::new(WordTokenCounter),
+            policy: Default::default(),
+            embedder: None,
+        });
+        let app = router(AppState {
+            system_status: status(LanguageModelStatus::Available, FakeStorage::healthy()),
+            ingestion: Ok(ingestion),
+            chat: Ok(chat_on(conversations, FakeLlmProvider::available())),
+            viewer: Err("visualizador indisponível nos testes".into()),
+            remover: Err("remoção indisponível neste teste".into()),
+            diagnostics: None,
+            models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
+        });
+        (app, a)
+    }
+
+    #[tokio::test]
+    async fn a_source_that_is_not_a_pdf_shows_its_information_and_no_preview() {
+        let (app, _) = sources_app().await;
+        let (status, _, body) = send(app, "/sources/1", true).await;
+        assert_eq!(status, StatusCode::OK);
+        for expected in [
+            "data-source-info",
+            "arquitetura.md",
+            "Markdown",
+            "Indexado",
+            "Trechos",
+            "Usado em",
+            "Ainda não usado em conversas",
+            "2 KB",
+            "data-close-panel",
+        ] {
+            assert!(body.contains(expected), "{expected}: {body}");
+        }
+        // Nothing to preview: no viewer, no PDF button, no content of the file.
+        for forbidden in ["data-viewer", "/viewer/", "Abrir no PDF", "viewer-pages"] {
+            assert!(!body.contains(forbidden), "{forbidden}: {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn opening_from_a_citation_shows_where_the_answer_came_from() {
+        let (app, answer) = sources_app().await;
+        let (status, _, body) = send(app, &format!("/sources/1?cite={answer}-1"), true).await;
+        assert_eq!(status, StatusCode::OK);
+        for expected in [
+            "Fonte 1",
+            "Trecho citado · Embeddings › Normalização",
+            "A camada de normalização vem antes dos embeddings.",
+        ] {
+            assert!(body.contains(expected), "{expected}: {body}");
+        }
+        assert!(!body.contains("/viewer/"));
+    }
+
+    #[tokio::test]
+    async fn a_pdf_source_also_offers_its_preview() {
+        let (app, _) = sources_app().await;
+        let (status, _, body) = send(app, "/sources/2", true).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body.contains(r##"hx-get="/viewer/2" hx-target="#viewer""##),
+            "{body}"
+        );
+        assert!(body.contains("PDF") && body.contains("Abrir no PDF"));
+    }
+
+    #[tokio::test]
+    async fn a_failed_source_says_so_and_a_missing_one_is_not_found() {
+        let (app, _) = sources_app().await;
+        let (_, _, failed) = send(app.clone(), "/sources/3", true).await;
+        assert!(
+            failed.contains("CSV") && failed.contains("Falhou"),
+            "{failed}"
+        );
+        let (status, _, body) = send(app, "/sources/99", true).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.contains("viewer-error") && body.contains("data-close-panel"));
+    }
+
+    #[tokio::test]
+    async fn documents_show_each_format_and_only_non_pdfs_have_details() {
+        let (app, _) = sources_app().await;
+        let (_, _, body) = send(app.clone(), "/fragments/documents", true).await;
+        for expected in ["arquitetura.md", "Markdown", "CSV", "PDF"] {
+            assert!(body.contains(expected), "{expected}: {body}");
+        }
+        assert!(body.contains(r#"hx-get="/chat?source=1""#), "{body}");
+        assert!(body.contains(r#"hx-get="/chat?source=3""#));
+        assert!(
+            !body.contains("/chat?source=2"),
+            "a PDF opens its viewer instead"
+        );
+        // A page of a file that has none is not invented.
+        assert!(!body.contains("0 páginas"));
+
+        // The chat opens with the information panel beside it.
+        let (status, _, chat) = send(app, "/chat?source=1", false).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            chat.contains("data-source-info") && chat.contains(" data-panel-open"),
+            "{chat}"
+        );
     }
 
     #[tokio::test]

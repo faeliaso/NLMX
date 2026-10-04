@@ -8,6 +8,7 @@ use nlmx_domain::{
     document_type::DocumentType,
     ingestion::{
         DocumentId, DocumentStatus, DocumentSummary, PageBox, RemovalImpact, SECTION_SEPARATOR,
+        SourceDetails,
     },
     parsed::DocumentChunk,
 };
@@ -496,13 +497,50 @@ impl DocumentRepository for Database {
         }))
     }
 
+    fn source_details(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<SourceDetails>, StorageError>> {
+        Box::pin(self.run(move |conn| {
+            conn.query_row(
+                "SELECT d.id, coalesce(d.title, d.original_filename), d.original_filename, d.format,
+                        d.status, d.error,
+                        (SELECT count(*) FROM document_chunks c WHERE c.document_id = d.id),
+                        d.file_size, d.page_count, d.imported_at, d.indexed_at,
+                        (SELECT count(DISTINCT m.conversation_id)
+                           FROM citations ct JOIN messages m ON m.id = ct.message_id
+                          WHERE ct.document_id = d.id AND ct.cited = 1)
+                 FROM documents d WHERE d.id = ?1",
+                [id],
+                |row| {
+                    Ok(SourceDetails {
+                        id: row.get(0)?,
+                        title: row.get(1)?,
+                        file_name: row.get(2)?,
+                        document_type: parse_type(row.get(3)?)?,
+                        status: parse_status(row.get(4)?)?,
+                        error: row.get(5)?,
+                        chunks: row.get(6)?,
+                        file_size: row.get::<_, i64>(7)?.max(0) as u64,
+                        page_count: row.get(8)?,
+                        imported_at: row.get(9)?,
+                        indexed_at: row.get(10)?,
+                        conversations: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(err("ler a fonte"))
+        }))
+    }
+
     fn list(&self) -> BoxFuture<'_, Result<Vec<DocumentSummary>, StorageError>> {
         Box::pin(self.run(|conn| {
             let mut stmt = conn
                 .prepare(
                     "SELECT d.id, coalesce(d.title, d.original_filename), d.original_filename, d.page_count,
                             (SELECT count(*) FROM document_chunks c WHERE c.document_id = d.id),
-                            d.status, d.error, d.imported_at
+                            d.status, d.error, d.imported_at, d.format
                      FROM documents d
                      ORDER BY d.imported_at DESC, d.id DESC",
                 )
@@ -512,6 +550,7 @@ impl DocumentRepository for Database {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     original_filename: row.get(2)?,
+                    document_type: parse_type(row.get(8)?)?,
                     page_count: row.get(3)?,
                     chunk_count: row.get(4)?,
                     status: parse_status(row.get(5)?)?,

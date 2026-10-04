@@ -9,6 +9,7 @@ use nlmx_domain::{
         ComponentScore, MAX_TOP_K, RetrievalFilter, RetrievalOptions, jaccard_trigrams,
         join_adjacent, normalize_query, same_content, same_numbers,
     },
+    source::{RetrievedSource, SourceLocation, SourceReference},
     vectors::ChunkId,
 };
 
@@ -83,7 +84,8 @@ pub struct PassageSource {
     pub page_start: u32,
     pub page_end: u32,
     pub section: Option<String>,
-    /// e.g. "Relatório de Coberturas, pp. 2–3 · 3. Prazos".
+    /// e.g. "relatorio.pdf · pp. 2–3", "guia.md · Instalação › Requisitos" (see
+    /// [`RetrievedSource::label`]).
     pub label: String,
 }
 
@@ -119,7 +121,20 @@ pub struct Passage {
     pub content: String,
     pub score: f32,
     pub source: PassageSource,
+    /// Where the passage comes from, whatever the format: the same for every consumer
+    /// (prompt, citations, interface). The interface decides how to present it.
+    pub provenance: RetrievedSource,
     pub metadata: PassageMetadata,
+}
+
+impl Passage {
+    pub fn document_type(&self) -> nlmx_domain::document_type::DocumentType {
+        self.provenance.document_type()
+    }
+
+    pub fn location(&self) -> &SourceLocation {
+        self.provenance.location()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -294,16 +309,16 @@ fn drop_near_duplicates(drafts: Vec<Draft>, threshold: f32) -> Vec<Draft> {
     kept.into_iter().map(|(d, _)| d).collect()
 }
 
-fn label(title: &str, start: u32, end: u32, section: Option<&str>) -> String {
-    let pages = if start == end {
-        format!("p. {start}")
-    } else {
-        format!("pp. {start}–{end}")
-    };
-    match section {
-        Some(s) if !s.is_empty() => format!("{title}, {pages} · {s}"),
-        _ => format!("{title}, {pages}"),
+/// The location of a passage made of consecutive chunks: the union of theirs (the first one's
+/// when they cannot be merged).
+fn merged_location(members: &[RetrievedChunk]) -> SourceLocation {
+    let mut location = members[0].chunk.location.clone();
+    for member in &members[1..] {
+        if let Some(merged) = location.merge(&member.chunk.location) {
+            location = merged;
+        }
     }
+    location
 }
 
 fn passage(draft: Draft) -> Passage {
@@ -335,6 +350,22 @@ fn passage(draft: Draft) -> Passage {
     let mut duplicates = draft.duplicates.clone();
     duplicates.sort();
     duplicates.dedup();
+    let section_path: Vec<String> = section
+        .as_deref()
+        .map(|s| s.split(" > ").map(String::from).collect())
+        .unwrap_or_default();
+    let provenance = RetrievedSource {
+        reference: SourceReference {
+            document_id: main.chunk.document_id,
+            document_title: first.document_title.clone(),
+            chunk_id: Some(main.chunk.chunk_id),
+            location: merged_location(&draft.members),
+            section_path: section_path.clone(),
+        },
+        document_name: first.document_name.clone(),
+        relevance_score: main.score,
+        metadata: main.chunk.metadata.clone(),
+    };
     Passage {
         document_id: main.chunk.document_id,
         chunk_id: main.chunk.chunk_id,
@@ -342,12 +373,7 @@ fn passage(draft: Draft) -> Passage {
         content: draft.content(),
         score: main.score,
         source: PassageSource {
-            label: label(
-                &first.document_title,
-                page_start,
-                page_end,
-                section.as_deref(),
-            ),
+            label: provenance.label(),
             document_title: first.document_title.clone(),
             page_start,
             page_end,
@@ -355,15 +381,14 @@ fn passage(draft: Draft) -> Passage {
         },
         metadata: PassageMetadata {
             chunk_ids: draft.members.iter().map(|m| m.chunk.chunk_id).collect(),
-            section_path: section
-                .map(|s| s.split(" > ").map(String::from).collect())
-                .unwrap_or_default(),
+            section_path,
             bboxes,
             semantic: main.semantic,
             lexical: main.lexical,
             matched_by,
             duplicates,
         },
+        provenance,
     }
 }
 

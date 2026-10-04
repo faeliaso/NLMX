@@ -18,8 +18,9 @@ use nlmx_domain::{
     document_type::DocumentType,
     generation::{Generation, GenerationRequest, LanguageModelStatus, LlmCapabilities, LlmError},
     parsed::{
-        ChunkContext, DocumentChunk, DocumentMetadata as ParsedMetadata, ParseError,
-        ParsedDocument, SectionKind, SectionOutline,
+        ChunkContext, ChunkMetadata as ParsedChunkMetadata, DocumentChunk,
+        DocumentMetadata as ParsedMetadata, ParseError, ParsedDocument, SectionKind,
+        SectionOutline,
     },
     source::SourceLocation,
 };
@@ -185,7 +186,7 @@ pub trait DocumentParser: Send + Sync {
 
 use nlmx_domain::ingestion::{
     ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, IngestProgress,
-    PageLayout, RemovalImpact, StructuredDocument,
+    PageLayout, RemovalImpact, SourceDetails, StructuredDocument,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -417,6 +418,11 @@ pub trait DocumentRepository: Send + Sync {
         id: DocumentId,
     ) -> BoxFuture<'_, Result<Vec<SectionRecord>, StorageError>>;
     fn list(&self) -> BoxFuture<'_, Result<Vec<DocumentSummary>, StorageError>>;
+    /// What the interface shows about one source (`None` if it does not exist).
+    fn source_details(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<SourceDetails>, StorageError>>;
     /// Documents whose ingestion was interrupted (see `DocumentStatus::is_unfinished`).
     fn unfinished(&self) -> BoxFuture<'_, Result<Vec<DocumentId>, StorageError>>;
     /// Page sizes saved by the last extraction, in page order (empty before extraction).
@@ -609,15 +615,22 @@ pub struct ChunkView {
     pub chunk_id: ChunkId,
     pub document_id: nlmx_domain::ingestion::DocumentId,
     pub document_title: String,
+    /// The name of the file as it was imported.
+    pub document_name: String,
+    pub document_type: DocumentType,
     /// Position of the chunk in its document (consecutive ordinals are neighbours).
     pub ordinal: u32,
     pub content_hash: String,
+    /// Pages of a PDF chunk. Meaningless for any other format: read `location`.
     pub page_start: u32,
     pub page_end: u32,
     pub section: Option<String>,
     pub text: String,
-    /// Where the chunk is on its pages (top-left origin, PDF points).
+    /// Where the chunk is on its pages (top-left origin, PDF points); PDF only.
     pub bboxes: Vec<nlmx_domain::ingestion::PageBox>,
+    /// Where the chunk comes from, whatever the format. The source of truth for provenance.
+    pub location: SourceLocation,
+    pub metadata: ParsedChunkMetadata,
 }
 
 pub trait ChunkReader: Send + Sync {

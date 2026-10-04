@@ -4,8 +4,10 @@
 use std::ops::Range;
 
 use nlmx_domain::{
+    document_type::DocumentType,
     ingestion::{DocumentId, PageBox},
     retrieval::fold,
+    source::RetrievedSource,
     vectors::ChunkId,
     viewer::ViewerTarget,
 };
@@ -24,18 +26,21 @@ pub struct Citation {
     pub page_end: u32,
     pub label: String,
     pub bboxes: Vec<PageBox>,
+    /// Where the cited passage comes from, whatever the format.
+    pub provenance: RetrievedSource,
     /// Byte ranges of each `[n]` marker in the cleaned answer.
     pub spans: Vec<Range<usize>>,
 }
 
 impl Citation {
-    /// Opens the passage: its first page, every box highlighted.
-    pub fn viewer_target(&self) -> ViewerTarget {
-        ViewerTarget {
+    /// Opens the passage: its first page, every box highlighted. Only a PDF can be opened;
+    /// any other format is cited by its label alone.
+    pub fn viewer_target(&self) -> Option<ViewerTarget> {
+        self.provenance.previewable().then(|| ViewerTarget {
             document_id: self.document_id,
             page: self.page_start,
             highlights: self.bboxes.clone(),
-        }
+        })
     }
 }
 
@@ -204,7 +209,9 @@ impl CitationEngine {
                     documents.last_mut().expect("just pushed")
                 }
             };
-            for page in c.page_start..=c.page_end {
+            // Pages exist only in a PDF.
+            let paged = c.provenance.document_type() == DocumentType::Pdf;
+            for page in (c.page_start..=c.page_end).filter(|_| paged) {
                 doc.pages.push(page);
                 pages.push(PageRef {
                     document_id: c.document_id,
@@ -244,6 +251,7 @@ fn citation(source: &Source, span: Range<usize>) -> Citation {
         page_end: source.page_end,
         label: source.label.clone(),
         bboxes: source.bboxes.clone(),
+        provenance: source.provenance.clone(),
         spans: vec![span],
     }
 }
@@ -262,17 +270,17 @@ fn parse_page_ref(inner: &str) -> Option<u32> {
 /// The document of a page reference: the source whose pages contain it, else the only
 /// document in the context.
 fn resolve_page(page: u32, sources: &[Source]) -> Option<(DocumentId, Option<&Source>)> {
+    // Only a PDF has pages: a source of another format never answers a page reference.
+    let is_pdf = |s: &Source| s.provenance.document_type() == DocumentType::Pdf;
     if let Some(s) = sources
         .iter()
-        .find(|s| (s.page_start..=s.page_end).contains(&page))
+        .find(|s| is_pdf(s) && (s.page_start..=s.page_end).contains(&page))
     {
         return Some((s.document_id, Some(s)));
     }
-    let first = sources.first()?.document_id;
-    sources
-        .iter()
-        .all(|s| s.document_id == first)
-        .then_some((first, None))
+    let first = sources.first()?;
+    (is_pdf(first) && sources.iter().all(|s| s.document_id == first.document_id))
+        .then_some((first.document_id, None))
 }
 
 /// "1", "1, 3", "1;2", "2–4", "2-4" → numbers; anything else is not a citation.
