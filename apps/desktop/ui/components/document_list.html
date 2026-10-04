@@ -13,8 +13,8 @@
   <li class="list-row">
     {% call ds::icon("document") %}{% endcall %}
     <div class="list-row-title">
-      <p class="selectable">{{ doc.title }}</p>
-      <p class="list-row-meta">{{ doc.filename }} · {{ doc.pages }} · {{ doc.chunks }} · {{ doc.imported_on }}</p>
+      <p class="selectable truncate" title="{{ doc.title }}">{{ doc.title }}</p>
+      <p class="list-row-meta flex"><span class="truncate" title="{{ doc.filename }}">{{ doc.filename }}</span><span class="shrink-0 whitespace-nowrap">&nbsp;· {{ doc.pages }} · {{ doc.chunks }} · {{ doc.imported_on }}</span></p>
       {%- if !doc.error.is_empty() %}<p class="field-error selectable">{{ doc.error }}</p>{% endif %}
     </div>
     {% call ds::badge(doc.status_label, doc.status_kind, true) %}{% endcall %}

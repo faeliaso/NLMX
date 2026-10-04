@@ -83,6 +83,8 @@
     margin: 0 auto;
     padding: var(--space-section) var(--space-page);
     display: grid;
+    /* minmax(0, …): the implicit `auto` column grows to fit nowrap text, which stops truncation. */
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     gap: 1.5rem;
   }
