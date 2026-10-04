@@ -1,6 +1,8 @@
 //! Ingest a PDF, embed its chunks with the real model, index them and search (KNN).
 //! Ignored by default; run with `make test-llama` (needs runtime/llama and the Qwen3 model).
 
+mod support;
+
 use std::{path::Path, sync::Arc};
 
 use nlmx_application::{
@@ -15,7 +17,6 @@ use nlmx_domain::{
 };
 use nlmx_embed_llama::{EmbeddingConfig, llama_server_path, provider};
 use nlmx_fs_library::FsLibrary;
-use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
 
@@ -29,10 +30,10 @@ async fn semantic_search_over_an_ingested_pdf() {
 
     let db = Database::open(dir.join("nlmx.sqlite3")).unwrap();
     let ingestion = DocumentIngestion {
-        pipeline: None,
+        pipeline: Some(support::production_pipeline(support::shared_engine())),
         progress: None,
         viewer: None,
-        engine: Arc::new(PdfiumDocumentEngine::from_default_location().unwrap()),
+        engine: support::shared_engine(),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: Arc::new(db.clone()),
         analyzer: Arc::new(HeuristicStructureAnalyzer),

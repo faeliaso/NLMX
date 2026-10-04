@@ -1,0 +1,40 @@
+{
+  "corpus": [
+    { "file": "report.pdf", "source": "crates/adapters/pdf-pdfium/tests/fixtures/report.pdf" },
+    { "file": "manual.md", "source": "tests/golden/corpus/manual.md" },
+    { "file": "reuniao.txt", "source": "tests/golden/corpus/reuniao.txt" },
+    { "file": "vendas.csv", "source": "tests/golden/corpus/vendas.csv" },
+    { "file": "livro.epub", "source": "crates/adapters/parser-epub/tests/fixtures/livro.epub" }
+  ],
+  "questions": [
+    { "kind": "only-pdf", "question": "Quem resolve os casos omissos?",
+      "expect": [{ "file": "report.pdf", "pages": [3] }] },
+    { "kind": "only-markdown", "question": "Qual código de erro indica falha no sistema de resfriamento do servidor?",
+      "expect": [{ "file": "manual.md", "heading": "Erros conhecidos" }] },
+    { "kind": "only-txt", "question": "Qual o orçamento do projeto Orquídea?",
+      "expect": [{ "file": "reuniao.txt", "phrase": "limitado a quarenta mil reais" }] },
+    { "kind": "only-csv", "question": "Quantas unidades de Tapioca Dourada foram vendidas?",
+      "expect": [{ "file": "vendas.csv", "phrase": "Tapioca Dourada" }] },
+    { "kind": "only-epub", "question": "Em qual porto o navio chegou ao amanhecer?",
+      "expect": [{ "file": "livro.epub", "chapter": 3 }] },
+    { "kind": "two-formats", "question": "Quando acontece a janela de manutenção?",
+      "expect": [
+        { "file": "manual.md", "heading": "Manutenção" },
+        { "file": "reuniao.txt", "phrase": "janela de manutenção será movida" }
+      ] },
+    { "kind": "two-formats", "question": "Quem é o fornecedor das baterias dos nobreaks?",
+      "expect": [
+        { "file": "manual.md", "heading": "Compras" },
+        { "file": "reuniao.txt", "phrase": "adotar o fornecedor Aurora" }
+      ] },
+    { "kind": "many-formats", "question": "Qual é a carência prevista?",
+      "expect": [
+        { "file": "report.pdf", "pages": [2, 3] },
+        { "file": "manual.md", "heading": "Compras" },
+        { "file": "reuniao.txt", "phrase": "prazo de carência de quinze dias" },
+        { "file": "vendas.csv", "phrase": "carência zero" }
+      ] },
+    { "kind": "not-found", "question": "Qual o preço da gasolina em Marte?", "expect": [] },
+    { "kind": "not-found", "question": "Receita de bolo de chocolate com morangos", "expect": [] }
+  ]
+}

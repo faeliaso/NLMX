@@ -19,7 +19,7 @@ use nlmx_domain::{
     source::SourceLocation,
 };
 
-use crate::sha256_hex;
+use crate::{sha256_hex, split::longest_fit};
 
 /// Tokens counted for the blank line between two records.
 const SEPARATOR_TOKENS: u32 = 1;
@@ -392,27 +392,6 @@ fn collapse(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The largest `k` in `0..=items` for which `fits(k)` holds, `fits` being monotonic (true up
-/// to some point, false after) and true for 0. Galloping plus bisection: O(log items) calls.
-fn longest_fit(items: usize, fits: impl Fn(usize) -> bool) -> usize {
-    let mut good = 0;
-    let mut step = 1;
-    while good + step <= items && fits(good + step) {
-        good += step;
-        step *= 2;
-    }
-    let mut high = (good + step).min(items + 1);
-    while high - good > 1 {
-        let mid = good + (high - good) / 2;
-        if fits(mid) {
-            good = mid;
-        } else {
-            high = mid;
-        }
-    }
-    good
-}
-
 /// Cuts `text` into pieces of at most `budget` tokens, at word boundaries; a single word
 /// longer than the budget is cut by characters.
 fn split_text(text: &str, budget: u32, tokens: &dyn TokenCounter) -> Vec<String> {
@@ -429,16 +408,33 @@ fn split_text(text: &str, budget: u32, tokens: &dyn TokenCounter) -> Vec<String>
             start += k;
             continue;
         }
+        // A word longer than the budget: cut it by characters in one pass over its characters
+        // (never copying the rest of the word for each piece, which made a long unbroken value —
+        // a base64 blob, minified JSON — quadratic).
         let chars: Vec<char> = words[start].chars().collect();
-        let m = longest_fit(chars.len(), |m| {
-            m == 0 || tokens.count(&chars[..m].iter().collect::<String>()) <= budget
-        })
-        .max(1);
-        pieces.push(chars[..m].iter().collect());
-        if m < chars.len() {
-            words[start] = chars[m..].iter().collect();
-        } else {
-            start += 1;
+        let mut offset = 0;
+        loop {
+            let remaining = chars.len() - offset;
+            let m = longest_fit(remaining, |m| {
+                m == 0
+                    || tokens.count(&chars[offset..offset + m].iter().collect::<String>()) <= budget
+            })
+            .max(1);
+            if m < remaining {
+                pieces.push(chars[offset..offset + m].iter().collect());
+                offset += m;
+            } else {
+                // What is left fits: it goes back to the word runs, which may join it to the
+                // words that follow (or, if even one character is over a tiny budget, stands alone).
+                let rest: String = chars[offset..].iter().collect();
+                if tokens.count(&rest) <= budget {
+                    words[start] = rest;
+                } else {
+                    pieces.push(rest);
+                    start += 1;
+                }
+                break;
+            }
         }
     }
     pieces
@@ -766,6 +762,26 @@ mod tests {
             .map(|c| c.text.matches("palavra").count())
             .sum();
         assert_eq!(words, 2000);
+    }
+
+    /// A long value with no spaces (a base64 blob, minified JSON) must not make the cut quadratic:
+    /// 2 MB took 45 s in a debug build when each piece copied the rest of the word.
+    #[test]
+    fn a_huge_unbroken_value_is_cut_in_linear_time() {
+        let started = std::time::Instant::now();
+        let blob = "x".repeat(2 * 1024 * 1024);
+        let pieces = split_text(&blob, 200, &HeuristicTokenCounter);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(pieces.iter().all(|p| HeuristicTokenCounter.count(p) <= 200));
+        assert_eq!(pieces.concat(), blob, "nothing is lost");
+        // Words around it still join the pieces as before.
+        let mixed = format!("antes {} depois", "y".repeat(5000));
+        let pieces = split_text(&mixed, 200, &HeuristicTokenCounter);
+        assert_eq!(pieces.join(" ").replace(' ', ""), mixed.replace(' ', ""));
     }
 
     #[test]

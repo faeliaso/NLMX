@@ -298,6 +298,17 @@ async fn existing_pdfs_survive_the_migration_untouched() {
             "SELECT chunk_id || '|' || embedding_model_id || '|' || document_id || '|' || content_hash
              FROM chunk_embeddings",
         ));
+        // What a search returns, in order: lexical (BM25) and vector (KNN).
+        all.extend(strings(
+            conn,
+            "SELECT rowid || '|' || round(bm25(document_chunks_fts), 6) FROM document_chunks_fts
+             WHERE document_chunks_fts MATCH 'carência OR cobertura' ORDER BY bm25(document_chunks_fts), rowid",
+        ));
+        all.extend(strings(
+            conn,
+            "SELECT rowid || '|' || round(distance, 6) FROM chunk_vectors_1
+             WHERE embedding MATCH '[0.1,0.2,0.3,0.4]' AND k = 2 ORDER BY distance",
+        ));
         all.push(format!(
             "fts={} vec={}",
             count(
@@ -380,6 +391,23 @@ async fn existing_pdfs_survive_the_migration_untouched() {
     assert_eq!(chunks[0].content_hash, "h0");
     assert!(db.sections_of(1).await.unwrap().is_empty());
 
+    // The cited answer of the old version reads as a PDF source: page, quote, no name yet.
+    let answer = nlmx_application::ports::ConversationRepository::message(&db, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(answer.sources.len(), 1);
+    let source = &answer.sources[0];
+    assert_eq!(source.document_type(), DocumentType::Pdf);
+    assert!(source.previewable());
+    assert_eq!(
+        source.reference.location,
+        SourceLocation::pdf(1, 1, vec![]).unwrap()
+    );
+    assert_eq!(source.reference.chunk_id, Some(10));
+    assert_eq!(source.document_name, "");
+    assert_eq!(source.quote, "O prazo de carência é de 180 dias.");
+
     // The runtime vector trigger still follows the chunks.
     conn.execute("DELETE FROM document_chunks WHERE id = 11", [])
         .unwrap();
@@ -398,6 +426,47 @@ async fn existing_pdfs_survive_the_migration_untouched() {
     );
     assert_eq!(count(&conn, "SELECT count(*) FROM documents"), 1);
     assert_eq!(count(&conn, "SELECT count(*) FROM document_chunks"), 1);
+}
+
+/// Going back from the citation provenance (12) drops only what the old schema cannot hold: a
+/// citation of a document that is not a PDF. A PDF citation stays, whole.
+#[test]
+fn downgrading_citations_keeps_pdf_ones() {
+    let mut conn = conn_at(&temp_db());
+    migrations::migrate_to_latest(&mut conn).unwrap();
+    seed(&conn);
+    conn.execute_batch(
+        "INSERT INTO documents (id, sha256, original_filename, library_path, file_size, format)
+             VALUES (2, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'dados.csv', 'library/b.csv', 10, 'csv');
+         INSERT INTO citations (message_id, ordinal, document_id, page_number, quote, document_type, document_name, locator)
+             VALUES (1, 2, 2, 1, 'linha', 'csv', 'dados.csv', '{\"kind\":\"csv\",\"row_start\":3,\"row_end\":4}');",
+    )
+    .unwrap();
+    assert_eq!(count(&conn, "SELECT count(*) FROM citations"), 2);
+
+    migrations::migrate_to(&mut conn, 11).unwrap();
+    assert_eq!(migrations::current_version(&conn).unwrap(), 11);
+    assert_eq!(count(&conn, "SELECT count(*) FROM citations"), 1);
+    let quote: String = conn
+        .query_row("SELECT quote FROM citations", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(quote, "O prazo de carência é de 180 dias.");
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM documents"),
+        2,
+        "documents are not touched"
+    );
+
+    // And forward again: the PDF citation is still there, now with provenance defaults.
+    migrations::migrate_to_latest(&mut conn).unwrap();
+    let (kind, name, locator): (String, String, Option<String>) = conn
+        .query_row(
+            "SELECT document_type, document_name, locator FROM citations",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!((kind.as_str(), name.as_str(), locator), ("pdf", "", None));
 }
 
 #[test]

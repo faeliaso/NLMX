@@ -2,6 +2,8 @@
 //! SQLite, "explain this document" and "section 3" questions, and the page image of a citation.
 //! The `#[ignore]`d tests answer with Apple Foundation Models (`make test-fm`).
 
+mod support;
+
 use std::{path::Path, sync::Arc};
 
 use nlmx_application::{
@@ -21,7 +23,6 @@ use nlmx_domain::{
 };
 use nlmx_fs_library::FsLibrary;
 use nlmx_llm_fm::FoundationModelsProvider;
-use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
 use nlmx_testing::{FakeEmbeddingProvider, FakeLlmProvider, FixedEmbeddingSource};
@@ -38,9 +39,9 @@ async fn app(name: &str, llm: Arc<dyn LlmProvider>) -> App {
     std::fs::create_dir_all(&dir).unwrap();
     let db = Arc::new(Database::open(dir.join("nlmx.sqlite3")).unwrap());
     let source = FixedEmbeddingSource::of(FakeEmbeddingProvider { dimensions: 64 });
-    let engine = Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"));
+    let engine = support::shared_engine();
     let ingestion = DocumentIngestion {
-        pipeline: None,
+        pipeline: Some(support::production_pipeline(support::shared_engine())),
         progress: None,
         viewer: None,
         engine: engine.clone(),

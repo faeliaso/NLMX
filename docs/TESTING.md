@@ -11,6 +11,7 @@
 | `make test-llama` | `llama-server` real + Qwen3 (embeddings, KNN, comparação híbrida) | `scripts/fetch-embedding-model.sh` |
 | `make test-fm` | Apple Foundation Models real (RAG e chat) | macOS 27 + `sudo fm license` |
 | `make test-real` | `test-llama` + `test-fm` + qualidade do RAG e canário de privacidade com modelos reais | os dois acima |
+| `make test-perf` | arquivos grandes e muitos, memória, recusa de limites/zip bombs, importações concorrentes e telas com biblioteca grande (build release; `NLMX_PERF_SCALE=0.1` para um teste rápido) | PDFium |
 | `make bench` | medições numa biblioteca de referência (relatório em `target/bench/`) | PDFium; usa os modelos reais se existirem (`NLMX_BENCH_FAKE=1` força os fakes) |
 
 Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
@@ -65,6 +66,10 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
   - `app_e2e` cobre o app inteiro, menos a casca nativa: importação (com uma falha), Documentos, Chat (turno, geração, citação clicável, `[página N]`), viewer (posição, destaque, busca, camada de texto, imagem) e métricas coletadas;
   - `indexing_pipeline_e2e`: arquivo → `indexed` para os 5 formatos com adaptadores reais, erros isolados, progresso, reindexação sem duplicar, arquivo alterado e canário de privacidade multiformato.
   - `rag_multiformat_e2e`: recuperação, ranking, prompt, citações e mensagens salvas dos 5 formatos com proveniência preservada (e canário de privacidade).
+  - `pdf_regression_e2e`: o PDF pelo pipeline do app × caminho legado (mesmos chunks, páginas, caixas, seções, texto).
+  - `multiformat_stages_e2e`: cada etapa (detecção → provenance) nos 5 formatos e entradas difíceis.
+  - `rag_multiformat_quality`: 7 tipos de pergunta com proveniência exata (determinístico; real com `--ignored`).
+  - `frontend_e2e`: interface sobre a pilha real, sem viewer para não‑PDF.
   - os demais `*_e2e` cobrem ingestão, retriever, RAG e chat.
 - **Privacidade** (`privacy_canary`): um marcador no texto, no título e no nome do arquivo de um PDF, e também na pergunta e na resposta, nunca aparece:
   - nos logs (capturados em TRACE pela camada JSON do app);

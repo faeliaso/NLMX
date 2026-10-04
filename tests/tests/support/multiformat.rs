@@ -32,12 +32,7 @@ use super::{root, temp_dir};
 
 /// PDFium can be initialized once per process, so every test shares one engine.
 pub fn engine() -> Arc<PdfiumDocumentEngine> {
-    static ENGINE: std::sync::OnceLock<Arc<PdfiumDocumentEngine>> = std::sync::OnceLock::new();
-    ENGINE
-        .get_or_init(|| {
-            Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"))
-        })
-        .clone()
+    super::shared_engine()
 }
 
 /// The embedding model of the app, which a test can install or take away.
@@ -45,6 +40,11 @@ pub fn engine() -> Arc<PdfiumDocumentEngine> {
 pub struct SwitchableModel(Mutex<Option<Arc<dyn EmbeddingProvider>>>);
 
 impl SwitchableModel {
+    /// Uses `provider` as the model (a real one, in the tests that need it).
+    pub fn install_provider(&self, provider: Arc<dyn EmbeddingProvider>) {
+        *self.0.lock().unwrap() = Some(provider);
+    }
+
     pub fn install(&self) {
         *self.0.lock().unwrap() = Some(Arc::new(FakeEmbeddingProvider { dimensions: 64 }));
     }

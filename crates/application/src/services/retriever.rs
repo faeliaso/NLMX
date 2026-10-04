@@ -30,6 +30,10 @@ pub struct RetrieverOptions {
     pub merge_adjacent: bool,
     /// Trigram Jaccard similarity from which two passages count as near-duplicates.
     pub near_duplicate_threshold: f32,
+    /// A question whose answer is spread over several documents (of any format) should reach the
+    /// context from each of them: a document with a lexical match that did not make the Top-K
+    /// takes the place of the weakest extra passage of a document that has several.
+    pub cover_documents: bool,
 }
 
 impl Default for RetrieverOptions {
@@ -43,6 +47,7 @@ impl Default for RetrieverOptions {
             filter: RetrievalFilter::default(),
             merge_adjacent: true,
             near_duplicate_threshold: 0.8,
+            cover_documents: true,
         }
     }
 }
@@ -428,15 +433,50 @@ fn select(drafts: Vec<Draft>, options: &RetrieverOptions) -> Vec<Passage> {
     });
     let mut per_document: std::collections::HashMap<DocumentId, usize> =
         std::collections::HashMap::new();
-    passages
+    let mut eligible: Vec<Passage> = passages
         .into_iter()
         .filter(|p| {
             let n = per_document.entry(p.document_id).or_default();
             *n += 1;
             *n <= options.max_per_document
         })
-        .take(options.top_k)
-        .collect()
+        .collect();
+    let rest = eligible.split_off(options.top_k.min(eligible.len()));
+    let mut chosen = eligible;
+    if options.cover_documents {
+        cover_documents(&mut chosen, rest);
+    }
+    chosen
+}
+
+/// Lets documents that matched the question's words but missed the Top-K into it, in place of
+/// the weakest passages of documents that already have more than one (a document's only passage
+/// is never dropped). The order (best first) is kept.
+fn cover_documents(chosen: &mut Vec<Passage>, rest: Vec<Passage>) {
+    let count = |chosen: &[Passage], document: DocumentId| {
+        chosen.iter().filter(|p| p.document_id == document).count()
+    };
+    for candidate in rest {
+        if !candidate.metadata.matched_by.lexical
+            || chosen
+                .iter()
+                .any(|p| p.document_id == candidate.document_id)
+        {
+            continue;
+        }
+        let Some(victim) = chosen
+            .iter()
+            .rposition(|p| count(chosen, p.document_id) >= 2)
+        else {
+            break;
+        };
+        chosen.remove(victim);
+        let at = chosen
+            .iter()
+            .position(|p| p.score < candidate.score)
+            .unwrap_or(chosen.len());
+        chosen.insert(at, candidate);
+    }
 }
 
 fn group(passages: &[Passage]) -> Vec<DocumentGroup> {

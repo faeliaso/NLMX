@@ -13,15 +13,20 @@ use nlmx_application::{
     ports::{EmbeddingSource, LlmProvider},
     services::{
         free_chat::FreeChat,
+        parsing::{ParserRegistry, PdfDocumentParser},
+        pipeline::ContentPipeline,
         rag::{RagEngine, RagOptions},
         retrieval::HybridRetriever,
         retriever::Retriever,
     },
     use_cases::{ChatService, DocumentIngestion, EmbedDocuments, ViewDocument},
 };
-use nlmx_chunker_structural::{HeuristicTokenCounter, StructuralChunker};
+use nlmx_chunker_structural::{HeuristicTokenCounter, MultiFormatChunker, StructuralChunker};
 use nlmx_domain::ingestion::{ChunkPolicy, ImportOutcome};
 use nlmx_fs_library::FsLibrary;
+use nlmx_normalizer_text::TextNormalizer;
+use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
 use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
@@ -51,6 +56,38 @@ pub fn deterministic_embeddings() -> Arc<FixedEmbeddingSource> {
     FixedEmbeddingSource::of(FakeEmbeddingProvider { dimensions: 64 })
 }
 
+/// PDFium can be initialized once per process: every test of a binary shares one engine.
+pub fn shared_engine() -> Arc<PdfiumDocumentEngine> {
+    static ENGINE: std::sync::OnceLock<Arc<PdfiumDocumentEngine>> = std::sync::OnceLock::new();
+    ENGINE
+        .get_or_init(|| {
+            Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"))
+        })
+        .clone()
+}
+
+/// The content pipeline exactly as the app composes it (`src-tauri/src/wiring.rs`): every
+/// parser, the text normalizer and the multi-format chunker. A PDF goes through this in
+/// production, so the tests of PDF behaviour must too.
+pub fn production_pipeline(engine: Arc<PdfiumDocumentEngine>) -> Arc<ContentPipeline> {
+    let parsers = ParserRegistry::new()
+        .with(Arc::new(PdfDocumentParser::new(
+            engine,
+            Arc::new(HeuristicStructureAnalyzer),
+        )))
+        .with(Arc::new(MarkdownDocumentParser))
+        .with(Arc::new(TextDocumentParser))
+        .with(Arc::new(CsvDocumentParser))
+        .with(Arc::new(EpubDocumentParser::default()));
+    Arc::new(ContentPipeline {
+        parsers,
+        normalizer: Arc::new(TextNormalizer),
+        chunker: Arc::new(MultiFormatChunker),
+        tokens: Arc::new(HeuristicTokenCounter),
+        policy: ChunkPolicy::default(),
+    })
+}
+
 pub struct Library {
     pub dir: PathBuf,
     pub db: Arc<Database>,
@@ -62,13 +99,22 @@ pub struct Library {
 }
 
 impl Library {
+    /// A library ingested the way the app does (the content pipeline).
     pub fn new(dir: PathBuf, embeddings: Arc<dyn EmbeddingSource>) -> Self {
+        Self::build(dir, embeddings, true)
+    }
+
+    /// A library ingested by the legacy PDF-only path (only to compare it with the real one).
+    pub fn legacy(dir: PathBuf, embeddings: Arc<dyn EmbeddingSource>) -> Self {
+        Self::build(dir, embeddings, false)
+    }
+
+    fn build(dir: PathBuf, embeddings: Arc<dyn EmbeddingSource>, production: bool) -> Self {
         std::fs::create_dir_all(&dir).unwrap();
         let db = Arc::new(Database::open(dir.join("nlmx.sqlite3")).unwrap());
-        let engine =
-            Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap"));
+        let engine = shared_engine();
         let ingestion = DocumentIngestion {
-            pipeline: None,
+            pipeline: production.then(|| production_pipeline(engine.clone())),
             progress: None,
             viewer: None,
             engine: engine.clone(),

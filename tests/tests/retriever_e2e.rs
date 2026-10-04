@@ -1,6 +1,8 @@
 //! The Retriever over real PDFium + SQLite (deterministic embedder): two PDFs with the same text
 //! yield one passage, with the other document recorded as a duplicate.
 
+mod support;
+
 use std::{path::Path, sync::Arc};
 
 use nlmx_application::{
@@ -13,7 +15,6 @@ use nlmx_application::{
 use nlmx_chunker_structural::{HeuristicTokenCounter, StructuralChunker};
 use nlmx_domain::ingestion::{ChunkPolicy, DocumentStatus, ImportOutcome};
 use nlmx_fs_library::FsLibrary;
-use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
 use nlmx_testing::{FakeEmbeddingProvider, FixedEmbeddingSource};
@@ -40,10 +41,10 @@ async fn duplicated_documents_yield_one_passage_with_citation_data() {
         batch_size: 16,
     });
     let ingestion = DocumentIngestion {
-        pipeline: None,
+        pipeline: Some(support::production_pipeline(support::shared_engine())),
         progress: None,
         viewer: None,
-        engine: Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap")),
+        engine: support::shared_engine(),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: db.clone(),
         analyzer: Arc::new(HeuristicStructureAnalyzer),

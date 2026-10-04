@@ -588,3 +588,51 @@ fn the_output_is_deterministic() {
     assert_eq!(run(&doc), run(&doc));
     assert_eq!(MultiFormatChunker.version(), MultiFormatChunker::VERSION);
 }
+
+/// A value with no spaces (a base64 blob, minified JSON, a long URL) in a paragraph of a text
+/// document: it is cut by characters, every chunk stays within the model's limit, nothing is lost,
+/// and it takes linear time (a 2 MB value took 45 s when each piece copied the rest).
+#[test]
+fn an_unbroken_value_in_prose_is_cut_into_chunks_that_fit() {
+    use crate::HeuristicTokenCounter;
+    let blob = "QUJD".repeat(512 * 1024); // 2 MB of base64, no whitespace
+    let text = format!("Antes do bloco. {blob} Depois do bloco.");
+    let document = document(
+        DocumentType::Markdown,
+        vec![section(
+            &["Dados"],
+            vec![block(
+                ContentKind::Paragraph,
+                text,
+                SourceLocation::markdown(vec!["Dados".into()], Some((3, 3))).unwrap(),
+            )],
+        )],
+    );
+    let policy = ChunkPolicy::default();
+    let started = std::time::Instant::now();
+    let chunks = MultiFormatChunker.chunk(&document, &context(), &policy, &HeuristicTokenCounter);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(chunks.len() > 100);
+    for chunk in &chunks {
+        let tokens = HeuristicTokenCounter.count(&chunk.text);
+        assert!(
+            tokens <= policy.max_tokens + policy.overlap_tokens,
+            "{tokens} tokens"
+        );
+        assert_eq!(
+            chunk.location, chunks[0].location,
+            "the location is the block's"
+        );
+    }
+    let all: String = chunks.iter().map(|c| c.text.as_str()).collect();
+    assert!(all.starts_with("Antes do bloco."));
+    assert!(all.contains("Depois do bloco."));
+    assert!(
+        all.matches("QUJD").count() >= 512 * 1024,
+        "the blob is all there"
+    );
+}

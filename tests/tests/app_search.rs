@@ -1,6 +1,8 @@
 //! The app flow with real PDFium + SQLite and a deterministic embedder:
 //! import → chunks → automatic embeddings → `indexed` → hybrid search.
 
+mod support;
+
 use std::{path::Path, sync::Arc};
 
 use nlmx_application::{
@@ -13,7 +15,6 @@ use nlmx_domain::{
     retrieval::{RetrievalFilter, RetrievalOptions},
 };
 use nlmx_fs_library::FsLibrary;
-use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
 use nlmx_testing::{FakeEmbeddingProvider, FixedEmbeddingSource};
@@ -35,10 +36,10 @@ async fn imported_pdfs_are_embedded_indexed_and_searchable() {
         batch_size: 16,
     });
     let ingestion = DocumentIngestion {
-        pipeline: None,
+        pipeline: Some(support::production_pipeline(support::shared_engine())),
         progress: None,
         viewer: None,
-        engine: Arc::new(PdfiumDocumentEngine::from_default_location().expect("make bootstrap")),
+        engine: support::shared_engine(),
         files: Arc::new(FsLibrary::new(dir.join("library"))),
         documents: db.clone(),
         analyzer: Arc::new(HeuristicStructureAnalyzer),

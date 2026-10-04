@@ -40,6 +40,8 @@ tower.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 sha2.workspace = true
+unicode-normalization.workspace = true
+zip.workspace = true
 rusqlite.workspace = true
 tokio.workspace = true
 

@@ -321,3 +321,69 @@ async fn templated_passages_with_different_numbers_are_not_near_duplicates() {
         .unwrap();
     assert_eq!(ctx.passages.len(), 2, "{:?}", ctx.passages);
 }
+
+/// An answer spread over several documents reaches the context from each of them, even when
+/// one document has more than enough passages of its own to fill the Top-K.
+#[tokio::test]
+async fn every_document_that_matches_the_question_reaches_the_context() {
+    // Document 1 has five strong passages; documents 2 and 3 have one weaker match each.
+    let r = retriever(&[
+        (10, 1, 1, "carência carência carência alfa"),
+        (20, 1, 5, "carência carência carência bravo"),
+        (30, 1, 9, "carência carência carência charlie"),
+        (40, 1, 13, "carência carência carência delta"),
+        (50, 1, 17, "carência carência carência echo"),
+        (
+            60,
+            2,
+            1,
+            "a regra de carência do segundo documento, entre muitas outras palavras que diluem o termo",
+        ),
+        (
+            70,
+            3,
+            1,
+            "no terceiro documento a carência também é citada em uma frase bem longa e cheia de outras palavras",
+        ),
+        (
+            80,
+            4,
+            1,
+            "nada a ver com o assunto procurado, só frutas e legumes",
+        ),
+    ]);
+    let top_four = |cover| RetrieverOptions {
+        top_k: 4,
+        max_per_document: 5,
+        cover_documents: cover,
+        ..options()
+    };
+
+    let without = r.retrieve("carência", &top_four(false)).await.unwrap();
+    let documents = |ctx: &nlmx_application::services::retriever::RetrievalContext| {
+        let mut d: Vec<i64> = ctx.passages.iter().map(|p| p.document_id).collect();
+        d.sort();
+        d.dedup();
+        d
+    };
+    assert_eq!(
+        documents(&without),
+        [1],
+        "the strongest document fills everything"
+    );
+
+    let with = r.retrieve("carência", &top_four(true)).await.unwrap();
+    assert_eq!(with.passages.len(), 4, "the Top-K is still respected");
+    assert_eq!(
+        documents(&with),
+        [1, 2, 3],
+        "each matching document is represented"
+    );
+    // Never at the cost of a document's only passage, and not for a document that does not match.
+    assert!(!documents(&with).contains(&4));
+    assert!(
+        with.passages.windows(2).all(|w| w[0].score >= w[1].score),
+        "best first"
+    );
+    assert_eq!(with.passages[0].document_id, 1);
+}

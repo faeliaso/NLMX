@@ -50,11 +50,59 @@ fn push_trimmed(out: &mut Vec<String>, piece: &str) {
     }
 }
 
-/// Splits into runs of words of at most `max_tokens` each (a single huge word stays whole).
+/// The largest `k` in `0..=items` for which `fits(k)` holds, `fits` being monotonic (true up
+/// to some point, false after) and true for 0. Galloping plus bisection: O(log items) calls.
+pub(crate) fn longest_fit(items: usize, fits: impl Fn(usize) -> bool) -> usize {
+    let mut good = 0;
+    let mut step = 1;
+    while good + step <= items && fits(good + step) {
+        good += step;
+        step *= 2;
+    }
+    let mut high = (good + step).min(items + 1);
+    while high - good > 1 {
+        let mid = good + (high - good) / 2;
+        if fits(mid) {
+            good = mid;
+        } else {
+            high = mid;
+        }
+    }
+    good
+}
+
+/// Splits into runs of words of at most `max_tokens` each. A single word over the limit (a
+/// base64 blob, minified JSON, a very long URL) is cut by characters, in one pass over its
+/// characters: a chunk bigger than the embedding model's context could never be embedded.
 pub fn words(text: &str, max_tokens: u32, tokens: &dyn TokenCounter) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
     for word in text.split_whitespace() {
+        if tokens.count(word) > max_tokens {
+            if !current.is_empty() {
+                out.push(std::mem::take(&mut current));
+            }
+            let chars: Vec<char> = word.chars().collect();
+            let mut offset = 0;
+            loop {
+                let remaining = chars.len() - offset;
+                let m = longest_fit(remaining, |m| {
+                    m == 0
+                        || tokens.count(&chars[offset..offset + m].iter().collect::<String>())
+                            <= max_tokens
+                })
+                .max(1);
+                if m < remaining {
+                    out.push(chars[offset..offset + m].iter().collect());
+                    offset += m;
+                } else {
+                    // What is left may be joined to the words that follow.
+                    current = chars[offset..].iter().collect();
+                    break;
+                }
+            }
+            continue;
+        }
         let candidate = if current.is_empty() {
             word.to_string()
         } else {

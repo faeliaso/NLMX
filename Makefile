@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev build bundle release acceptance test test-unit test-integration test-e2e test-llama test-fm test-real bench lint fmt
+.PHONY: bootstrap dev build bundle release acceptance test test-unit test-integration test-e2e test-llama test-fm test-real test-perf bench lint fmt
 
 TAURI_DIR := apps/desktop/src-tauri
 # Release builds only find the runtime through these (debug builds also look in runtime/).
@@ -62,6 +62,9 @@ test-fm:            ## Real Apple Foundation Models (macOS 27, license accepted 
 test-real: test-llama test-fm   ## All real-model suites, incl. RAG quality and the privacy canary
 	cargo test -p nlmx-workspace-tests --test rag_quality -- --ignored --nocapture
 	cargo test -p nlmx-workspace-tests --test privacy_canary -- --ignored --nocapture
+
+test-perf:          ## Large/many files, memory and responsiveness (release build; writes ~1 GB of temporary files; NLMX_PERF_SCALE=0.1 for a quick run)
+	$(RUNTIME_ENV) cargo test --release -p nlmx-workspace-tests --test performance_multiformat -- --ignored --nocapture --test-threads=1
 
 bench:              ## Measurements on a reference library (report in target/bench/)
 	$(RUNTIME_ENV) cargo bench -p nlmx-workspace-tests --bench bench
