@@ -31,7 +31,7 @@
     <nav class="viewer-thumbs" aria-label="Miniaturas" data-viewer-thumb-list>
       {%- for p in pages %}
       <button type="button" class="viewer-thumb" data-goto-page="{{ p.number }}" aria-label="Página {{ p.number }}"{% if p.number == page %} aria-current="page"{% endif %}>
-        <span class="viewer-thumb-page" style="aspect-ratio: {{ p.width }} / {{ p.height }}"><img data-thumb-src="/documents/{{ document_id }}/pages/{{ p.number }}.png?w=160" alt=""></span>
+        <span class="viewer-thumb-page" style="aspect-ratio: {{ p.width }} / {{ p.height }}"><img data-thumb-src="/documents/{{ document_id }}/pages/{{ p.number }}.png?v={{ version }}&amp;w=160" alt=""></span>
         <span class="viewer-thumb-number tabular">{{ p.number }}</span>
       </button>
       {%- endfor %}
@@ -40,7 +40,7 @@
       <div class="viewer-pages" data-viewer-pages>
         {%- for p in pages %}
         <section class="viewer-page" data-page="{{ p.number }}" data-width="{{ p.width }}" data-height="{{ p.height }}" style="--page-w: {{ p.width }}; --page-h: {{ p.height }}" aria-label="Página {{ p.number }}">
-          <img class="viewer-page-image" alt="" data-src-base="/documents/{{ document_id }}/pages/{{ p.number }}.png" decoding="async">
+          <img class="viewer-page-image" alt="" data-src-base="/documents/{{ document_id }}/pages/{{ p.number }}.png?v={{ version }}" decoding="async">
           <p class="viewer-page-failed" hidden>Não foi possível exibir esta página. <button type="button" class="btn btn-secondary btn-sm" data-viewer-retry>Tentar de novo</button></p>
           <div class="viewer-text" data-text-src="/viewer/{{ document_id }}/pages/{{ p.number }}/text"></div>
           <div class="viewer-marks" data-viewer-marks>

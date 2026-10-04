@@ -79,7 +79,7 @@
       const img = page.querySelector(".viewer-page-image");
       if (!img || page.clientWidth === 0) return;
       const want = WIDTHS.find((w) => w >= page.clientWidth * (window.devicePixelRatio || 1)) || WIDTHS.at(-1);
-      const url = `${img.dataset.srcBase}?w=${want}`;
+      const url = `${img.dataset.srcBase}&w=${want}`;
       if (force || img.getAttribute("src") !== url) {
         page.querySelector(".viewer-page-failed")?.setAttribute("hidden", "");
         page.classList.add("is-loading");

@@ -118,6 +118,7 @@ async fn import_ask_cite_open_and_measure() {
         })),
         chat: Ok(chat.clone()),
         viewer: Ok(Arc::new(library.viewer())),
+        remover: Err("remoção indisponível neste teste".into()),
         diagnostics: None,
         models: None,
     });

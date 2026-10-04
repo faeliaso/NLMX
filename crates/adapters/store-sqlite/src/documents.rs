@@ -2,10 +2,10 @@
 
 use nlmx_application::ports::{
     BoxFuture, DocumentRecord, DocumentRepository, Extraction, InsertOutcome, NewDocument,
-    PageRecord, StorageError,
+    PageRecord, RemovedDocument, StorageError,
 };
 use nlmx_domain::ingestion::{
-    ChunkDraft, DocumentId, DocumentStatus, DocumentSummary, SECTION_SEPARATOR,
+    ChunkDraft, DocumentId, DocumentStatus, DocumentSummary, RemovalImpact, SECTION_SEPARATOR,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -188,6 +188,137 @@ fn insert(conn: &mut Connection, doc: &NewDocument) -> rusqlite::Result<InsertOu
     Ok(outcome)
 }
 
+/// The chat history a document removal takes with it.
+struct RemovalPlan {
+    chunks: u32,
+    /// Conversations restricted to the document.
+    scoped: Vec<i64>,
+    /// Question + answer messages, in other conversations, whose answer used the document.
+    messages: Vec<i64>,
+    turns: u32,
+    /// Other conversations left without messages once `messages` are gone.
+    emptied: Vec<i64>,
+}
+
+impl RemovalPlan {
+    fn impact(&self) -> RemovalImpact {
+        RemovalImpact {
+            chunks: self.chunks,
+            conversations: (self.scoped.len() + self.emptied.len()) as u32,
+            turns: self.turns,
+        }
+    }
+}
+
+fn ids(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> rusqlite::Result<Vec<i64>> {
+    conn.prepare(sql)?
+        .query_map(params, |row| row.get(0))?
+        .collect()
+}
+
+fn removal_plan(conn: &Connection, id: DocumentId) -> rusqlite::Result<RemovalPlan> {
+    let chunks = conn.query_row(
+        "SELECT count(*) FROM document_chunks WHERE document_id = ?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    let scoped = ids(
+        conn,
+        "SELECT conversation_id FROM conversation_scopes WHERE document_id = ?1",
+        [id],
+    )?;
+    // Any source given to the model counts (cited or not), and so do `[página N]` references.
+    let answers: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT m.id, m.conversation_id FROM messages m
+             WHERE m.role = 'assistant'
+               AND m.conversation_id NOT IN
+                   (SELECT conversation_id FROM conversation_scopes WHERE document_id = ?1)
+               AND (EXISTS (SELECT 1 FROM citations c WHERE c.message_id = m.id AND c.document_id = ?1)
+                 OR EXISTS (SELECT 1 FROM message_page_refs r WHERE r.message_id = m.id AND r.document_id = ?1))",
+        )?
+        .query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut messages = Vec::with_capacity(answers.len() * 2);
+    let mut touched = Vec::new();
+    for &(answer, conversation) in &answers {
+        messages.push(answer);
+        // The question is the user message right before the answer.
+        let question: Option<i64> = conn
+            .query_row(
+                "SELECT q.id FROM messages q, messages a
+                 WHERE a.id = ?1 AND q.conversation_id = a.conversation_id AND q.role = 'user'
+                   AND (q.created_at, q.id) < (a.created_at, a.id)
+                 ORDER BY q.created_at DESC, q.id DESC LIMIT 1",
+                [answer],
+                |row| row.get(0),
+            )
+            .optional()?;
+        messages.extend(question);
+        if !touched.contains(&conversation) {
+            touched.push(conversation);
+        }
+    }
+    let mut emptied = Vec::new();
+    for conversation in touched {
+        let remaining = ids(
+            conn,
+            "SELECT id FROM messages WHERE conversation_id = ?1",
+            [conversation],
+        )?
+        .into_iter()
+        .filter(|m| !messages.contains(m))
+        .count();
+        if remaining == 0 {
+            emptied.push(conversation);
+        }
+    }
+    Ok(RemovalPlan {
+        chunks,
+        scoped,
+        turns: answers.len() as u32,
+        messages,
+        emptied,
+    })
+}
+
+fn remove(conn: &mut Connection, id: DocumentId) -> rusqlite::Result<Option<RemovedDocument>> {
+    let tx = conn.transaction()?;
+    let Some(sha256) = tx
+        .query_row("SELECT sha256 FROM documents WHERE id = ?1", [id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    let plan = removal_plan(&tx, id)?;
+    {
+        let mut conversation = tx.prepare("DELETE FROM conversations WHERE id = ?1")?;
+        let mut message = tx.prepare("DELETE FROM messages WHERE id = ?1")?;
+        for c in &plan.scoped {
+            conversation.execute([c])?;
+        }
+        for m in &plan.messages {
+            message.execute([m])?;
+        }
+        for c in &plan.emptied {
+            conversation.execute([c])?;
+        }
+    }
+    // Pages, chunks (and their FTS and vector rows), embeddings, jobs, collection links and the
+    // remaining citations and page references follow by cascade.
+    tx.execute("DELETE FROM documents WHERE id = ?1", [id])?;
+    tx.commit()?;
+    // With `secure_delete` the freed pages are zeroed; move them out of the WAL as well. A
+    // checkpoint that cannot finish now (busy) happens later on its own; the removal stands.
+    let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+    Ok(Some(RemovedDocument {
+        sha256,
+        impact: plan.impact(),
+    }))
+}
+
 impl DocumentRepository for Database {
     fn find_by_sha256<'a>(
         &'a self,
@@ -315,6 +446,29 @@ impl DocumentRepository for Database {
             })
             .and_then(|rows| rows.collect())
             .map_err(err("ler páginas"))
+        }))
+    }
+
+    fn removal_impact(&self, id: DocumentId) -> BoxFuture<'_, Result<RemovalImpact, StorageError>> {
+        Box::pin(self.run(move |conn| {
+            removal_plan(conn, id)
+                .map(|plan| plan.impact())
+                .map_err(err("calcular o que será removido"))
+        }))
+    }
+
+    fn remove(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<RemovedDocument>, StorageError>> {
+        Box::pin(self.run(move |conn| remove(conn, id).map_err(err("remover o documento"))))
+    }
+
+    fn hashes(&self) -> BoxFuture<'_, Result<Vec<String>, StorageError>> {
+        Box::pin(self.run(|conn| {
+            conn.prepare("SELECT sha256 FROM documents")
+                .and_then(|mut stmt| stmt.query_map([], |row| row.get(0))?.collect())
+                .map_err(err("listar os arquivos da biblioteca"))
         }))
     }
 }

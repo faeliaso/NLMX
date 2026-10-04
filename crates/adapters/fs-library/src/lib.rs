@@ -74,6 +74,55 @@ fn store_file(dir: &Path, source: &Path, destination: &Path) -> Result<(), Stora
     })
 }
 
+fn remove_file(path: &Path) -> Result<(), StorageError> {
+    match fs::remove_file(path) {
+        Err(err) if err.kind() != io::ErrorKind::NotFound => Err(error("apagar", path, err)),
+        _ => Ok(()),
+    }
+}
+
+/// Files changed more recently than this are left alone by `prune`: an import copies the file
+/// into the library a moment before its document is recorded.
+const PRUNE_GRACE_SECS: i64 = 10 * 60;
+
+/// The hash of a library file name: `<sha>.pdf` or a leftover `<sha>.pdf.tmp-<pid>`.
+fn library_hash(name: &str) -> Option<&str> {
+    let sha = name.get(..64)?;
+    let rest = &name[64..];
+    let valid = sha.bytes().all(|b| b.is_ascii_hexdigit());
+    (valid && (rest == ".pdf" || rest.starts_with(".pdf.tmp-"))).then_some(sha)
+}
+
+fn prune(
+    dir: &Path,
+    keep: &std::collections::HashSet<String>,
+    grace_secs: i64,
+) -> Result<u32, StorageError> {
+    use std::os::unix::fs::MetadataExt;
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(err) => return Err(error("ler a biblioteca em", dir, err)),
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(sha) = name.to_str().and_then(library_hash) else {
+            continue; // Not ours: never touched.
+        };
+        let recent = entry.metadata().is_ok_and(|m| now - m.ctime() < grace_secs);
+        if keep.contains(sha) || recent {
+            continue;
+        }
+        remove_file(&entry.path())?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
 impl FileStore for FsLibrary {
     fn digest<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, Result<FileDigest, StorageError>> {
         let path = path.to_path_buf();
@@ -89,6 +138,18 @@ impl FileStore for FsLibrary {
             (self.dir.clone(), path.to_path_buf(), self.path_for(sha256));
         Box::pin(async move {
             blocking(move || store_file(&dir, &source, &destination).map(|()| destination)).await
+        })
+    }
+
+    fn remove<'a>(&'a self, sha256: &'a str) -> BoxFuture<'a, Result<(), StorageError>> {
+        let path = self.path_for(sha256);
+        Box::pin(async move { blocking(move || remove_file(&path)).await })
+    }
+
+    fn prune(&self, keep: Vec<String>) -> BoxFuture<'_, Result<u32, StorageError>> {
+        let dir = self.dir.clone();
+        Box::pin(async move {
+            blocking(move || prune(&dir, &keep.into_iter().collect(), PRUNE_GRACE_SECS)).await
         })
     }
 }
@@ -153,6 +214,49 @@ mod tests {
         assert_eq!(fs::metadata(&stored).unwrap().modified().unwrap(), modified);
         let entries: Vec<_> = fs::read_dir(dir.join(LIBRARY_DIR)).unwrap().collect();
         assert_eq!(entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn removes_a_document_file() {
+        let dir = temp_dir("remove");
+        let source = dir.join("a.pdf");
+        fs::write(&source, b"%PDF a").unwrap();
+        let library = FsLibrary::new(dir.join(LIBRARY_DIR));
+        let sha = library.digest(&source).await.unwrap().sha256;
+        let stored = library.store(&source, &sha).await.unwrap();
+
+        library.remove(&sha).await.unwrap();
+        assert!(!stored.exists());
+        assert!(source.exists(), "the user's file is never touched");
+        library.remove(&sha).await.unwrap(); // missing is fine
+    }
+
+    #[tokio::test]
+    async fn prunes_only_old_library_files_nobody_references() {
+        let dir = temp_dir("prune");
+        let library = FsLibrary::new(&dir);
+        let (kept, orphan, tmp) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+        for name in [
+            format!("{kept}.pdf"),
+            format!("{orphan}.pdf"),
+            format!("{tmp}.pdf.tmp-123"),
+            "notes.txt".to_string(),
+        ] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        // Just written: within the grace period, nothing goes.
+        assert_eq!(library.prune(vec![kept.clone()]).await.unwrap(), 0);
+
+        let keep = [kept.clone()].into();
+        assert_eq!(prune(&dir, &keep, 0).unwrap(), 2);
+        let mut left: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        left.sort();
+        assert_eq!(left, [format!("{kept}.pdf"), "notes.txt".to_string()]);
+        assert_eq!(library_hash(&format!("{}.pdf", "z".repeat(64))), None);
+        let _ = (orphan, tmp);
     }
 
     #[tokio::test]

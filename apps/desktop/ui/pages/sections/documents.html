@@ -7,6 +7,9 @@
     {%- endif %}
   {% endcall %}
   <div class="page-body" id="document-list" hx-get="/fragments/documents" hx-trigger="documents-changed from:body">
+    {%- if let Some(n) = notice %}
+    {% call ds::alert(n.kind, n.title, n.message) %}{% endcall %}
+    {%- endif %}
     {% include "components/document_list.html" %}
   </div>
 </div>

@@ -55,6 +55,8 @@ pub struct PageView {
 #[template(path = "components/viewer.html")]
 pub struct ViewerView {
     pub document_id: DocumentId,
+    /// Goes into page image URLs (see `DocumentOutline::version`).
+    pub version: String,
     pub title: String,
     pub pages: Vec<PageView>,
     pub page: u32,
@@ -97,6 +99,7 @@ pub fn view(outline: DocumentOutline, target: &ViewerTarget, origin: String) -> 
         .unwrap_or_default();
     ViewerView {
         document_id: outline.document_id,
+        version: outline.version,
         title: outline.title,
         has_highlights: !target.highlights.is_empty(),
         pages,

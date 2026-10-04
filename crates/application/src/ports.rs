@@ -124,7 +124,7 @@ pub trait DocumentEngine: Send + Sync {
 
 use nlmx_domain::ingestion::{
     ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, PageLayout,
-    StructuredDocument,
+    RemovalImpact, StructuredDocument,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +143,11 @@ pub trait FileStore: Send + Sync {
         path: &'a Path,
         sha256: &'a str,
     ) -> BoxFuture<'a, Result<std::path::PathBuf, StorageError>>;
+    /// Deletes the library copy of a document. A missing file is not an error.
+    fn remove<'a>(&'a self, sha256: &'a str) -> BoxFuture<'a, Result<(), StorageError>>;
+    /// Deletes library files (and leftover temporary copies) whose hash is not in `keep`;
+    /// returns how many were deleted.
+    fn prune(&self, keep: Vec<String>) -> BoxFuture<'_, Result<u32, StorageError>>;
 }
 
 /// Turns page layouts into normalized blocks with headings and sections. Pure and deterministic.
@@ -245,6 +250,22 @@ pub trait DocumentRepository: Send + Sync {
     fn unfinished(&self) -> BoxFuture<'_, Result<Vec<DocumentId>, StorageError>>;
     /// Page sizes saved by the last extraction, in page order (empty before extraction).
     fn pages(&self, id: DocumentId) -> BoxFuture<'_, Result<Vec<PageRecord>, StorageError>>;
+    /// What `remove` would delete (all zero for an unknown document).
+    fn removal_impact(&self, id: DocumentId) -> BoxFuture<'_, Result<RemovalImpact, StorageError>>;
+    /// Deletes the document, everything derived from it and the chat history that used it, in
+    /// one transaction (see `RemovalImpact`). `None` if there is no such document.
+    fn remove(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<RemovedDocument>, StorageError>>;
+    /// Content hashes of every document, to find library files nobody references.
+    fn hashes(&self) -> BoxFuture<'_, Result<Vec<String>, StorageError>>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemovedDocument {
+    pub sha256: String,
+    pub impact: RemovalImpact,
 }
 
 // ── Embeddings ───────────────────────────────────────────────────────────────

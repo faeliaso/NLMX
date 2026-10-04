@@ -21,6 +21,18 @@
     {%- if doc.viewable %}
     <a class="btn btn-secondary btn-sm" href="/chat?view={{ doc.id }}" hx-get="/chat?view={{ doc.id }}" hx-target="#content" hx-push-url="true">Abrir</a>
     {%- endif %}
+    {%- if doc.removable %}
+    <button type="button" class="btn btn-ghost btn-sm btn-icon" popovertarget="doc-menu-{{ doc.id }}" aria-haspopup="menu" aria-expanded="false" aria-label="Mais ações para {{ doc.title }}">{% call ds::icon("more") %}{% endcall %}</button>
+    <div class="menu" id="doc-menu-{{ doc.id }}" popover role="menu" aria-label="Ações">
+      <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="remove-doc-{{ doc.id }}">{% call ds::icon("trash") %}{% endcall %}<span>Remover…</span></button>
+    </div>
+    {% call ds::dialog("remove-doc-{}"|format(doc.id), "Remover “{}”?"|format(doc.title), doc.removal, true) %}
+      <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
+      <button type="button" class="btn btn-destructive" data-dialog-close hx-post="/documents/{{ doc.id }}/delete" hx-target="#content">Remover</button>
+    {% endcall %}
+    {%- else %}
+    <button type="button" class="btn btn-ghost btn-sm btn-icon" disabled title="Disponível quando a leitura do documento terminar" aria-label="Mais ações (indisponível enquanto o documento é processado)">{% call ds::icon("more") %}{% endcall %}</button>
+    {%- endif %}
   </li>
   {%- endfor %}
 </ul>

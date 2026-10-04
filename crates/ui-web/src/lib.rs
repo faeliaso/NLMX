@@ -22,7 +22,7 @@ use axum::routing::post;
 use axum::{Router, http::HeaderValue, middleware, response::Response, routing::get};
 use nlmx_application::{
     ports::{Diagnostics, ModelProvider},
-    use_cases::{ChatService, DocumentIngestion, GetSystemStatus, ViewDocument},
+    use_cases::{ChatService, DocumentIngestion, GetSystemStatus, RemoveDocument, ViewDocument},
 };
 
 pub use error::FALLBACK_ERROR_HTML;
@@ -43,6 +43,8 @@ pub struct AppState {
     pub chat: Result<Arc<ChatService>, String>,
     /// The PDF viewer (unavailable without the database or the PDF engine).
     pub viewer: Result<Arc<ViewDocument>, String>,
+    /// Removes documents with everything derived from them (unavailable without the database).
+    pub remover: Result<Arc<RemoveDocument>, String>,
     /// Local session measurements (`None` hides the diagnostics section).
     pub diagnostics: Option<Arc<dyn Diagnostics>>,
     /// Embedding model files (catalog, downloads); `None` hides the model list.
@@ -67,6 +69,7 @@ pub fn router(state: AppState) -> Router {
         .route("/viewer/{doc}/search", get(viewer::search))
         .route("/documents/{id}/pages/{file}", get(viewer::page_image))
         .route("/documents", get(sections::documents))
+        .route("/documents/{id}/delete", post(sections::remove_document))
         .route("/indexing", get(sections::indexing))
         .route("/models", get(models::page))
         .route("/settings", get(sections::settings))
@@ -129,6 +132,7 @@ mod tests {
             ))),
             chat: Ok(chat_service(FakeLlmProvider::available())),
             viewer: Err("visualizador indisponível nos testes".into()),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
         })
@@ -316,6 +320,7 @@ mod tests {
             ingestion: Err("x".into()),
             chat: Err("x".into()),
             viewer: Err("x".into()),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: Some(Arc::new(FixedDiagnostics(snapshot))),
             models: None,
         });
@@ -400,6 +405,7 @@ mod tests {
             ingestion: Ok(ingestion),
             chat: Ok(chat_service(FakeLlmProvider::available())),
             viewer: Err("visualizador indisponível nos testes".into()),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
         });
@@ -417,12 +423,96 @@ mod tests {
             ingestion: Err("PDFium não encontrado".into()),
             chat: Ok(chat_service(FakeLlmProvider::available())),
             viewer: Err("visualizador indisponível nos testes".into()),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
         });
         let (_, _, body) = send(unavailable, "/documents", true).await;
         assert!(body.contains("Biblioteca indisponível") && body.contains("PDFium não encontrado"));
         assert!(!body.contains(r#"data-command="import_documents""#));
+    }
+
+    #[tokio::test]
+    async fn documents_can_be_removed_after_confirming() {
+        let files = Arc::new(FakeFileStore::default());
+        let sha = files.add("/in/contrato.pdf", b"pdf");
+        let span = TextSpan {
+            text: "Carência de 180 dias.".into(),
+            bbox: BoundingBox {
+                left: 0.0,
+                top: 0.0,
+                right: 1.0,
+                bottom: 1.0,
+            },
+            font_name: "Helvetica".into(),
+            font_size: 11.0,
+            bold: false,
+            italic: false,
+        };
+        let engine = FakeDocumentEngine::default().with_document(
+            FakeFileStore::library_path(&sha),
+            DocumentMetadata {
+                title: Some("Contrato".into()),
+                ..Default::default()
+            },
+            vec![FakePage {
+                spans: vec![span],
+                images: vec![],
+            }],
+        );
+        let documents = Arc::new(FakeDocumentRepository::default());
+        let ingestion = Arc::new(DocumentIngestion {
+            engine: Arc::new(engine),
+            files: files.clone(),
+            documents: documents.clone(),
+            analyzer: Arc::new(FakeStructureAnalyzer),
+            chunker: Arc::new(FakeChunker),
+            tokens: Arc::new(WordTokenCounter),
+            policy: Default::default(),
+            embedder: None,
+        });
+        ingestion
+            .import(std::path::Path::new("/in/contrato.pdf"))
+            .await;
+        let app = router(AppState {
+            system_status: status(LanguageModelStatus::Available, FakeStorage::healthy()),
+            ingestion: Ok(ingestion),
+            chat: Ok(chat_service(FakeLlmProvider::available())),
+            viewer: Err("visualizador indisponível nos testes".into()),
+            remover: Ok(Arc::new(RemoveDocument {
+                documents: documents.clone(),
+                files: files.clone(),
+                viewer: None,
+            })),
+            diagnostics: None,
+            models: None,
+        });
+
+        let (_, _, body) = send(app.clone(), "/documents", true).await;
+        assert!(body.contains(r#"data-dialog-open="remove-doc-1""#));
+        assert!(body.contains("seu único trecho e os índices de busca serão apagados"));
+        assert!(body.contains("O arquivo original não é afetado."));
+        assert!(body.contains(r#"hx-post="/documents/1/delete""#));
+
+        // While it is being read, removal is not offered.
+        documents.force_status(1, nlmx_domain::ingestion::DocumentStatus::Extracting);
+        let (_, _, body) = send(app.clone(), "/documents", true).await;
+        assert!(!body.contains(r#"data-dialog-open="remove-doc-1""#));
+        assert!(body.contains("Disponível quando a leitura do documento terminar"));
+        let (status_code, body) = post_form(app.clone(), "/documents/1/delete", "").await;
+        assert_eq!(status_code, StatusCode::OK);
+        assert!(body.contains("ainda está sendo processado"), "{body}");
+        assert!(files.removed().is_empty());
+
+        documents.force_status(1, nlmx_domain::ingestion::DocumentStatus::Embedding);
+        let (status_code, body) = post_form(app.clone(), "/documents/1/delete", "").await;
+        assert_eq!(status_code, StatusCode::OK);
+        assert!(body.contains("Documento removido"), "{body}");
+        assert!(body.contains("Nenhum documento"), "the list is empty again");
+        assert_eq!(files.removed(), [sha]);
+
+        let (_, body) = post_form(app, "/documents/1/delete", "").await;
+        assert!(body.contains("O documento não existe mais."));
     }
 
     fn descriptor(id: &str) -> nlmx_domain::models::ModelDescriptor {
@@ -549,6 +639,7 @@ mod tests {
             ingestion: Ok(ingestion),
             chat: Ok(chat),
             viewer,
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
         })
@@ -783,6 +874,7 @@ mod tests {
             ingestion: Ok(ingestion),
             chat: Ok(chat_on(conversations, FakeLlmProvider::available())),
             viewer: Ok(Arc::new(ViewDocument::new(engine, documents))),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
         });
@@ -840,7 +932,10 @@ mod tests {
         // with the same id while settling, which broke re-opening (blank pages).
         let viewer_html = &body[body.find("data-viewer ").unwrap()..];
         assert!(!viewer_html.contains(" id="), "{viewer_html}");
-        assert!(body.contains(&format!(r#"data-src-base="/documents/{doc}/pages/2.png""#)));
+        // Versioned by the file hash: an id reused after a removal never hits a cached image.
+        assert!(body.contains(&format!(
+            r#"data-src-base="/documents/{doc}/pages/2.png?v="#
+        )));
         assert!(body.contains(&format!(r#"data-text-src="/viewer/{doc}/pages/1/text""#)));
 
         // A page reference opens that page with the source's boxes on it only.
@@ -959,6 +1054,7 @@ mod tests {
             ingestion: Err("x".into()),
             chat: Ok(chat_service(FakeLlmProvider::available())),
             viewer: Err("x".into()),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: Some(models),
         });

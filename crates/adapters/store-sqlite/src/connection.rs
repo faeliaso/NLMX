@@ -18,5 +18,7 @@ fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "temp_store", "MEMORY")?;
+    // Deleted content (removed documents, chats) is overwritten instead of lingering in free pages.
+    conn.pragma_update(None, "secure_delete", "ON")?;
     Ok(())
 }

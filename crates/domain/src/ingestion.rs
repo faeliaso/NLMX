@@ -196,3 +196,13 @@ pub struct DocumentSummary {
     pub error: Option<String>,
     pub imported_at: String,
 }
+
+/// What removing a document takes with it besides the document itself: its chunks (with their
+/// lexical and vector index entries), the conversations restricted to it and, in conversations
+/// about several documents, the question + answer pairs that used it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RemovalImpact {
+    pub chunks: u32,
+    pub conversations: u32,
+    pub turns: u32,
+}

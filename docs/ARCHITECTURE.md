@@ -83,6 +83,20 @@ seletor ─► import_documents (Tauri) ─► DocumentIngestion::import(path)
 - Sem modelo de embeddings ativo, o documento fica em `embedding` (job `waiting_model`) e a busca é só lexical.
 - Mudança na saída do analisador ou do chunker ⇒ incrementar `structure_heuristic::VERSION` / `chunker_structural::VERSION`.
 
+### Remoção (ADR 0008)
+
+```
+Documentos ─► menu "Remover…" ─► diálogo (RemoveDocument::impact) ─► POST /documents/{id}/delete
+  ─► RemoveDocument::remove: recusa se queued/extracting/structuring/chunking
+  ─► DocumentRepository::remove (uma transação): conversas restritas ao documento; pares
+     pergunta + resposta que o usaram; conversas esvaziadas; o documento (cascatas: páginas,
+     trechos, FTS5, vec0, chunk_embeddings, jobs, coleções, citações) ─► wal_checkpoint(TRUNCATE)
+  ─► FileStore::remove(<sha>.pdf) ─► ViewDocument::forget(id) ─► Measurement::DocumentRemoved
+```
+
+- `secure_delete` (conexão) e `secure-delete` do FTS5 (migração 0009) não deixam o texto removido nos bytes do banco.
+- Na inicialização, `RemoveDocument::prune_library` apaga arquivos da biblioteca sem documento (antes do `resume()`).
+
 ## 5. Busca
 
 **`HybridRetriever`** (`application::services::retrieval`), com `RetrievalOptions { top_k, semantic_weight, lexical_weight, filter }`:
@@ -163,6 +177,7 @@ Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref=
 | 0005 · 0007 | `conversations`, `messages`, `citations`, `conversation_scopes` |
 | 0006 | `chunk_embeddings` (chunk → modelo → vetor, com o `content_hash` do chunk) |
 | 0008 | `message_page_refs` |
+| 0009 | opção `secure-delete` do `document_chunks_fts` (ADR 0008) |
 
 Vetores: uma tabela vec0 `chunk_vectors_<embedding_model_id>` por espaço vetorial (modelo + revisão + dimensão), criada em runtime por `create_index`; rowid = id do chunk (ADR 0005).
 

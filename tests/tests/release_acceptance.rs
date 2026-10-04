@@ -353,6 +353,7 @@ async fn installed_app_end_to_end() {
         ingestion: Err("not used".into()),
         chat: Ok(chat.clone()),
         viewer: Ok(Arc::new(library.viewer())),
+        remover: Err("remoção indisponível neste teste".into()),
         diagnostics: None,
         models: None,
     });

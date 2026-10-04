@@ -134,6 +134,15 @@ pub enum Measurement {
         kind: ErrorKind,
         total_ms: u64,
     },
+    /// A document and everything derived from it were removed.
+    DocumentRemoved {
+        document_id: DocumentId,
+        chunks: u32,
+        /// Question + answer pairs removed from conversations about several documents.
+        turns: u32,
+        conversations: u32,
+        total_ms: u64,
+    },
     Resources {
         rss_bytes: u64,
         llama_rss_bytes: Option<u64>,
@@ -167,6 +176,7 @@ impl Measurement {
             Self::RetrieveFailed { .. } => "retrieve_failed",
             Self::Generated { .. } => "generated",
             Self::GenerationFailed { .. } => "generation_failed",
+            Self::DocumentRemoved { .. } => "document_removed",
             Self::Resources { .. } => "resources",
             Self::Storage { .. } => "storage",
         }
@@ -183,7 +193,7 @@ impl Measurement {
             Self::RetrieveFailed { total_ms, .. } => Some((Operation::Retrieve, total_ms, true)),
             Self::Generated { total_ms, .. } => Some((Operation::Generate, total_ms, false)),
             Self::GenerationFailed { total_ms, .. } => Some((Operation::Generate, total_ms, true)),
-            Self::Resources { .. } | Self::Storage { .. } => None,
+            Self::DocumentRemoved { .. } | Self::Resources { .. } | Self::Storage { .. } => None,
         }
     }
 
@@ -241,6 +251,19 @@ impl Measurement {
             } => vec![
                 ("document_id", I64(document_id)),
                 ("kind", Label(kind.as_str())),
+                ("total_ms", U64(total_ms)),
+            ],
+            Self::DocumentRemoved {
+                document_id,
+                chunks,
+                turns,
+                conversations,
+                total_ms,
+            } => vec![
+                ("document_id", I64(document_id)),
+                ("chunks", U64(chunks.into())),
+                ("turns", U64(turns.into())),
+                ("conversations", U64(conversations.into())),
                 ("total_ms", U64(total_ms)),
             ],
             Self::Retrieved {

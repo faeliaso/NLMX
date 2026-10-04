@@ -384,11 +384,11 @@ impl DocumentEngine for FakeDocumentEngine {
 
 use nlmx_application::ports::{
     Chunker, DocumentRecord, DocumentRepository, Extraction, FileDigest, FileStore, InsertOutcome,
-    NewDocument, StructureAnalyzer, TokenCounter,
+    NewDocument, RemovedDocument, StructureAnalyzer, TokenCounter,
 };
 use nlmx_domain::ingestion::{
     Block, BlockKind, ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary,
-    PageBox, PageLayout, StructuredDocument,
+    PageBox, PageLayout, RemovalImpact, StructuredDocument,
 };
 
 /// Files held in memory; the "hash" is derived from the content so equal bytes ⇒ equal hash.
@@ -396,6 +396,10 @@ use nlmx_domain::ingestion::{
 pub struct FakeFileStore {
     files: Mutex<HashMap<std::path::PathBuf, Vec<u8>>>,
     stored: Mutex<Vec<std::path::PathBuf>>,
+    removed: Mutex<Vec<String>>,
+    pruned_keeping: Mutex<Option<Vec<String>>>,
+    /// Makes `remove` fail (e.g. a permission problem).
+    pub fail_remove: std::sync::atomic::AtomicBool,
 }
 
 impl FakeFileStore {
@@ -412,6 +416,16 @@ impl FakeFileStore {
     /// How many times `store` copied a file.
     pub fn store_calls(&self) -> usize {
         self.stored.lock().unwrap().len()
+    }
+
+    /// Hashes whose library copy `remove` deleted, in order.
+    pub fn removed(&self) -> Vec<String> {
+        self.removed.lock().unwrap().clone()
+    }
+
+    /// The hashes passed to the last `prune`.
+    pub fn pruned_keeping(&self) -> Option<Vec<String>> {
+        self.pruned_keeping.lock().unwrap().clone()
     }
 
     fn hash(content: &[u8]) -> String {
@@ -450,6 +464,23 @@ impl FileStore for FakeFileStore {
             Ok(path)
         })
     }
+
+    fn remove<'a>(&'a self, sha256: &'a str) -> BoxFuture<'a, Result<(), StorageError>> {
+        Box::pin(async move {
+            if self.fail_remove.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(StorageError::new("permissão negada"));
+            }
+            self.removed.lock().unwrap().push(sha256.to_string());
+            Ok(())
+        })
+    }
+
+    fn prune(&self, keep: Vec<String>) -> BoxFuture<'_, Result<u32, StorageError>> {
+        Box::pin(async move {
+            *self.pruned_keeping.lock().unwrap() = Some(keep);
+            Ok(0)
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -460,6 +491,8 @@ pub struct FakeDocumentRow {
     pub extraction: Option<Extraction>,
     /// Every status the document went through, in order.
     pub history: Vec<DocumentStatus>,
+    /// Removed rows keep their slot so ids are never reused by the fake.
+    pub removed: bool,
 }
 
 /// In-memory document repository that records status history.
@@ -498,7 +531,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 .lock()
                 .unwrap()
                 .iter()
-                .position(|r| r.new.sha256 == sha256)
+                .position(|r| !r.removed && r.new.sha256 == sha256)
                 .map(|i| i as DocumentId + 1))
         })
     }
@@ -506,7 +539,10 @@ impl DocumentRepository for FakeDocumentRepository {
     fn insert(&self, document: NewDocument) -> BoxFuture<'_, Result<InsertOutcome, StorageError>> {
         Box::pin(async move {
             let mut rows = self.rows.lock().unwrap();
-            if let Some(i) = rows.iter().position(|r| r.new.sha256 == document.sha256) {
+            if let Some(i) = rows
+                .iter()
+                .position(|r| !r.removed && r.new.sha256 == document.sha256)
+            {
                 return Ok(InsertOutcome::AlreadyExists(i as DocumentId + 1));
             }
             rows.push(FakeDocumentRow {
@@ -515,6 +551,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 error: None,
                 extraction: None,
                 history: vec![DocumentStatus::Queued],
+                removed: false,
             });
             Ok(InsertOutcome::Inserted(rows.len() as DocumentId))
         })
@@ -527,6 +564,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 .lock()
                 .unwrap()
                 .get(id as usize - 1)
+                .filter(|r| !r.removed)
                 .map(|r| DocumentRecord {
                     id,
                     sha256: r.new.sha256.clone(),
@@ -548,6 +586,7 @@ impl DocumentRepository for FakeDocumentRepository {
             let mut rows = self.rows.lock().unwrap();
             let row = rows
                 .get_mut(id as usize - 1)
+                .filter(|r| !r.removed)
                 .ok_or_else(|| StorageError::new("documento inexistente"))?;
             row.status = status;
             row.error = error;
@@ -565,6 +604,7 @@ impl DocumentRepository for FakeDocumentRepository {
             let mut rows = self.rows.lock().unwrap();
             let row = rows
                 .get_mut(id as usize - 1)
+                .filter(|r| !r.removed)
                 .ok_or_else(|| StorageError::new("documento inexistente"))?;
             row.status = extraction.status;
             row.error = None;
@@ -582,6 +622,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 .unwrap()
                 .iter()
                 .enumerate()
+                .filter(|(_, r)| !r.removed)
                 .map(|(i, r)| DocumentSummary {
                     id: i as DocumentId + 1,
                     title: r
@@ -608,7 +649,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 .unwrap()
                 .iter()
                 .enumerate()
-                .filter(|(_, r)| r.status.is_unfinished())
+                .filter(|(_, r)| !r.removed && r.status.is_unfinished())
                 .map(|(i, _)| i as DocumentId + 1)
                 .collect())
         })
@@ -624,9 +665,59 @@ impl DocumentRepository for FakeDocumentRepository {
                 .lock()
                 .unwrap()
                 .get(id as usize - 1)
+                .filter(|r| !r.removed)
                 .and_then(|r| r.extraction.as_ref())
                 .map(|e| e.pages.clone())
                 .unwrap_or_default())
+        })
+    }
+
+    /// The fake has no chat history: only chunks count.
+    fn removal_impact(&self, id: DocumentId) -> BoxFuture<'_, Result<RemovalImpact, StorageError>> {
+        Box::pin(async move {
+            let rows = self.rows.lock().unwrap();
+            let chunks = rows
+                .get(id as usize - 1)
+                .filter(|r| !r.removed)
+                .and_then(|r| r.extraction.as_ref())
+                .map_or(0, |e| e.chunks.len() as u32);
+            Ok(RemovalImpact {
+                chunks,
+                ..RemovalImpact::default()
+            })
+        })
+    }
+
+    fn remove(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<RemovedDocument>, StorageError>> {
+        Box::pin(async move {
+            let impact = self.removal_impact(id).await?;
+            let mut rows = self.rows.lock().unwrap();
+            Ok(rows
+                .get_mut(id as usize - 1)
+                .filter(|r| !r.removed)
+                .map(|row| {
+                    row.removed = true;
+                    RemovedDocument {
+                        sha256: row.new.sha256.clone(),
+                        impact,
+                    }
+                }))
+        })
+    }
+
+    fn hashes(&self) -> BoxFuture<'_, Result<Vec<String>, StorageError>> {
+        Box::pin(async move {
+            Ok(self
+                .rows
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|r| !r.removed)
+                .map(|r| r.new.sha256.clone())
+                .collect())
         })
     }
 }
@@ -1896,6 +1987,77 @@ pub async fn conversation_repository_contract(
         "messages go with the conversation"
     );
     assert!(repo.get(scoped.id).await.unwrap().is_some());
+}
+
+/// What every `DocumentRepository` must do when removing documents. `repo` must be empty.
+pub async fn document_removal_contract(repo: &dyn DocumentRepository) {
+    let new = |sha: char| NewDocument {
+        sha256: sha.to_string().repeat(64),
+        original_filename: format!("{sha}.pdf"),
+        original_path: format!("/tmp/{sha}.pdf"),
+        library_path: format!("/library/{sha}.pdf"),
+        file_size: 10,
+    };
+    let InsertOutcome::Inserted(a) = repo.insert(new('a')).await.unwrap() else {
+        panic!("inserted")
+    };
+    let InsertOutcome::Inserted(b) = repo.insert(new('b')).await.unwrap() else {
+        panic!("inserted")
+    };
+
+    assert_eq!(repo.remove(9_999).await.unwrap(), None, "unknown document");
+    assert_eq!(
+        repo.removal_impact(9_999).await.unwrap(),
+        RemovalImpact::default()
+    );
+
+    let removed = repo.remove(a).await.unwrap().expect("removed");
+    assert_eq!(removed.sha256, "a".repeat(64));
+    assert_eq!(
+        removed.impact,
+        RemovalImpact::default(),
+        "nothing derived yet"
+    );
+    assert!(repo.get(a).await.unwrap().is_none());
+    assert!(
+        repo.find_by_sha256(&"a".repeat(64))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        repo.list()
+            .await
+            .unwrap()
+            .iter()
+            .map(|d| d.id)
+            .collect::<Vec<_>>(),
+        vec![b]
+    );
+    assert_eq!(repo.hashes().await.unwrap(), vec!["b".repeat(64)]);
+    assert!(
+        repo.set_status(a, DocumentStatus::Indexed, None)
+            .await
+            .is_err(),
+        "gone"
+    );
+    assert_eq!(repo.remove(a).await.unwrap(), None, "removing twice");
+
+    // The same file can be imported again, as a new document.
+    assert!(matches!(
+        repo.insert(new('a')).await.unwrap(),
+        InsertOutcome::Inserted(_)
+    ));
+}
+
+#[cfg(test)]
+mod document_contract {
+    use super::*;
+
+    #[test]
+    fn the_fake_honours_the_removal_contract() {
+        llm_contract::block_on(document_removal_contract(&FakeDocumentRepository::default()));
+    }
 }
 
 #[cfg(test)]

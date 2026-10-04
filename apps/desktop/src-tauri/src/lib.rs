@@ -47,7 +47,16 @@ pub fn run() {
             // whatever is still waiting for embeddings (if a model is configured).
             let ingestion = services.ingestion.0.clone().ok();
             let embedder = services.embedder.0.clone();
+            let remover = services.remover.clone().ok();
             tauri::async_runtime::spawn(async move {
+                // Library files of removed documents whose deletion failed, before any import.
+                if let Some(remover) = remover {
+                    match remover.prune_library().await {
+                        Ok(0) => {}
+                        Ok(count) => tracing::info!(count, "orphan library files removed"),
+                        Err(err) => tracing::warn!("library cleanup failed: {}", err.message),
+                    }
+                }
                 if let Some(ingestion) = ingestion {
                     let resumed = ingestion.resume().await;
                     if !resumed.is_empty() {

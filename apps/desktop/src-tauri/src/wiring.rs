@@ -17,7 +17,10 @@ use nlmx_application::{
         retrieval::HybridRetriever,
         retriever::Retriever,
     },
-    use_cases::{ChatService, DocumentIngestion, EmbedDocuments, GetSystemStatus, ViewDocument},
+    use_cases::{
+        ChatService, DocumentIngestion, EmbedDocuments, GetSystemStatus, RemoveDocument,
+        ViewDocument,
+    },
 };
 use nlmx_chunker_structural::{HeuristicTokenCounter, StructuralChunker};
 use nlmx_domain::{ingestion::ChunkPolicy, models::ModelState};
@@ -101,6 +104,8 @@ pub struct Services {
     pub models: Models,
     pub chat: Chat,
     pub diagnostics: DiagnosticsState,
+    /// Also cleans the library of orphan files at startup.
+    pub remover: Result<Arc<RemoveDocument>, String>,
 }
 
 /// Builds the app from its data directory (`~/Library/Application Support/<identifier>`).
@@ -187,10 +192,19 @@ pub fn build(
         (None, _) => Err("Banco de dados indisponível".to_string()),
         (_, Err(err)) => Err(format!("Motor de PDF indisponível: {err}")),
     };
+    let library = Arc::new(FsLibrary::new(data_dir.join(LIBRARY_DIR)));
+    let remover = match &db {
+        Some(db) => Ok(Arc::new(RemoveDocument {
+            documents: db.clone(),
+            files: library.clone(),
+            viewer: viewer.as_ref().ok().cloned(),
+        })),
+        None => Err("Banco de dados indisponível".to_string()),
+    };
     let ingestion = match (database, engine) {
         (Ok(db), Ok(engine)) => Ok(Arc::new(DocumentIngestion {
             engine,
-            files: Arc::new(FsLibrary::new(data_dir.join(LIBRARY_DIR))),
+            files: library,
             documents: Arc::new(db),
             analyzer: Arc::new(HeuristicStructureAnalyzer),
             chunker: Arc::new(StructuralChunker),
@@ -231,6 +245,7 @@ pub fn build(
         ingestion: ingestion.clone(),
         chat: chat.service.clone(),
         viewer,
+        remover: remover.clone(),
         diagnostics: diagnostics.clone(),
         models: Some(models.clone() as Arc<dyn ModelProvider>),
     }));
@@ -245,6 +260,7 @@ pub fn build(
         },
         chat,
         diagnostics: DiagnosticsState(diagnostics),
+        remover,
     }
 }
 

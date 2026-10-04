@@ -27,6 +27,9 @@ pub struct PageSize {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentOutline {
     pub document_id: DocumentId,
+    /// Identifies the file (prefix of its SHA-256). Page image URLs carry it, so a cached image
+    /// is never shown for another document that got the same id after a removal.
+    pub version: String,
     pub title: String,
     pub pages: Vec<PageSize>,
 }
@@ -120,6 +123,13 @@ impl ViewDocument {
         }
     }
 
+    /// Drops the cached text of a removed document (its id may be given to the next import).
+    pub fn forget(&self, document: DocumentId) {
+        let mut cache = self.spans.lock().unwrap();
+        cache.pages.retain(|(doc, _), _| *doc != document);
+        cache.order.retain(|(doc, _)| *doc != document);
+    }
+
     /// Title and page sizes, from the database.
     pub async fn outline(&self, document: DocumentId) -> Result<DocumentOutline, PageError> {
         let summary = self
@@ -140,8 +150,15 @@ impl ViewDocument {
                 "o documento ainda não foi processado".into(),
             ));
         }
+        let record = self
+            .documents
+            .get(document)
+            .await
+            .map_err(|e| failed(e.message))?
+            .ok_or(PageError::NotFound)?;
         Ok(DocumentOutline {
             document_id: document,
+            version: record.sha256.chars().take(12).collect(),
             title: summary.title,
             pages: pages
                 .into_iter()

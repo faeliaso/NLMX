@@ -99,6 +99,7 @@ mod tests {
             ingestion: Err("não usado neste teste".into()),
             chat: Err("não usado neste teste".into()),
             viewer: Err("não usado neste teste".into()),
+            remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
         })

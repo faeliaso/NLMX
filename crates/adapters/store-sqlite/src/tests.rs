@@ -1379,4 +1379,207 @@ mod conversations {
             "the answer stays"
         );
     }
+
+    #[tokio::test]
+    async fn honours_the_document_removal_contract() {
+        let db = Database::open(temp_db()).unwrap();
+        nlmx_testing::document_removal_contract(&db).await;
+    }
+
+    fn source(n: u32, document_id: i64) -> MessageSource {
+        MessageSource {
+            n,
+            cited: false, // a source given to the model counts even if not cited
+            document_id,
+            chunk_id: None,
+            document_title: "Doc".into(),
+            page_start: 1,
+            page_end: 1,
+            section: None,
+            label: "Doc, p. 1".into(),
+            quote: "trecho".into(),
+            bboxes: vec![],
+        }
+    }
+
+    /// A question and its answer, which used `sources` (and, optionally, `[página N]` of `page_ref`).
+    async fn turn(
+        db: &Database,
+        conversation: i64,
+        sources: &[i64],
+        page_ref: Option<i64>,
+    ) -> (i64, i64) {
+        let q = db
+            .add_message(
+                conversation,
+                Role::User,
+                "pergunta",
+                MessageStatus::Answered,
+            )
+            .await
+            .unwrap();
+        let a = db
+            .add_message(conversation, Role::Assistant, "", MessageStatus::Streaming)
+            .await
+            .unwrap();
+        let sources: Vec<MessageSource> = sources
+            .iter()
+            .enumerate()
+            .map(|(i, &d)| source(i as u32 + 1, d))
+            .collect();
+        let refs: Vec<_> = page_ref
+            .map(|document_id| nlmx_domain::chat::MessagePageRef {
+                page: 1,
+                document_id,
+                source: None,
+            })
+            .into_iter()
+            .collect();
+        db.finish_message(
+            a,
+            nlmx_application::ports::FinishedAnswer {
+                content: "resposta",
+                status: MessageStatus::Answered,
+                error: None,
+                sources: &sources,
+                page_refs: &refs,
+            },
+        )
+        .await
+        .unwrap();
+        (q, a)
+    }
+
+    fn add_chunks(path: &std::path::Path, document: i64, texts: &[&str]) {
+        let conn = connection::open(path).unwrap();
+        for (i, text) in texts.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO document_chunks (document_id, ordinal, text, token_count, page_start, page_end, content_hash)
+                 VALUES (?1, ?2, ?3, 5, 1, 1, ?4)",
+                rusqlite::params![document, i as i64, text, format!("h{document}-{i}")],
+            )
+            .unwrap();
+        }
+    }
+
+    fn message_ids(path: &std::path::Path, conversation: i64) -> Vec<i64> {
+        let conn = connection::open(path).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id FROM messages WHERE conversation_id = ?1 ORDER BY id")
+            .unwrap();
+        stmt.query_map([conversation], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn removing_a_document_takes_the_history_that_used_it() {
+        use nlmx_domain::ingestion::RemovalImpact;
+        let path = temp_db();
+        let db = Database::open(&path).unwrap();
+        let (x, y) = (document(&db, 'x').await, document(&db, 'y').await);
+        add_chunks(&path, x, &["carência de 180 dias", "cobertura hospitalar"]);
+        add_chunks(&path, y, &["reajuste anual"]);
+
+        // A: restricted to X. B: mixed. C: only X, unrestricted. D: restricted to Y.
+        let a = db.create(Some(x)).await.unwrap().id;
+        turn(&db, a, &[x], None).await;
+        let b = db.create(None).await.unwrap().id;
+        turn(&db, b, &[x, y], None).await;
+        let (kept_q, kept_a) = turn(&db, b, &[y], None).await;
+        turn(&db, b, &[y], Some(x)).await; // only a `[página N]` of X
+        let c = db.create(None).await.unwrap().id;
+        turn(&db, c, &[x], None).await;
+        let d = db.create(Some(y)).await.unwrap().id;
+        let d_turn = turn(&db, d, &[y], None).await;
+
+        let expected = RemovalImpact {
+            chunks: 2,
+            conversations: 2, // A and C
+            turns: 3,         // two in B, one in C
+        };
+        assert_eq!(db.removal_impact(x).await.unwrap(), expected);
+        let removed = db.remove(x).await.unwrap().unwrap();
+        assert_eq!(removed.sha256, "x".repeat(64));
+        assert_eq!(removed.impact, expected);
+
+        for gone in [a, c] {
+            assert!(
+                ConversationRepository::get(&db, gone)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert_eq!(message_ids(&path, b), [kept_q, kept_a]);
+        assert_eq!(message_ids(&path, d), [d_turn.0, d_turn.1]);
+        assert_eq!(
+            ConversationRepository::get(&db, d)
+                .await
+                .unwrap()
+                .unwrap()
+                .document_id,
+            Some(y)
+        );
+
+        let conn = connection::open(&path).unwrap();
+        for (sql, left) in [
+            ("SELECT count(*) FROM documents", 1),
+            ("SELECT count(*) FROM document_chunks", 1),
+            (
+                "SELECT count(*) FROM document_chunks_fts WHERE document_chunks_fts MATCH 'carencia'",
+                0,
+            ),
+            (
+                "SELECT count(*) FROM document_chunks_fts WHERE document_chunks_fts MATCH 'reajuste'",
+                1,
+            ),
+            (
+                "SELECT count(*) FROM embedding_jobs WHERE document_id = 1",
+                0,
+            ),
+            ("SELECT count(*) FROM citations WHERE document_id = 1", 0),
+        ] {
+            assert_eq!(count(&conn, sql), left, "{sql}");
+        }
+    }
+
+    /// Removed text must not survive in the database files (free pages, WAL, FTS5 segments).
+    #[tokio::test]
+    async fn removed_text_leaves_no_bytes_behind() {
+        const CANARY: &str = "Zqxwvcanario";
+        let path = temp_db();
+        let db = Database::open(&path).unwrap();
+        let doc = document(&db, 'k').await;
+        let filler = "texto de enchimento ".repeat(200);
+        add_chunks(&path, doc, &[&format!("{filler} {CANARY} {filler}")]);
+        let conversation = db.create(None).await.unwrap().id;
+        let (_, answer) = turn(&db, conversation, &[doc], None).await;
+        let conn = connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE messages SET content = ?2 WHERE id = ?1",
+            rusqlite::params![answer, format!("Segundo o documento, {CANARY}.")],
+        )
+        .unwrap();
+        drop(conn);
+
+        let files = || {
+            ["", "-wal"]
+                .iter()
+                .filter_map(|suffix| std::fs::read(format!("{}{suffix}", path.display())).ok())
+                .flatten()
+                .collect::<Vec<u8>>()
+        };
+        let contains = |bytes: &[u8], needle: &str| {
+            bytes
+                .windows(needle.len())
+                .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+        };
+        assert!(contains(&files(), CANARY), "sanity: the text is on disk");
+
+        db.remove(doc).await.unwrap().unwrap();
+        let bytes = files();
+        assert!(!contains(&bytes, CANARY), "removed text still on disk");
+    }
 }

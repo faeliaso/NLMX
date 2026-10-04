@@ -2,14 +2,14 @@
 
 use askama::Template;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     response::{IntoResponse, Response},
 };
 use http::HeaderMap;
 
 use crate::{
     AppState,
-    documents::{DocumentRow, Library},
+    documents::{DocumentRow, Library, Notice, removal_description},
     error::UiError,
     shell::{Section, page},
     status::{StorageView, VERSION},
@@ -19,6 +19,7 @@ use crate::{
 #[template(path = "pages/sections/documents.html")]
 struct DocumentsView {
     library: Library,
+    notice: Option<Notice>,
 }
 
 #[derive(Template)]
@@ -28,13 +29,29 @@ struct DocumentListFragment {
 }
 
 async fn library(state: &AppState) -> Library {
-    match &state.ingestion {
-        Err(reason) => Library::Unavailable(reason.clone()),
+    let docs = match &state.ingestion {
+        Err(reason) => return Library::Unavailable(reason.clone()),
         Ok(ingestion) => match ingestion.list().await {
-            Ok(docs) => Library::Documents(docs.into_iter().map(DocumentRow::from).collect()),
-            Err(err) => Library::Unavailable(err.message),
+            Ok(docs) => docs,
+            Err(err) => return Library::Unavailable(err.message),
         },
+    };
+    let mut rows = Vec::with_capacity(docs.len());
+    for doc in docs {
+        let mut row = DocumentRow::from(doc);
+        match &state.remover {
+            Err(_) => row.removable = false,
+            // The dialog says how much of the chat history goes with the document.
+            Ok(remover) if row.removable => {
+                if let Ok(impact) = remover.impact(row.id).await {
+                    row.removal = removal_description(&impact);
+                }
+            }
+            Ok(_) => {}
+        }
+        rows.push(row);
     }
+    Library::Documents(rows)
 }
 
 #[derive(Template)]
@@ -60,6 +77,40 @@ fn render(template: impl Template) -> Result<String, UiError> {
 pub async fn documents(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let view = DocumentsView {
         library: library(&state).await,
+        notice: None,
+    };
+    page(&headers, Some(Section::Documents), render(view))
+}
+
+/// `POST /documents/{id}/delete`: removes the document (confirmed in a dialog) and shows the
+/// library again, with the outcome above it.
+pub async fn remove_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Response {
+    let notice = match &state.remover {
+        Err(reason) => Notice {
+            kind: "danger",
+            title: "Não foi possível remover o documento".into(),
+            message: reason.clone(),
+        },
+        Ok(remover) => match remover.remove(id).await {
+            Ok(_) => Notice {
+                kind: "success",
+                title: "Documento removido".into(),
+                message: "Ele e tudo o que derivava dele foram apagados deste Mac.".into(),
+            },
+            Err(err) => Notice {
+                kind: "danger",
+                title: "Não foi possível remover o documento".into(),
+                message: err.to_string(),
+            },
+        },
+    };
+    let view = DocumentsView {
+        library: library(&state).await,
+        notice: Some(notice),
     };
     page(&headers, Some(Section::Documents), render(view))
 }

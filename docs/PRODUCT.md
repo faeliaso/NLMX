@@ -32,7 +32,7 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | RF02 | Detectar duplicatas por SHA-256 do conteúdo | ✓ |
 | RF03 | Copiar o PDF para a biblioteca interna (`<data>/library/<sha>.pdf`) | ✓ |
 | RF04 | Listar documentos com título, páginas, tamanho, data e status | ✓ |
-| RF05 | Remover documento e todos os dados derivados | ✗ (cascatas prontas no banco, sem ação na UI) |
+| RF05 | Remover documento e todos os dados derivados | ✓ com o histórico do Chat que o usou e sem rastro no arquivo do banco (ADR 0008) |
 | RF06 | Reindexar (ex.: troca do modelo de embeddings) | ◐ automático ao trocar o modelo; sem ação manual |
 | **Extração e estrutura** | | |
 | RF07 | Texto por página via PDFium, com bounding box | ✓ |
@@ -93,7 +93,7 @@ Também feito, fora da lista original: intenções "Explique este documento." e 
 ## Próximos passos
 
 1. **Distribuição pública:** certificado Developer ID e `make release` (assinatura, notarização), depois `make acceptance` e teste num Mac limpo.
-2. **Lacunas de requisitos:** remover documento (RF05), drag & drop e pasta (RF01), importação manual de GGUF (RF27), coleções na UI (RF18), pausa/cancelamento da ingestão (RF15).
+2. **Lacunas de requisitos:** drag & drop e pasta (RF01), importação manual de GGUF (RF27), coleções na UI (RF18), pausa/cancelamento da ingestão (RF15).
 3. **Desempenho dos embeddings:** reduzir contexto/lote do `llama-server` (~1,9 GB e 8,4 embeddings/s hoje). Medir com `make bench`. O cache de prompts do servidor, que chegava a ~10 GB, está desligado, e o processo é encerrado depois de 45 s ocioso (ADR 0006).
 4. **OCR** de escaneados (ex.: `fm respond --tool ocr`), preservando página e coordenadas.
 5. **Qualidade:** títulos numerados repetidos removidos como cabeçalho; documentos padronizados que só mudam números.
