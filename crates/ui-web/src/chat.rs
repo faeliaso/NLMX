@@ -27,10 +27,7 @@ use crate::{
 };
 
 /// Suggestions shown in an empty conversation.
-const SUGGESTIONS: &[&str] = &[
-    "Explique este documento.",
-    "Quais são os principais pontos da seção 3?",
-];
+const SUGGESTIONS: &[&str] = &["Explique este documento."];
 const RECENT_CONVERSATIONS: u32 = 15;
 const QUOTE_PREVIEW_CHARS: usize = 220;
 

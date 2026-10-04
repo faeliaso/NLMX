@@ -664,9 +664,7 @@ mod tests {
         // Scope selector, suggestions, new conversation, recent conversations.
         assert!(body.contains(r#"name="document""#) && body.contains("Todos os documentos"));
         assert!(body.contains(r#"data-fill-question="Explique este documento.""#));
-        assert!(
-            body.contains(r#"data-fill-question="Quais são os principais pontos da seção 3?""#)
-        );
+        assert!(!body.contains("principais pontos da seção 3"));
         assert!(body.contains(r#"hx-post="/chat/new""#));
         assert!(body.contains(r#"popovertarget="chat-recent""#));
     }
