@@ -8,6 +8,7 @@
 mod connection;
 mod conversations;
 mod documents;
+mod indexing;
 mod lexical;
 mod migrations;
 mod settings;

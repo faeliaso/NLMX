@@ -132,6 +132,8 @@ pub async fn import_documents<R: Runtime>(
         });
     };
 
+    // Shown as running in Indexação; other imports may overlap, its exclusive actions may not.
+    let running = app.state::<crate::wiring::IndexingState>().activity.begin();
     let (mut imported, mut duplicates, mut failures) = (0, 0, Vec::new());
     for file in picked {
         let Ok(path) = file.into_path() else {
@@ -153,6 +155,7 @@ pub async fn import_documents<R: Runtime>(
         }
     }
 
+    drop(running);
     app.state::<crate::wiring::DiagnosticsState>()
         .sample_later();
     let plural =
@@ -183,6 +186,101 @@ pub async fn import_documents<R: Runtime>(
         },
         message,
         refresh: Some("documents-changed"),
+    })
+}
+
+// ── Indexing ─────────────────────────────────────────────────────────────────
+
+const INDEXING_CHANGED: Option<&str> = Some("indexing-changed");
+
+/// Starts an Indexação action in the background, refused while other indexing work runs. The
+/// page refreshes now (showing the work) and again when it ends (`indexing-changed` event).
+fn start_indexing<R, F, Fut>(
+    app: &AppHandle<R>,
+    message: &str,
+    action: F,
+) -> Result<CommandOutcome, CommandError>
+where
+    R: Runtime,
+    F: FnOnce(std::sync::Arc<nlmx_application::use_cases::Indexing>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let indexing = app
+        .state::<crate::wiring::IndexingState>()
+        .indexing
+        .clone()
+        .map_err(|reason| CommandError::new("unavailable", reason))?;
+    let running = indexing
+        .begin()
+        .map_err(|err| CommandError::new("busy", err.to_string()))?;
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        action(indexing).await;
+        drop(running);
+        crate::wiring::notify_indexing_changed(&handle);
+        handle
+            .state::<crate::wiring::DiagnosticsState>()
+            .sample_later();
+    });
+    Ok(CommandOutcome {
+        kind: "info",
+        message: message.into(),
+        refresh: INDEXING_CHANGED,
+    })
+}
+
+/// Reads a failed document again, or embeds again one whose embeddings failed.
+#[tauri::command]
+pub fn retry_document<R: Runtime>(
+    app: AppHandle<R>,
+    id: i64,
+) -> Result<CommandOutcome, CommandError> {
+    start_indexing(
+        &app,
+        "Processando o documento novamente…",
+        move |indexing| async move {
+            match indexing.retry(id).await {
+                Ok(outcome) => tracing::info!(document_id = id, ?outcome, "document retried"),
+                Err(err) => tracing::warn!(document_id = id, "retry failed: {err}"),
+            }
+        },
+    )
+}
+
+#[tauri::command]
+pub fn retry_failed<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, CommandError> {
+    start_indexing(
+        &app,
+        "Processando novamente os documentos com falha…",
+        |indexing| async move {
+            match indexing.retry_failed().await {
+                Ok(outcomes) => tracing::info!(count = outcomes.len(), "failed documents retried"),
+                Err(err) => tracing::warn!("retrying failed documents stopped: {err}"),
+            }
+        },
+    )
+}
+
+#[tauri::command]
+pub fn embed_pending_now<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, CommandError> {
+    start_indexing(
+        &app,
+        "Gerando os embeddings pendentes…",
+        |indexing| async move {
+            let outcomes = indexing.embed_pending().await;
+            tracing::info!(count = outcomes.len(), "pending documents embedded");
+        },
+    )
+}
+
+/// Embeds every indexed document again with the active model (confirmed in a dialog).
+#[tauri::command]
+pub fn reindex_all<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, CommandError> {
+    start_indexing(&app, "Reindexação iniciada.", |indexing| async move {
+        match indexing.reindex_all().await {
+            Ok(outcomes) => tracing::info!(count = outcomes.len(), "documents reindexed"),
+            Err(err) => tracing::warn!("reindexing not started: {err}"),
+        }
     })
 }
 
@@ -218,7 +316,12 @@ async fn after_model_change<R: Runtime>(app: &AppHandle<R>) {
         .inner()
         .clone();
     let embedder = app.state::<crate::wiring::Embedder>().0.clone();
-    crate::wiring::apply_model_change(&slot, embedder).await;
+    let activity = app.state::<crate::wiring::IndexingState>().activity.clone();
+    let handle = app.clone();
+    crate::wiring::apply_model_change(&slot, embedder, activity, move || {
+        crate::wiring::notify_indexing_changed(&handle)
+    })
+    .await;
 }
 
 /// Downloads a model after the user confirmed its plan in the download dialog.

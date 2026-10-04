@@ -33,7 +33,7 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | RF03 | Copiar o PDF para a biblioteca interna (`<data>/library/<sha>.pdf`) | ✓ |
 | RF04 | Listar documentos com título, páginas, tamanho, data e status | ✓ |
 | RF05 | Remover documento e todos os dados derivados | ✓ com o histórico do Chat que o usou e sem rastro no arquivo do banco (ADR 0008) |
-| RF06 | Reindexar (ex.: troca do modelo de embeddings) | ◐ automático ao trocar o modelo; sem ação manual |
+| RF06 | Reindexar (ex.: troca do modelo de embeddings) | ✓ automático ao trocar o modelo; manual em Indexação ("Reindexar tudo", "Tentar novamente") |
 | **Extração e estrutura** | | |
 | RF07 | Texto por página via PDFium, com bounding box | ✓ |
 | RF08 | Metadados (título, autor, datas) e outline | ◐ sem idioma nem outline; `ModDate` raramente vem do pdfium-render |
@@ -44,7 +44,7 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | **Embeddings e índices** | | |
 | RF13 | Embeddings locais com llama.cpp (Metal) e GGUF multilíngue | ✓ `llama-server` + Qwen3-Embedding-0.6B |
 | RF14 | Vetores em sqlite-vec e texto em FTS5, no mesmo SQLite | ✓ |
-| RF15 | Ingestão em background retomável após reinício | ◐ retoma no boot; sem pausa/cancelamento |
+| RF15 | Ingestão em background retomável após reinício | ◐ retoma no boot; progresso em Indexação; sem pausa/cancelamento |
 | RF16 | Registrar modelo/versão de cada vetor; nunca misturar espaços | ✓ |
 | **Busca e perguntas** | | |
 | RF17 | Busca semântica, lexical e híbrida | ✓ fusão ponderada (ADR 0007) |

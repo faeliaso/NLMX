@@ -363,6 +363,7 @@ async fn installed_app_end_to_end() {
         remover: Err("remoção indisponível neste teste".into()),
         diagnostics: None,
         models: None,
+        indexing: Err("indexação indisponível neste teste".into()),
     });
     let last = chat
         .messages(conversation.id)

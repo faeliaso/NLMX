@@ -6,6 +6,7 @@ pub mod chat;
 pub mod document;
 pub mod embedding;
 pub mod generation;
+pub mod indexing;
 pub mod ingestion;
 pub mod models;
 pub mod rag_intent;

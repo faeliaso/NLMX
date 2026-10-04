@@ -47,7 +47,7 @@ impl DocumentIngestion {
             Err(err) => return failed(err.message),
         };
         if let Some(id) = existing {
-            return self.reimport(id).await;
+            return self.retry(id).await;
         }
 
         let library_path = match self.files.store(path, &digest.sha256).await {
@@ -69,7 +69,9 @@ impl DocumentIngestion {
         }
     }
 
-    async fn reimport(&self, id: DocumentId) -> ImportOutcome {
+    /// Re-runs the pipeline of a failed or interrupted document; any other one is reported as a
+    /// duplicate (there is nothing to redo).
+    pub async fn retry(&self, id: DocumentId) -> ImportOutcome {
         match self.documents.get(id).await {
             Ok(Some(doc)) if doc.status == DocumentStatus::Failed || doc.status.is_unfinished() => {
                 self.ingest(id).await

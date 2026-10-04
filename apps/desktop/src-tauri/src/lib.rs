@@ -20,6 +20,10 @@ pub fn run() {
             commands::open_download_page,
             commands::report_client_error,
             commands::import_documents,
+            commands::retry_document,
+            commands::retry_failed,
+            commands::embed_pending_now,
+            commands::reindex_all,
             commands::download_model,
             commands::cancel_download,
             commands::activate_model,
@@ -48,6 +52,8 @@ pub fn run() {
             let ingestion = services.ingestion.0.clone().ok();
             let embedder = services.embedder.0.clone();
             let remover = services.remover.clone().ok();
+            let running = services.indexing.activity.begin();
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Library files of removed documents whose deletion failed, before any import.
                 if let Some(remover) = remover {
@@ -69,6 +75,8 @@ pub fn run() {
                         tracing::info!(count = embedded.len(), "embedded pending documents");
                     }
                 }
+                drop(running);
+                wiring::notify_indexing_changed(&handle);
             });
             // Report installed models that are corrupted or have an update (never downloads).
             let models = services.models.provider.clone();
@@ -80,6 +88,7 @@ pub fn run() {
             app.manage(services.ingestion);
             app.manage(services.embeddings);
             app.manage(services.embedder);
+            app.manage(services.indexing);
             app.manage(services.models);
             app.manage(services.chat);
             app.manage(services.diagnostics);

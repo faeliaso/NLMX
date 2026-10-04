@@ -268,6 +268,16 @@ pub struct RemovedDocument {
     pub impact: RemovalImpact,
 }
 
+/// Read-only view of the ingestion jobs and the vector index, for the Indexação section.
+pub trait IndexingReader: Send + Sync {
+    /// Every document with its latest ingest job, the total chunk count and, for `model_id`
+    /// (the active embedding model's id), how many chunks have a vector.
+    fn snapshot(
+        &self,
+        model_id: Option<String>,
+    ) -> BoxFuture<'_, Result<nlmx_domain::indexing::IndexSnapshot, StorageError>>;
+}
+
 // ── Embeddings ───────────────────────────────────────────────────────────────
 
 use nlmx_domain::embedding::{EmbeddingError, EmbeddingPurpose, ModelIdentity};

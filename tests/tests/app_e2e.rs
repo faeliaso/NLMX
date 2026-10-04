@@ -121,6 +121,7 @@ async fn import_ask_cite_open_and_measure() {
         remover: Err("remoção indisponível neste teste".into()),
         diagnostics: None,
         models: None,
+        indexing: Err("indexação indisponível neste teste".into()),
     });
 
     // 2. The library lists the documents (and the failure).

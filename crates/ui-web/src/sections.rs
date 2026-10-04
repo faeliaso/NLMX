@@ -55,10 +55,6 @@ async fn library(state: &AppState) -> Library {
 }
 
 #[derive(Template)]
-#[template(path = "pages/sections/indexing.html")]
-struct IndexingView;
-
-#[derive(Template)]
 #[template(path = "pages/sections/settings.html")]
 struct SettingsView {
     version: &'static str,
@@ -123,10 +119,6 @@ pub async fn documents_fragment(State(state): State<AppState>) -> Response {
         Ok(html) => axum::response::Html(html).into_response(),
         Err(err) => (err.status, err.message).into_response(),
     }
-}
-
-pub async fn indexing(headers: HeaderMap) -> Response {
-    page(&headers, Some(Section::Indexing), render(IndexingView))
 }
 
 pub async fn settings(State(state): State<AppState>, headers: HeaderMap) -> Response {

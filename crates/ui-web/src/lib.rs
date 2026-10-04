@@ -9,6 +9,7 @@ mod documents;
 mod error;
 #[cfg(debug_assertions)]
 mod gallery;
+mod indexing;
 mod markdown;
 mod models;
 mod sections;
@@ -22,7 +23,9 @@ use axum::routing::post;
 use axum::{Router, http::HeaderValue, middleware, response::Response, routing::get};
 use nlmx_application::{
     ports::{Diagnostics, ModelProvider},
-    use_cases::{ChatService, DocumentIngestion, GetSystemStatus, RemoveDocument, ViewDocument},
+    use_cases::{
+        ChatService, DocumentIngestion, GetSystemStatus, Indexing, RemoveDocument, ViewDocument,
+    },
 };
 
 pub use error::FALLBACK_ERROR_HTML;
@@ -49,6 +52,8 @@ pub struct AppState {
     pub diagnostics: Option<Arc<dyn Diagnostics>>,
     /// Embedding model files (catalog, downloads); `None` hides the model list.
     pub models: Option<Arc<dyn ModelProvider>>,
+    /// The state of the index and the background work (unavailable without the database).
+    pub indexing: Result<Arc<Indexing>, String>,
 }
 
 /// Builds the UI router served under the app's custom scheme.
@@ -71,12 +76,13 @@ pub fn router(state: AppState) -> Router {
         .route("/documents/{id}/pages/{file}", get(viewer::page_image))
         .route("/documents", get(sections::documents))
         .route("/documents/{id}/delete", post(sections::remove_document))
-        .route("/indexing", get(sections::indexing))
+        .route("/indexing", get(indexing::page))
         .route("/models", get(models::page))
         .route("/settings", get(sections::settings))
         .route("/fragments/status", get(status::fragment))
         .route("/fragments/documents", get(sections::documents_fragment))
         .route("/fragments/models", get(models::fragment))
+        .route("/fragments/indexing", get(indexing::fragment))
         .route("/assets/app.css", get(assets::app_css))
         .route("/assets/htmx.min.js", get(assets::htmx_js))
         .route("/assets/ds.js", get(assets::ds_js))
@@ -137,6 +143,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         })
     }
 
@@ -325,6 +332,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: Some(Arc::new(FixedDiagnostics(snapshot))),
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         });
         let (_, _, body) = send(app, "/settings", true).await;
         assert!(body.contains("Diagnóstico") && body.contains("10 min"));
@@ -410,6 +418,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         });
         let (_, _, body) = send(app.clone(), "/documents", true).await;
         assert!(body.contains("Contrato") && body.contains("contrato.pdf"));
@@ -428,10 +437,108 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         });
         let (_, _, body) = send(unavailable, "/documents", true).await;
         assert!(body.contains("Biblioteca indisponível") && body.contains("PDFium não encontrado"));
         assert!(!body.contains(r#"data-command="import_documents""#));
+    }
+
+    #[tokio::test]
+    async fn indexing_shows_the_index_and_what_needs_attention() {
+        use nlmx_application::{
+            ports::{DocumentRepository, NewDocument},
+            use_cases::{EmbedDocuments, IndexingActivity},
+        };
+        use nlmx_domain::ingestion::DocumentStatus;
+
+        let documents = Arc::new(FakeDocumentRepository::default());
+        for sha in ['a', 'b'] {
+            documents
+                .insert(NewDocument {
+                    sha256: sha.to_string().repeat(64),
+                    original_filename: format!("{sha}.pdf"),
+                    original_path: String::new(),
+                    library_path: String::new(),
+                    file_size: 1,
+                })
+                .await
+                .unwrap();
+        }
+        documents
+            .set_status(
+                1,
+                DocumentStatus::Failed,
+                Some("PDF protegido por senha".into()),
+            )
+            .await
+            .unwrap();
+        let indexing = |documents: Arc<FakeDocumentRepository>| {
+            let source = nlmx_testing::FixedEmbeddingSource::none();
+            Arc::new(Indexing {
+                reader: documents.clone(),
+                documents: documents.clone(),
+                embeddings: source.clone(),
+                embedder: Arc::new(EmbedDocuments {
+                    embeddings: source,
+                    vectors: Arc::new(nlmx_testing::FakeVectorStore::default()),
+                    chunks: Arc::new(nlmx_testing::FakeCorpus::default()),
+                    documents,
+                    batch_size: 8,
+                }),
+                ingestion: Ok(Arc::new(ingestion(
+                    FakeFileStore::default(),
+                    FakeDocumentEngine::default(),
+                ))),
+                activity: Arc::new(IndexingActivity::default()),
+            })
+        };
+        let app = |indexing: Result<Arc<Indexing>, String>| {
+            router(AppState {
+                system_status: status(LanguageModelStatus::Available, FakeStorage::healthy()),
+                ingestion: Err("não usado neste teste".into()),
+                chat: Err("não usado neste teste".into()),
+                viewer: Err("não usado neste teste".into()),
+                remover: Err("não usado neste teste".into()),
+                diagnostics: None,
+                models: None,
+                indexing,
+            })
+        };
+
+        // `b` is still being read: the page refreshes itself.
+        let (_, _, body) = send(app(Ok(indexing(documents.clone()))), "/indexing", true).await;
+        assert!(body.contains("Busca só por palavras-chave"));
+        assert!(body.contains("Em andamento") && body.contains("Na fila"));
+        assert!(body.contains("Precisa de atenção") && body.contains("PDF protegido por senha"));
+        assert!(body.contains(r#"data-command="retry_document" data-command-args='{"id":1}'"#));
+        assert!(body.contains(r#"data-command="retry_failed""#));
+        assert!(
+            !body.contains("reindex_all"),
+            "no model, nothing to reindex"
+        );
+        assert!(body.contains("every 2s,"));
+
+        // Once nothing is running, it stops polling; the fragment has no page header.
+        documents
+            .set_status(2, DocumentStatus::NeedsOcr, None)
+            .await
+            .unwrap();
+        let (status_code, _, fragment) =
+            send(app(Ok(indexing(documents))), "/fragments/indexing", true).await;
+        assert_eq!(status_code, StatusCode::OK);
+        assert!(!fragment.contains("every 2s") && !fragment.contains("page-header"));
+        assert!(fragment.contains("Sem texto (OCR)"));
+
+        let (_, _, body) = send(
+            app(Err("Banco de dados indisponível".into())),
+            "/indexing",
+            true,
+        )
+        .await;
+        assert!(
+            body.contains("Indexação indisponível") && body.contains("Banco de dados indisponível")
+        );
     }
 
     #[tokio::test]
@@ -488,6 +595,7 @@ mod tests {
             })),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         });
 
         let (_, _, body) = send(app.clone(), "/documents", true).await;
@@ -647,6 +755,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         })
     }
 
@@ -661,6 +770,7 @@ mod tests {
             remover: Err("x".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         });
         let (_, _, body) = send(app, "/chat", true).await;
         assert!(body.contains(r#"data-scope="free""#), "{body}");
@@ -966,6 +1076,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         });
         (app, doc, a)
     }
@@ -1159,6 +1270,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: Some(models),
+            indexing: Err("indexação indisponível neste teste".into()),
         });
         let (_, _, body) = send(app.clone(), "/models", true).await;
         assert!(body.contains("Modelo a") && body.contains("Não instalado"));

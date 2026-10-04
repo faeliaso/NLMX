@@ -835,6 +835,27 @@ mod vectors {
     }
 
     #[tokio::test]
+    async fn the_indexing_snapshot_counts_vectors_of_the_asked_model() {
+        use nlmx_application::ports::IndexingReader;
+        let (db, _) = seeded();
+        let index = db.create_index(&space("m", 3)).await.unwrap();
+        db.insert_batch(index.id, &items()[..4]).await.unwrap();
+        db.create_index(&space("outro", 2)).await.unwrap();
+
+        let snapshot = db.snapshot(Some("m".into())).await.unwrap();
+        assert_eq!(snapshot.chunks, 6);
+        let model = snapshot.model.expect("m has vectors");
+        assert_eq!((model.dimensions, model.chunks), (3, 4));
+        let other = db.snapshot(Some("outro".into())).await.unwrap().model;
+        assert_eq!(other.map(|m| m.chunks), Some(0), "known model, no vectors");
+        assert_eq!(
+            db.snapshot(Some("nenhum".into())).await.unwrap().model,
+            None
+        );
+        assert_eq!(db.snapshot(None).await.unwrap().model, None);
+    }
+
+    #[tokio::test]
     async fn knn_returns_nearest_chunks_by_cosine_distance() {
         let (db, _) = seeded();
         let index = db.create_index(&space("m", 3)).await.unwrap();
@@ -1425,6 +1446,28 @@ mod conversations {
     async fn honours_the_document_removal_contract() {
         let db = Database::open(temp_db()).unwrap();
         nlmx_testing::document_removal_contract(&db).await;
+    }
+
+    #[tokio::test]
+    async fn honours_the_indexing_reader_contract() {
+        let db = Database::open(temp_db()).unwrap();
+        nlmx_testing::indexing_reader_contract(&db).await;
+        // The job's timestamps: started when read, not finished while waiting for embeddings.
+        use nlmx_application::ports::IndexingReader;
+        let job = db.snapshot(None).await.unwrap().jobs.remove(0);
+        assert!(job.started_at.is_some());
+        assert_eq!((job.finished_at, job.duration_ms), (None, None));
+        nlmx_application::ports::DocumentRepository::set_status(
+            &db,
+            job.document_id,
+            nlmx_domain::ingestion::DocumentStatus::Indexed,
+            None,
+        )
+        .await
+        .unwrap();
+        let job = db.snapshot(None).await.unwrap().jobs.remove(0);
+        assert!(job.finished_at.is_some());
+        assert!(job.duration_ms.is_some());
     }
 
     fn source(n: u32, document_id: i64) -> MessageSource {

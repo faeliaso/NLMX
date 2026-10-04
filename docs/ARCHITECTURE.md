@@ -56,6 +56,7 @@ tests/                    testes de workspace: arquitetura, E2E, qualidade do RA
 | `FileStore` | hash e cópia do PDF para a biblioteca | `fs-library` |
 | `StructureAnalyzer` · `Chunker` · `TokenCounter` | layout → seções/blocos → chunks | `structure-heuristic`, `chunker-structural` |
 | `DocumentRepository` | documentos, páginas, `save_extraction` atômico, pendentes | `store-sqlite` |
+| `IndexingReader` | só leitura: documentos com o último job de ingestão e vetores por modelo (tela Indexação) | `store-sqlite` |
 | `ChunkReader` | resolver filtros, ler chunks de um documento ou por ids | `store-sqlite` |
 | `LexicalIndex` · `VectorStore` | BM25 (FTS5) e KNN (vec0), separados mesmo no mesmo banco | `store-sqlite` |
 | `ConversationRepository` | conversas, escopo, mensagens, fontes/citações | `store-sqlite` |
@@ -82,6 +83,20 @@ seletor ─► import_documents (Tauri) ─► DocumentIngestion::import(path)
 - Nada é gravado antes do `save_extraction`, então repetir é idempotente; no boot, `resume()` reprocessa documentos parados e `embed_pending()` gera os vetores que faltam.
 - Sem modelo de embeddings ativo, o documento fica em `embedding` (job `waiting_model`) e a busca é só lexical.
 - Mudança na saída do analisador ou do chunker ⇒ incrementar `structure_heuristic::VERSION` / `chunker_structural::VERSION`.
+
+### Indexação (tela)
+
+```
+GET /indexing · /fragments/indexing ─► Indexing::report ─► IndexingReader::snapshot(modelo ativo)
+  ─► IndexingModel: estado do índice, Em andamento, Precisa de atenção, Concluídos recentemente
+botões ─► retry_document · retry_failed · embed_pending_now · reindex_all (Tauri)
+  ─► Indexing::begin (exclusivo; recusa com `busy`) ─► tarefa em segundo plano ─► evento `indexing-changed`
+```
+
+- `IndexingActivity` conta o trabalho em segundo plano: importações, `resume`/`embed_pending` no boot e `apply_model_change` chamam `begin()` (podem se sobrepor); as ações da tela usam `try_begin()` (nunca se sobrepõem a nada).
+- Enquanto há trabalho (atividade ou documento em leitura), o fragmento se renderiza com `hx-trigger="every 2s, …"`; sem trabalho, só reage a `indexing-changed`/`documents-changed`/`models-changed`. O elemento não tem `id` (quirk de settle do HTMX 4) e tem `data-poll` (não aciona o indicador global de carregamento).
+- "Tentar novamente": `failed` ⇒ `DocumentIngestion::retry` (precisa do PDFium); `embedding` ⇒ `EmbedDocuments::embed_document`.
+- Duração de um job = `finished_at − started_at` de `embedding_jobs` (o job espelha o status do documento).
 
 ### Remoção (ADR 0008)
 

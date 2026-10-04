@@ -19,8 +19,8 @@ use nlmx_application::{
         retriever::Retriever,
     },
     use_cases::{
-        ChatService, DocumentIngestion, EmbedDocuments, GetSystemStatus, RemoveDocument,
-        ViewDocument,
+        ChatService, DocumentIngestion, EmbedDocuments, GetSystemStatus, Indexing,
+        IndexingActivity, RemoveDocument, ViewDocument,
     },
 };
 use nlmx_chunker_structural::{HeuristicTokenCounter, StructuralChunker};
@@ -87,6 +87,19 @@ pub struct Models {
 /// Embeds stored chunks with the current model (`None` without a database).
 pub struct Embedder(pub Option<Arc<EmbedDocuments>>);
 
+/// The Indexação actions (`Err`: why they are unavailable) and the background work counter,
+/// shared with imports, the startup resume and model changes.
+pub struct IndexingState {
+    pub indexing: Result<Arc<Indexing>, String>,
+    pub activity: Arc<IndexingActivity>,
+}
+
+/// Tells the UI that background indexing work ended (`app.js` relays it to HTMX).
+pub fn notify_indexing_changed<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    use tauri::Emitter;
+    let _ = app.emit("indexing-changed", ());
+}
+
 /// The Chat: answers generated with Apple Foundation Models, streamed by `answer_message`.
 pub struct Chat {
     pub service: Result<Arc<ChatService>, String>,
@@ -102,6 +115,7 @@ pub struct Services {
     pub ingestion: Ingestion,
     pub embeddings: Arc<EmbeddingSlot>,
     pub embedder: Embedder,
+    pub indexing: IndexingState,
     pub models: Models,
     pub chat: Chat,
     pub diagnostics: DiagnosticsState,
@@ -217,6 +231,19 @@ pub fn build(
         (_, Err(err)) => Err(format!("Motor de PDF indisponível: {err}")),
     };
 
+    let activity = Arc::new(IndexingActivity::default());
+    let indexing = match (&db, &embedder) {
+        (Some(db), Some(embedder)) => Ok(Arc::new(Indexing {
+            reader: db.clone(),
+            documents: db.clone(),
+            embeddings: embeddings.clone(),
+            embedder: embedder.clone(),
+            ingestion: ingestion.clone(),
+            activity: activity.clone(),
+        })),
+        _ => Err("Banco de dados indisponível".to_string()),
+    };
+
     let models = Arc::new(LocalModelProvider::in_data_dir(data_dir));
     let language_model = Arc::new(FoundationModelsProvider::system(data_dir.join("run")));
     let chat = Chat {
@@ -250,12 +277,14 @@ pub fn build(
         remover: remover.clone(),
         diagnostics: diagnostics.clone(),
         models: Some(models.clone() as Arc<dyn ModelProvider>),
+        indexing: indexing.clone(),
     }));
     Services {
         ui,
         ingestion: Ingestion(ingestion),
         embeddings,
         embedder: Embedder(embedder),
+        indexing: IndexingState { indexing, activity },
         models: Models {
             provider: models,
             downloads: Mutex::new(HashMap::new()),
@@ -291,13 +320,20 @@ fn embedding_provider(data_dir: &Path) -> Option<Arc<LlamaCppEmbeddingProvider>>
 }
 
 /// After a model change: stop the old llama-server and embed what is pending (everything, if the
-/// model changed, since vectors of different models are not comparable).
-pub async fn apply_model_change(slot: &EmbeddingSlot, embedder: Option<Arc<EmbedDocuments>>) {
+/// model changed, since vectors of different models are not comparable). `on_done` runs when the
+/// embeddings are updated.
+pub async fn apply_model_change(
+    slot: &EmbeddingSlot,
+    embedder: Option<Arc<EmbedDocuments>>,
+    activity: Arc<IndexingActivity>,
+    on_done: impl FnOnce() + Send + 'static,
+) {
     let (previous, changed) = slot.reload();
     if let Some(previous) = previous {
         previous.shutdown().await;
     }
     if let Some(embedder) = embedder {
+        let running = activity.begin();
         tauri::async_runtime::spawn(async move {
             let outcomes = if changed {
                 embedder.reindex_all().await
@@ -308,6 +344,8 @@ pub async fn apply_model_change(slot: &EmbeddingSlot, embedder: Option<Arc<Embed
                 documents = outcomes.len(),
                 "embeddings updated after model change"
             );
+            drop(running);
+            on_done();
         });
     }
 }

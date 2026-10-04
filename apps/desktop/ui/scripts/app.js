@@ -15,12 +15,12 @@
     else delete root.dataset.busy;
   }
   document.addEventListener("htmx:before:request", (event) => {
-    if (event.target.closest?.("#system-status")) return; // background polling stays silent
+    if (event.target.closest?.("#system-status, [data-poll]")) return; // background polling stays silent
     inFlight += 1;
     updateBusy();
   });
   document.addEventListener("htmx:finally:request", (event) => {
-    if (event.target.closest?.("#system-status")) return;
+    if (event.target.closest?.("#system-status, [data-poll]")) return;
     inFlight = Math.max(0, inFlight - 1);
     updateBusy();
   });
@@ -71,6 +71,12 @@
     } finally {
       button.removeAttribute("aria-busy");
     }
+  });
+
+  // ── Background indexing: the app emits "indexing-changed" when work ends ─────
+  // (startup resume, embeddings after a model change, Indexação actions).
+  window.__TAURI__?.event?.listen("indexing-changed", () => {
+    document.body.dispatchEvent(new CustomEvent("indexing-changed", { bubbles: true }));
   });
 
   // ── Model downloads: progress bar driven by "model-download-progress" events ──

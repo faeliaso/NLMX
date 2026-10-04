@@ -1,0 +1,104 @@
+{% import "components/ds.html" as ds %}
+{#- Re-rendered by itself every 2 s while work runs; no id (HTMX 4 copies an old element's attributes onto a new one with the same id while settling). -#}
+{% macro jobs(rows, label, running) -%}
+<ul class="list" aria-label="{{ label }}">
+  {%- for r in rows %}
+  <li class="list-row">
+    {% call ds::icon("document") %}{% endcall %}
+    <div class="list-row-title">
+      <p class="selectable truncate" title="{{ r.title }}">{{ r.title }}</p>
+      {%- if !r.meta.is_empty() %}<p class="list-row-meta tabular">{{ r.meta }}</p>{% endif %}
+      {%- if !r.detail.is_empty() %}<p class="{% if r.kind == "danger" %}field-error{% else %}list-row-meta{% endif %} selectable">{{ r.detail }}</p>{% endif %}
+    </div>
+    {% call ds::badge(r.label, r.kind, true) %}{% endcall %}
+    {%- if let Some(a) = r.action %}
+    <button type="button" class="btn btn-secondary btn-sm" data-command="{{ a.command }}" data-command-args='{"id":{{ a.document_id }}}'{% if running %} disabled title="Disponível quando a indexação em andamento terminar"{% endif %}>{% call ds::icon("refresh") %}{% endcall %}{{ a.label }}</button>
+    {%- endif %}
+  </li>
+  {%- endfor %}
+</ul>
+{%- endmacro %}
+<div class="page-body" data-poll hx-get="/fragments/indexing" hx-swap="outerHTML"
+     hx-trigger="{% if let Ok(m) = state %}{% if m.active %}every 2s, {% endif %}{% endif %}indexing-changed from:body, documents-changed from:body, models-changed from:body">
+{%- match state %}
+{%- when Err(reason) %}
+  {% call ds::alert("danger", "Indexação indisponível", reason) %}{% endcall %}
+{%- when Ok(m) %}
+{%- if m.empty %}
+  <div class="page-body-center">
+  {% call ds::empty_state("layers", "Nenhum documento indexado", "Ao importar documentos, o progresso de cada etapa é exibido aqui.") %}
+    <a class="btn btn-primary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">Ir para Documentos</a>
+  {% endcall %}
+  </div>
+{%- else %}
+  <section aria-labelledby="index-heading">
+    <div class="section-heading-row">
+      <h2 class="section-heading" id="index-heading">Índice de busca</h2>
+      {%- if m.running %}<span class="list-row-meta">{% call ds::spinner("Indexação em andamento", "sm") %}{% endcall %} Indexação em andamento</span>{% endif %}
+    </div>
+    {%- match m.model %}
+    {%- when None %}
+    <div style="margin-bottom: 0.75rem">
+      {% call ds::alert("warning", "Busca só por palavras-chave", "Sem um modelo de embeddings, as perguntas usam apenas a busca lexical. Ative um modelo para incluir a busca semântica.") %}
+        <p><a href="/models" hx-get="/models" hx-target="#content" hx-push-url="true">Abrir Modelos</a></p>
+      {% endcall %}
+    </div>
+    {%- when Some(_) %}
+    {%- endmatch %}
+    <div class="list">
+      <div class="list-row">
+        <span class="list-row-title">Modelo de embeddings</span>
+        {%- match m.model %}
+        {%- when Some(name) %}<span class="list-row-meta selectable">{{ name }}</span>{% call ds::badge("Busca híbrida", "success", true) %}{% endcall %}
+        {%- when None %}<span class="list-row-meta">Nenhum</span>{% call ds::badge("Só palavras-chave", "warning", true) %}{% endcall %}
+        {%- endmatch %}
+      </div>
+      {%- for s in m.stats %}
+      <div class="list-row"><span class="list-row-title">{{ s.label }}</span><span class="list-row-meta tabular">{{ s.value }}</span></div>
+      {%- endfor %}
+    </div>
+    {%- if let Some(c) = m.coverage %}
+    <div style="margin-top: 0.75rem">{% call ds::progress(c, "Trechos com vetores no modelo ativo") %}{% endcall %}</div>
+    {%- endif %}
+    {%- if m.embed_pending || m.retry_failed || m.reindex %}
+    <div class="flex flex-wrap gap-2" style="margin-top: 0.75rem">
+      {%- if m.embed_pending %}
+      <button type="button" class="btn btn-primary btn-sm" data-command="embed_pending_now"{% if m.running %} disabled{% endif %}>Gerar embeddings pendentes</button>
+      {%- endif %}
+      {%- if m.retry_failed %}
+      <button type="button" class="btn btn-secondary btn-sm" data-command="retry_failed"{% if m.running %} disabled{% endif %}>{% call ds::icon("refresh") %}{% endcall %}Tentar novamente as falhas</button>
+      {%- endif %}
+      {%- if m.reindex %}
+      <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="reindex-dialog"{% if m.running %} disabled{% endif %}>Reindexar tudo…</button>
+      {% call ds::dialog("reindex-dialog", "Reindexar todos os documentos?", m.reindex_description) %}
+        <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
+        <button type="button" class="btn btn-primary" data-dialog-close data-command="reindex_all">Reindexar</button>
+      {% endcall %}
+      {%- endif %}
+    </div>
+    {%- endif %}
+  </section>
+
+  {%- if !m.in_progress.is_empty() %}
+  <section aria-labelledby="progress-heading">
+    <h2 class="section-heading" id="progress-heading">Em andamento</h2>
+    {% call jobs(m.in_progress.as_slice(), "Em andamento", m.running) %}{% endcall %}
+  </section>
+  {%- endif %}
+
+  {%- if !m.attention.is_empty() %}
+  <section aria-labelledby="attention-heading">
+    <h2 class="section-heading" id="attention-heading">Precisa de atenção</h2>
+    {% call jobs(m.attention.as_slice(), "Precisa de atenção", m.running) %}{% endcall %}
+  </section>
+  {%- endif %}
+
+  {%- if !m.recent.is_empty() %}
+  <section aria-labelledby="recent-heading">
+    <h2 class="section-heading" id="recent-heading">Concluídos recentemente</h2>
+    {% call jobs(m.recent.as_slice(), "Concluídos recentemente", m.running) %}{% endcall %}
+  </section>
+  {%- endif %}
+{%- endif %}
+{%- endmatch %}
+</div>

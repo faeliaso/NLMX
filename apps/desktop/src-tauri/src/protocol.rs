@@ -102,6 +102,7 @@ mod tests {
             remover: Err("remoção indisponível neste teste".into()),
             diagnostics: None,
             models: None,
+            indexing: Err("indexação indisponível neste teste".into()),
         })
     }
 

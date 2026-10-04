@@ -2,6 +2,7 @@
 
 mod chat;
 mod embeddings;
+mod indexing;
 mod ingestion;
 mod remove_document;
 mod system_status;
@@ -9,6 +10,9 @@ mod viewer;
 
 pub use chat::{ChatError, ChatService, describe as describe_model_status};
 pub use embeddings::{EmbedDocuments, EmbedOutcome};
+pub use indexing::{
+    ActivityGuard, Indexing, IndexingActivity, IndexingError, IndexingReport, RetryOutcome,
+};
 pub use ingestion::DocumentIngestion;
 pub use remove_document::{RemoveDocument, RemoveError};
 pub use system_status::{GetSystemStatus, SystemStatus};

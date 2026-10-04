@@ -722,6 +722,48 @@ impl DocumentRepository for FakeDocumentRepository {
     }
 }
 
+/// The fake has no vectors: `model` is always `None`, and there are no timestamps.
+impl nlmx_application::ports::IndexingReader for FakeDocumentRepository {
+    fn snapshot(
+        &self,
+        _model_id: Option<String>,
+    ) -> BoxFuture<'_, Result<nlmx_domain::indexing::IndexSnapshot, StorageError>> {
+        Box::pin(async move {
+            let rows = self.rows.lock().unwrap();
+            let jobs: Vec<nlmx_domain::indexing::IndexJob> = rows
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(_, r)| !r.removed)
+                .map(|(i, r)| nlmx_domain::indexing::IndexJob {
+                    document_id: i as DocumentId + 1,
+                    title: r
+                        .extraction
+                        .as_ref()
+                        .map(|e| e.title.clone())
+                        .unwrap_or_else(|| r.new.original_filename.clone()),
+                    status: r.status,
+                    error: r.error.clone(),
+                    chunks: r.extraction.as_ref().map_or(0, |e| e.chunks.len() as u32),
+                    attempts: r
+                        .history
+                        .iter()
+                        .filter(|s| **s == DocumentStatus::Extracting)
+                        .count() as u32,
+                    started_at: None,
+                    finished_at: None,
+                    duration_ms: None,
+                })
+                .collect();
+            Ok(nlmx_domain::indexing::IndexSnapshot {
+                chunks: jobs.iter().map(|j| j.chunks).sum(),
+                jobs,
+                model: None,
+            })
+        })
+    }
+}
+
 /// Every span becomes a paragraph, outside any section.
 pub struct FakeStructureAnalyzer;
 
@@ -2085,6 +2127,107 @@ pub async fn document_removal_contract(repo: &dyn DocumentRepository) {
     ));
 }
 
+/// What every `IndexingReader` must report about the documents of its `DocumentRepository`.
+/// `repo` must be empty.
+pub async fn indexing_reader_contract<R>(repo: &R)
+where
+    R: DocumentRepository + nlmx_application::ports::IndexingReader,
+{
+    let empty = repo.snapshot(None).await.unwrap();
+    assert!(empty.jobs.is_empty());
+    assert_eq!((empty.chunks, empty.model.clone()), (0, None));
+
+    let new = |sha: char| NewDocument {
+        sha256: sha.to_string().repeat(64),
+        original_filename: format!("{sha}.pdf"),
+        original_path: format!("/tmp/{sha}.pdf"),
+        library_path: format!("/library/{sha}.pdf"),
+        file_size: 10,
+    };
+    let InsertOutcome::Inserted(a) = repo.insert(new('a')).await.unwrap() else {
+        panic!("inserted")
+    };
+    let InsertOutcome::Inserted(b) = repo.insert(new('b')).await.unwrap() else {
+        panic!("inserted")
+    };
+
+    // `a` fails twice.
+    for _ in 0..2 {
+        repo.set_status(a, DocumentStatus::Extracting, None)
+            .await
+            .unwrap();
+        repo.set_status(a, DocumentStatus::Failed, Some("PDF inválido".into()))
+            .await
+            .unwrap();
+    }
+    // `b` is read into two chunks and waits for embeddings.
+    repo.set_status(b, DocumentStatus::Extracting, None)
+        .await
+        .unwrap();
+    let chunk = |index: u32| ChunkDraft {
+        index,
+        text: format!("trecho {index}"),
+        token_count: 2,
+        page_start: 1,
+        page_end: 1,
+        section_path: Vec::new(),
+        boxes: Vec::new(),
+        content_hash: format!("{index}").repeat(64),
+    };
+    repo.save_extraction(
+        b,
+        Extraction {
+            title: "Documento B".into(),
+            author: None,
+            pdf_created_at: None,
+            page_count: 1,
+            has_text_layer: true,
+            pages: vec![nlmx_application::ports::PageRecord {
+                number: 1,
+                width: 612.0,
+                height: 792.0,
+                char_count: 16,
+                has_text: true,
+            }],
+            chunks: vec![chunk(0), chunk(1)],
+            extractor_version: 1,
+            chunker_version: 1,
+            status: DocumentStatus::Embedding,
+        },
+    )
+    .await
+    .unwrap();
+
+    let snapshot = repo
+        .snapshot(Some("modelo-sem-vetores".into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot
+            .jobs
+            .iter()
+            .map(|j| j.document_id)
+            .collect::<Vec<_>>(),
+        vec![b, a],
+        "most recently imported first"
+    );
+    let (job_b, job_a) = (&snapshot.jobs[0], &snapshot.jobs[1]);
+    assert_eq!(job_a.status, DocumentStatus::Failed);
+    assert_eq!(job_a.error.as_deref(), Some("PDF inválido"));
+    assert_eq!(job_a.attempts, 2);
+    assert_eq!(job_a.chunks, 0);
+    assert_eq!(job_b.title, "Documento B");
+    assert_eq!(job_b.status, DocumentStatus::Embedding);
+    assert_eq!((job_b.chunks, job_b.attempts), (2, 1));
+    assert_eq!(snapshot.chunks, 2);
+    assert_eq!(snapshot.pending_chunks(), 2);
+    assert_eq!(snapshot.model, None, "no vectors for that model");
+
+    repo.remove(a).await.unwrap();
+    let snapshot = repo.snapshot(None).await.unwrap();
+    assert_eq!(snapshot.jobs.len(), 1, "removed documents are gone");
+}
+
 #[cfg(test)]
 mod document_contract {
     use super::*;
@@ -2092,6 +2235,11 @@ mod document_contract {
     #[test]
     fn the_fake_honours_the_removal_contract() {
         llm_contract::block_on(document_removal_contract(&FakeDocumentRepository::default()));
+    }
+
+    #[test]
+    fn the_fake_honours_the_indexing_reader_contract() {
+        llm_contract::block_on(indexing_reader_contract(&FakeDocumentRepository::default()));
     }
 }
 

@@ -22,13 +22,7 @@ pub struct DocumentRow {
 
 impl From<DocumentSummary> for DocumentRow {
     fn from(doc: DocumentSummary) -> Self {
-        let (status_label, status_kind) = match doc.status {
-            DocumentStatus::Embedding => ("Aguardando embeddings", "info"),
-            DocumentStatus::Indexed => ("Indexado", "success"),
-            DocumentStatus::NeedsOcr => ("Sem texto (OCR)", "warning"),
-            DocumentStatus::Failed => ("Falhou", "danger"),
-            _ => ("Processando", "accent"),
-        };
+        let (status_label, status_kind) = status_badge(doc.status);
         Self {
             id: doc.id,
             removable: !doc.status.is_unfinished(),
@@ -62,6 +56,17 @@ impl From<DocumentSummary> for DocumentRow {
                 _ => doc.imported_at,
             },
         }
+    }
+}
+
+/// Label and badge kind of a document status.
+pub fn status_badge(status: DocumentStatus) -> (&'static str, &'static str) {
+    match status {
+        DocumentStatus::Embedding => ("Aguardando embeddings", "info"),
+        DocumentStatus::Indexed => ("Indexado", "success"),
+        DocumentStatus::NeedsOcr => ("Sem texto (OCR)", "warning"),
+        DocumentStatus::Failed => ("Falhou", "danger"),
+        _ => ("Processando", "accent"),
     }
 }
 
