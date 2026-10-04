@@ -47,7 +47,7 @@ Galeria interativa (somente builds debug): **Configurações › Sobre › Desig
 | Card / lista | `.card` + `.card-header` / `.card-body` / `.card-footer`; `.card-interactive`; `.list` + `.list-row`. |
 | Badge | `{% call ds::badge(texto, kind, dot) %}` — kind: neutral, accent, success, warning, danger, info. |
 | Menu | Gatilho `popovertarget="ID" aria-haspopup="menu"` + `<div class="menu" id="ID" popover role="menu">` com `ds::menu_item`. Setas ↑↓, Home/End, Esc. |
-| Dialog | `{% call ds::dialog(id, título, descrição, destructive) %}…botões…{% endcall %}`; abrir com `data-dialog-open="ID"`, fechar com `data-dialog-close`. Foco preso e devolvido ao gatilho. |
+| Dialog | `{% call ds::dialog(id, título, descrição, destructive) %}…botões…{% endcall %}`; abrir com `data-dialog-open="ID"`, fechar com `data-dialog-close`. Foco preso e devolvido ao gatilho. Ícone e título centralizados (`.dialog-confirm`); descrição e botões não. |
 | Progresso | `ds::progress(valor, rótulo, kind)`, `ds::progress_indeterminate(rótulo)`, `ds::spinner(rótulo, tamanho)`. |
 | Skeleton | `.skeleton` + `-line` / `-title` / `-block` / `-circle`; `ds::skeleton_card()`. Contêiner com `aria-busy="true"` e texto `sr-only`. |
 

@@ -27,6 +27,9 @@
     color: var(--color-danger-fg);
   }
   .dialog-icon > svg { width: 1.25rem; height: 1.25rem; }
+  /* Confirmations (`ds::dialog`): icon and title centred, description and buttons are not. */
+  .dialog-confirm .dialog-icon { justify-self: center; }
+  .dialog-confirm .dialog-title { text-align: center; }
 }
 
 @keyframes ds-dialog-in {

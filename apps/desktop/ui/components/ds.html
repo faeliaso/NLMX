@@ -110,7 +110,7 @@
 
 {#- Modal dialog. Open with a button carrying data-dialog-open="{{ id }}". The call body is the footer. -#}
 {% macro dialog(id, title, description, destructive = false) -%}
-<dialog class="dialog" id="{{ id }}" aria-labelledby="{{ id }}-title" aria-describedby="{{ id }}-desc">
+<dialog class="dialog dialog-confirm" id="{{ id }}" aria-labelledby="{{ id }}-title" aria-describedby="{{ id }}-desc">
   <div class="dialog-body">
     {% if destructive %}<div class="dialog-icon">{% call icon("alert") %}{% endcall %}</div>{% endif %}
     <h2 class="dialog-title" id="{{ id }}-title">{{ title }}</h2>
