@@ -225,6 +225,12 @@ mod tests {
                 body.contains("data-page-title"),
                 "{path} should have a contextual header"
             );
+            // One line with an ellipsis: the full text stays available as the title attribute.
+            assert!(
+                body.contains(r#"data-page-title title=""#)
+                    && body.contains(r#"class="page-description" title=""#),
+                "{path} header text should carry its full text in title"
+            );
         }
     }
 

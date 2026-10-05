@@ -1,7 +1,6 @@
 /* Chat: answers, citations, sources and the source panel (page with highlights). */
 @layer components {
   .chat-header .page-actions { align-items: center; }
-  .chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-scope .select { max-width: 16rem; }
   .chat-recent { max-width: 20rem; }
   .chat-recent .menu-item.is-current { font-weight: 600; }

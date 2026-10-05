@@ -2,8 +2,8 @@
 <div class="chat-page" data-chat-page data-conversation="{{ conversation_id }}" data-scope="{% if free %}free{% else %}documents{% endif %}"{% if !viewer_html.is_empty() %} data-panel-open{% endif %}>
   <header class="page-header chat-header" data-tauri-drag-region>
     <div class="page-heading" data-tauri-drag-region>
-      <h1 class="page-title chat-title" tabindex="-1" data-page-title>{{ title }}</h1>
-      <p class="page-description">{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}</p>
+      <h1 class="page-title chat-title" tabindex="-1" data-page-title title="{{ title }}">{{ title }}</h1>
+      <p class="page-description" title="{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}">{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}</p>
     </div>
     <div class="page-actions chat-actions">
       <form class="chat-scope" hx-post="/chat/{{ conversation_id }}/scope" hx-trigger="change" hx-target="#content">

@@ -23,6 +23,7 @@ Galeria interativa (somente builds debug): **Configurações › Sobre › Desig
 3. **Contraste é testado.** `crates/ui-web/tests/contrast.rs` lê `tokens.css` e exige ≥ 4.5:1 para texto e ≥ 3:1 para contornos de controles nos dois temas. Novo par texto/fundo → adicione em `PAIRS`.
 4. **Cor nunca é o único sinal:** badges e alerts sempre têm texto; erros têm ícone + mensagem.
 5. **Foco visível sempre** (`:focus-visible`, anel `--color-focus`); alvos ≥ 24px; animações respeitam `prefers-reduced-motion`.
+6. **Cabeçalho de página em uma linha.** Título e descrição (`.page-title`, `.page-description`) terminam em reticências quando a janela estreita, e o texto completo vai no atributo `title`; use o macro `page::header` em vez de montar o cabeçalho à mão.
 
 ## Tokens
 
