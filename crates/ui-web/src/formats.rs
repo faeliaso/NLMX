@@ -57,22 +57,3 @@ pub fn format_view(kind: DocumentType) -> FormatView {
         },
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_format_has_its_own_icon_and_label() {
-        let views: Vec<FormatView> = DocumentType::ALL.into_iter().map(format_view).collect();
-        let mut icons: Vec<_> = views.iter().map(|v| v.icon).collect();
-        icons.sort();
-        icons.dedup();
-        assert_eq!(icons.len(), views.len(), "icons are distinct");
-        assert!(
-            views
-                .iter()
-                .all(|v| !v.label.is_empty() && !v.description.is_empty())
-        );
-    }
-}

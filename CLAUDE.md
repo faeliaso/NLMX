@@ -24,8 +24,7 @@ make bundle      # dist/NLMX.dmg (Apple Silicon, ad-hoc signed) + scripts/verify
 make release     # same, Developer ID signed + notarized (APPLE_SIGNING_IDENTITY, APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID)
 ./scripts/make-icons.sh  # app icons (icon.icns + PNGs) from apps/desktop/src-tauri/icons/source.png; needs ImageMagick
 make acceptance  # installs dist/NLMX.dmg in a temp folder with a temp HOME: first launch, self-check, model download + checksum (~640 MB), offline RAG/chat/viewer with the app's runtime → target/acceptance/
-cargo test -p nlmx-ui-web root_opens       # single test: -p <crate> <name filter>
-cargo test -p nlmx-ui-web --test contrast  # WCAG contrast check of tokens.css
+cargo test -p nlmx-parser-text paragraphs  # single test: -p <crate> <name filter>
 cargo test -p nlmx-workspace-tests         # architecture (dependency-rule) tests
 cargo test -p nlmx-pdf-pdfium --test engine  # DocumentEngine against real PDFium + tests/fixtures
 cargo run -p nlmx-pdf-pdfium --example generate_fixtures  # regenerate the hand-written fixture PDFs

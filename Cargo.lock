@@ -2440,14 +2440,10 @@ dependencies = [
  "askama",
  "axum",
  "http",
- "http-body-util",
  "nlmx-application",
  "nlmx-domain",
- "nlmx-testing",
  "serde",
  "serde_json",
- "tokio",
- "tower",
 ]
 
 [[package]]

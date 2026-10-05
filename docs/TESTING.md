@@ -17,7 +17,6 @@ Só há testes unitários e de integração, mais `tests/tests/` (regras de arqu
   - aplicação: ContextBuilder, CitationEngine;
   - adaptadores: parser SSE, transformações de layout/rotação do PDFium;
   - telemetria: registro, redação, rotação;
-  - UI: Markdown seguro.
 - **Integration**: cada adaptador contra a coisa real ou um fake de processo, por exemplo:
   - SQLite: migrações reversíveis, cascatas, contrato do `ConversationRepository`;
   - PDFium (`crates/adapters/pdf-pdfium/tests`);

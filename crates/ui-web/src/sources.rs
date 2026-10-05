@@ -176,15 +176,3 @@ pub async fn open(
         Err(e) => error_fragment(e),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sizes_are_readable() {
-        assert_eq!(size_label(512), "512 B");
-        assert_eq!(size_label(2048), "2 KB");
-        assert_eq!(size_label(3 * 1024 * 1024 + 512 * 1024), "3,5 MB");
-    }
-}

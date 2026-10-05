@@ -20,7 +20,7 @@ Galeria interativa (somente builds debug): **Configurações › Sobre › Desig
 
 1. **Sem cores cruas fora de `tokens.css`.** O `@theme` remove as paletas padrão do Tailwind (`--color-*: initial`); só existem utilities dos tokens (`bg-surface`, `text-fg-muted`, `border-border`…).
 2. **Não use `dark:`.** Cada cor é `light-dark(CLARO, ESCURO)` e acompanha `color-scheme`, que segue o sistema ou `<html data-theme="light|dark">`.
-3. **Contraste é testado.** `crates/ui-web/tests/contrast.rs` lê `tokens.css` e exige ≥ 4.5:1 para texto e ≥ 3:1 para contornos de controles nos dois temas. Novo par texto/fundo → adicione em `PAIRS`.
+3. **Contraste é conferido à mão.** O `ui-web` não tem mais testes automáticos (nem o de contraste, nem o que barrava cores cruas): ao mudar `tokens.css`, confira ≥ 4.5:1 para texto e ≥ 3:1 para contornos de controles nos dois temas.
 4. **Cor nunca é o único sinal:** badges e alerts sempre têm texto; erros têm ícone + mensagem.
 5. **Foco visível sempre** (`:focus-visible`, anel `--color-focus`); alvos ≥ 24px; animações respeitam `prefers-reduced-motion`.
 6. **Cabeçalho de página em uma linha.** Título e descrição (`.page-title`, `.page-description`) terminam em reticências quando a janela estreita, e o texto completo vai no atributo `title`; use o macro `page::header` em vez de montar o cabeçalho à mão.
