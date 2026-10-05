@@ -1,6 +1,6 @@
 [package]
 name = "nlmx-workspace-tests"
-description = "Workspace-level tests: architecture rules and, later, end-to-end tests."
+description = "Workspace-level tests: architecture rules, model activation and release acceptance."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,10 +9,6 @@ publish.workspace = true
 
 [lib]
 path = "lib.rs"
-
-[[bench]]
-name = "bench"
-harness = false
 
 [dev-dependencies]
 cargo_metadata.workspace = true
@@ -41,8 +37,6 @@ tower.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 sha2.workspace = true
-unicode-normalization.workspace = true
-zip.workspace = true
 rusqlite.workspace = true
 tokio.workspace = true
 

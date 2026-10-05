@@ -79,7 +79,7 @@ Configurações › Sobre mostra a versão. Com `NLMX_DOWNLOAD_URL=https://…` 
 
 ## Antes de publicar
 
-- [ ] `make lint && make test && make test-real`
+- [ ] `make lint && make test`
 - [ ] Versão atualizada em `apps/desktop/src-tauri/tauri.conf.json` e `Cargo.toml` do workspace
 - [ ] `make release` (ou `make bundle` para testes) sem falhas na verificação
 - [ ] `make acceptance`: instalação limpa, primeira execução, download + checksum do modelo, uso offline (RAG, chat, citações, viewer) com o runtime do app instalado

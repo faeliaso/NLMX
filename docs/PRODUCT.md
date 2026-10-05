@@ -95,7 +95,7 @@ Também feito, fora da lista original: intenções "Explique este documento." e 
 
 1. **Distribuição pública:** certificado Developer ID e `make release` (assinatura, notarização), depois `make acceptance` e teste num Mac limpo.
 2. **Lacunas de requisitos:** drag & drop e pasta (RF01), importação manual de GGUF (RF27), coleções na UI (RF18), pausa/cancelamento da ingestão (RF15).
-3. **Desempenho dos embeddings:** reduzir contexto/lote do `llama-server` (~1,9 GB e 8,4 embeddings/s hoje). Medir com `make bench`. O cache de prompts do servidor, que chegava a ~10 GB, está desligado, e o processo é encerrado depois de 45 s ocioso (ADR 0006).
+3. **Desempenho dos embeddings:** reduzir contexto/lote do `llama-server` (~1,9 GB e 8,4 embeddings/s hoje).. O cache de prompts do servidor, que chegava a ~10 GB, está desligado, e o processo é encerrado depois de 45 s ocioso (ADR 0006).
 4. **OCR** de escaneados (ex.: `fm respond --tool ocr`), preservando página e coordenadas.
 5. **Qualidade:** títulos numerados repetidos removidos como cabeçalho; documentos padronizados que só mudam números.
 6. **Primeiro uso guiado:** checklist na primeira abertura (licença do `fm`, Apple Intelligence, modelo).

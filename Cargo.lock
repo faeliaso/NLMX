@@ -2221,7 +2221,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nlmx-application"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-domain",
  "nlmx-testing",
@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-chunker-structural"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "http",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-domain"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2282,7 +2282,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-embed-llama"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2295,7 +2295,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-fs-library"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-llm-fm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-models-catalog"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "fs4",
  "nlmx-application",
@@ -2333,7 +2333,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-normalizer-text"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2343,7 +2343,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-parser-epub"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-parser-office"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2367,7 +2367,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-parser-text"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "csv",
  "encoding_rs",
@@ -2381,7 +2381,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-pdf-pdfium"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "nlmx-application",
@@ -2392,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-store-sqlite"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-structure-heuristic"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-telemetry"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2427,7 +2427,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-testing"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
@@ -2435,7 +2435,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-ui-web"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "askama",
  "axum",
@@ -2452,7 +2452,7 @@ dependencies = [
 
 [[package]]
 name = "nlmx-workspace-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "cargo_metadata 0.23.1",
@@ -2482,8 +2482,6 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
- "unicode-normalization",
- "zip",
 ]
 
 [[package]]

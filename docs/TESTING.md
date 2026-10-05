@@ -4,17 +4,11 @@
 
 | Alvo | O que roda | Precisa de |
 |---|---|---|
-| `make test` | tudo que não usa modelo real (padrão) | `make bootstrap` (PDFium) |
+| `make test` | todos os testes (padrão) | `make bootstrap` (PDFium) |
 | `make test-unit` | testes de unidade dentro de cada crate (`--lib`) | — |
 | `make test-integration` | testes de integração dos crates (`crates/*/tests`: SQLite, PDFium, fakes de processo) + doc-tests | PDFium |
-| `make test-e2e` | `tests/tests/*_e2e.rs`: fluxos completos sobre os adaptadores reais | PDFium |
-| `make test-llama` | `llama-server` real + Qwen3 (embeddings, KNN, comparação híbrida) | `scripts/fetch-embedding-model.sh` |
-| `make test-fm` | Apple Foundation Models real (RAG e chat) | macOS 27 + `sudo fm license` |
-| `make test-real` | `test-llama` + `test-fm` + qualidade do RAG e canário de privacidade com modelos reais | os dois acima |
-| `make test-perf` | arquivos grandes e muitos, memória, recusa de limites/zip bombs, importações concorrentes e telas com biblioteca grande (build release; `NLMX_PERF_SCALE=0.1` para um teste rápido) | PDFium |
-| `make bench` | medições numa biblioteca de referência (relatório em `target/bench/`) | PDFium; usa os modelos reais se existirem (`NLMX_BENCH_FAKE=1` força os fakes) |
 
-Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
+Só há testes unitários e de integração, mais `tests/tests/` (regras de arquitetura, ativação de modelo) e `release_acceptance` (só por `make acceptance`, `#[ignore]`). `make test` roda tudo isso; não há suítes E2E, com modelo real, de performance nem benchmark.
 
 ## O que cada categoria cobre
 
@@ -37,12 +31,7 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
 
   Os testes verificam metadados, spans com coordenadas, imagens, renderização, erros e rotação (caixas dentro da página exibida, texto achado em páginas giradas).
 - **Vector Search**: KNN do sqlite-vec com filtros e reindexação, e **recall@10 ≥ 0,99** contra cosseno exato em 2 000 vetores com semente fixa (`store-sqlite`).
-- **RAG**: unidade (contexto, citações, intenções, follow-up) e o **conjunto-ouro** `tests/golden/rag.json` (`tests/tests/rag_quality.rs`). Mede:
-  - hit@1, hit@5 e MRR do retrieval;
-  - acerto do "não encontrado";
-  - taxa de citações válidas.
-
-  Há limites mínimos no modo determinístico e no modo real.
+- **RAG**: unidade (contexto, citações, intenções, follow-up).
 - **IPC**: a lógica dos comandos Tauri (`run_answer`, `run_cancel`) com fakes cobre:
   - `token…done`;
   - geração duplicada (`running`);
@@ -62,20 +51,6 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
   - um download por modelo.
 
   Download **só com confirmação do usuário**: um doc-test `compile_fail` (não se cria `ConfirmedDownload` sem `confirm()`) e um teste de arquitetura (o único chamador de `.confirm()` é o comando `download_model`).
-- **E2E**:
-  - `app_e2e` cobre o app inteiro, menos a casca nativa: importação (com uma falha), Documentos, Chat (turno, geração, citação clicável, `[página N]`), viewer (posição, destaque, busca, camada de texto, imagem) e métricas coletadas;
-  - `indexing_pipeline_e2e`: arquivo → `indexed` para os 5 formatos com adaptadores reais, erros isolados, progresso, reindexação sem duplicar, arquivo alterado e canário de privacidade multiformato.
-  - `rag_multiformat_e2e`: recuperação, ranking, prompt, citações e mensagens salvas dos 5 formatos com proveniência preservada (e canário de privacidade).
-  - `pdf_regression_e2e`: o PDF pelo pipeline do app × caminho legado (mesmos chunks, páginas, caixas, seções, texto).
-  - `multiformat_stages_e2e`: cada etapa (detecção → provenance) nos 5 formatos e entradas difíceis.
-  - `rag_multiformat_quality`: tipos de pergunta com proveniência exata em 7 formatos, incluindo `only-docx`, `only-xlsx`, `pdf+docx`, `pdf+xlsx`, `markdown+docx`, `csv+xlsx` e `many-formats` (determinístico; real com `--ignored`, ou seja, os mesmos casos rodam com Qwen3 + Apple FM em `make test-real`). Uma pergunta pode ter `"scope"` (arquivos) para manter a biblioteca original de um caso antigo.
-  - `rag_office_cases_e2e`: os 7 casos de DOCX/XLSX com a biblioteca de todos os formatos: o prompt do modelo contém o conteúdo que responde, a proveniência e o rótulo de cada fonte ficam intactos (`Manual.docx · Arquitetura › Backend`, `Indicadores.xlsx · Metas, linhas 2–4`, `Arquitetura.pdf · p. 1`), só o PDF tem `viewer_target`, e a conversa salva e relê as mesmas fontes.
-  - `frontend_e2e`: interface sobre a pilha real, sem viewer para não‑PDF.
-  - os demais `*_e2e` cobrem ingestão, retriever, RAG e chat.
-- **Privacidade** (`privacy_canary`): um marcador no texto, no título e no nome do arquivo de um PDF, e também na pergunta e na resposta, nunca aparece:
-  - nos logs (capturados em TRACE pela camada JSON do app);
-  - nas métricas;
-  - na versão real, também nos logs do `llama-server` e do `fm serve`.
 
 ## Medições
 

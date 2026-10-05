@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Downloads the default multilingual embedding model (~640 MB) into models/ for development and
-# for `make test-llama`. End users get models through the app's model manager instead.
+# for local development (`NLMX_EMBEDDING_CONFIG`). End users get models through the app's model manager instead.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

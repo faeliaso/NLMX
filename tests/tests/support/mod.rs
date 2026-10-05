@@ -33,7 +33,6 @@ use nlmx_store_sqlite::Database;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
 use nlmx_testing::{FakeEmbeddingProvider, FixedEmbeddingSource};
 
-pub mod multiformat;
 
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
