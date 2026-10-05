@@ -10,6 +10,8 @@ use nlmx_domain::{
         Message, MessageId, MessagePageRef, MessageSource, MessageStatus, Role,
     },
     generation::{LanguageModelStatus, UnavailableKind},
+    ingestion::DocumentId,
+    rag_intent::QueryIntent,
 };
 
 use crate::{
@@ -195,7 +197,14 @@ impl ChatService {
             Some(AnswerGrounding::Documents) | None => {
                 let history = history(earlier, HISTORY_TURNS);
                 let mut options = self.options.clone();
-                if let Some(document) = conversation.scope.document() {
+                // "Explique este documento" after leaving a single document for the whole
+                // library still means the document the conversation was about.
+                let document = conversation.scope.document().or_else(|| {
+                    (QueryIntent::parse(&question) == QueryIntent::Overview)
+                        .then(|| last_cited_document(earlier))
+                        .flatten()
+                });
+                if let Some(document) = document {
                     options.retriever.filter.documents = Some(vec![document]);
                 }
                 let result = self
@@ -244,6 +253,30 @@ impl ChatService {
             .conversations
             .reset_message(message, AnswerGrounding::Free)
             .await?)
+    }
+}
+
+/// The one document cited by the latest answer that cited something; `None` when that answer
+/// cited several documents or nothing was cited yet.
+fn last_cited_document(messages: &[Message]) -> Option<DocumentId> {
+    let cited: Vec<DocumentId> = messages
+        .iter()
+        .rev()
+        .filter(|m| m.role == Role::Assistant && m.grounding != Some(AnswerGrounding::Free))
+        .map(|m| {
+            let mut documents: Vec<DocumentId> = m
+                .sources
+                .iter()
+                .filter(|s| s.cited)
+                .map(|s| s.document_id)
+                .collect();
+            documents.dedup();
+            documents
+        })
+        .find(|documents| !documents.is_empty())?;
+    match cited.as_slice() {
+        [document] => Some(*document),
+        _ => None,
     }
 }
 
