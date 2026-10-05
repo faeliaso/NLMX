@@ -34,6 +34,7 @@ nlmx-fs-library = { path = "crates/adapters/fs-library" }
 nlmx-telemetry = { path = "crates/adapters/telemetry" }
 nlmx-parser-text = { path = "crates/adapters/parser-text" }
 nlmx-parser-epub = { path = "crates/adapters/parser-epub" }
+nlmx-parser-office = { path = "crates/adapters/parser-office" }
 nlmx-normalizer-text = { path = "crates/adapters/normalizer-text" }
 
 # External

@@ -636,3 +636,326 @@ fn an_unbroken_value_in_prose_is_cut_into_chunks_that_fit() {
         "the blob is all there"
     );
 }
+
+fn xlsx_record(sheet: u32, name: &str, row: u32, who: &str) -> ContentBlock {
+    block(
+        ContentKind::Record {
+            fields: vec![RecordField {
+                name: "Nome".into(),
+                value: who.into(),
+            }],
+        },
+        format!("Registro {row}:\nNome: {who}"),
+        SourceLocation::xlsx(sheet, name.into(), row, row).unwrap(),
+    )
+}
+
+#[test]
+fn xlsx_documents_are_chunked_sheet_by_sheet_with_their_own_columns() {
+    let first: Vec<_> = (2..=4)
+        .map(|r| xlsx_record(1, "Clientes", r, &format!("Pessoa{r}")))
+        .collect();
+    let mut second = vec![block(
+        ContentKind::Record {
+            fields: vec![RecordField {
+                name: "Produto".into(),
+                value: "Cadeira".into(),
+            }],
+        },
+        "Registro 7:\nProduto: Cadeira",
+        SourceLocation::xlsx(2, "Estoque".into(), 7, 7).unwrap(),
+    )];
+    second.push(block(
+        ContentKind::Record {
+            fields: vec![RecordField {
+                name: "Produto".into(),
+                value: "Mesa".into(),
+            }],
+        },
+        "Registro 9:\nProduto: Mesa",
+        SourceLocation::xlsx(2, "Estoque".into(), 9, 9).unwrap(),
+    ));
+    let workbook = document(
+        DocumentType::Xlsx,
+        vec![section(&["Clientes"], first), section(&["Estoque"], second)],
+    );
+    let chunks =
+        MultiFormatChunker.chunk(&workbook, &context(), &ChunkPolicy::default(), &WordCounter);
+    assert_eq!(chunks.len(), 2, "one chunk per sheet here");
+    assert_eq!(
+        chunks[0].location,
+        SourceLocation::xlsx(1, "Clientes".into(), 2, 4).unwrap()
+    );
+    assert_eq!(chunks[0].section_path, ["Clientes"]);
+    assert_eq!(chunks[0].metadata.columns, ["Nome"]);
+    assert!(
+        chunks[0]
+            .text
+            .starts_with("Arquivo: guia.md\nPlanilha: Clientes\nColunas: Nome\nLinhas 2–4\n\n")
+    );
+    assert_eq!(
+        chunks[1].location,
+        SourceLocation::xlsx(2, "Estoque".into(), 7, 9).unwrap()
+    );
+    assert_eq!(chunks[1].metadata.columns, ["Produto"]);
+    assert_eq!(chunks[1].metadata.document_type, DocumentType::Xlsx);
+    assert_eq!(
+        chunks.iter().map(|c| c.index).collect::<Vec<_>>(),
+        [0, 1],
+        "indexes run across sheets"
+    );
+    assert!(chunks.iter().all(|c| c.location.validate().is_ok()));
+}
+
+#[test]
+fn a_large_sheet_splits_into_chunks_that_keep_the_sheet_and_number_on() {
+    let rows: Vec<_> = (2..=40)
+        .map(|r| xlsx_record(1, "Dados", r, &format!("Pessoa{r}")))
+        .collect();
+    let one = document(DocumentType::Xlsx, vec![section(&["Dados"], rows)]);
+    let chunks = run(&one);
+    assert!(chunks.len() > 1);
+    for (i, chunk) in chunks.iter().enumerate() {
+        assert_eq!(chunk.index, i as u32);
+        assert!(chunk.text.contains("Planilha: Dados"));
+        assert!(matches!(
+            chunk.location,
+            SourceLocation::Xlsx { sheet_index: 1, .. }
+        ));
+    }
+}
+
+#[test]
+fn docx_chunks_keep_the_heading_path_and_the_paragraphs() {
+    let docx = |path: &[&str], n: u32| {
+        SourceLocation::docx(path.iter().map(|s| s.to_string()).collect(), Some((n, n))).unwrap()
+    };
+    let doc = document(
+        DocumentType::Docx,
+        vec![
+            section(
+                &["Objeto"],
+                vec![
+                    block(
+                        ContentKind::Heading { level: 1 },
+                        "Objeto",
+                        docx(&["Objeto"], 1),
+                    ),
+                    block(
+                        ContentKind::Paragraph,
+                        format!("{} fim.", prose("alfa", 2)),
+                        docx(&["Objeto"], 2),
+                    ),
+                ],
+            ),
+            section(
+                &["Objeto", "Prazos"],
+                vec![
+                    block(
+                        ContentKind::Heading { level: 2 },
+                        "Prazos",
+                        docx(&["Objeto", "Prazos"], 3),
+                    ),
+                    block(
+                        ContentKind::Paragraph,
+                        prose("beta", 2),
+                        docx(&["Objeto", "Prazos"], 4),
+                    ),
+                ],
+            ),
+        ],
+    );
+    let chunks = run(&doc);
+    assert_provenance(&doc, &chunks);
+    assert!(
+        chunks
+            .iter()
+            .all(|c| matches!(c.location, SourceLocation::Docx { .. }))
+    );
+    let beta = chunks
+        .iter()
+        .find(|c| c.text.contains("beta"))
+        .expect("the second section is chunked");
+    assert_eq!(beta.section_path, ["Objeto", "Prazos"]);
+}
+
+#[test]
+fn docx_table_rows_are_never_cut_and_keep_the_heading_path() {
+    let docx = |n: u32| SourceLocation::docx(vec!["Equipe".into()], Some((n, n))).unwrap();
+    let mut blocks = vec![block(ContentKind::Heading { level: 1 }, "Equipe", docx(1))];
+    let mut rows = Vec::new();
+    for n in 0..12u32 {
+        let text = format!(
+            "Tabela: Nome | Cidade | Cargo\nNome: Pessoa{n}\nCidade: Fortaleza\nCargo: Engenheiro"
+        );
+        rows.push(text.clone());
+        blocks.push(block(
+            ContentKind::Record {
+                fields: vec![
+                    RecordField {
+                        name: "Nome".into(),
+                        value: format!("Pessoa{n}"),
+                    },
+                    RecordField {
+                        name: "Cidade".into(),
+                        value: "Fortaleza".into(),
+                    },
+                    RecordField {
+                        name: "Cargo".into(),
+                        value: "Engenheiro".into(),
+                    },
+                ],
+            },
+            text,
+            docx(n + 2),
+        ));
+    }
+    let doc = document(DocumentType::Docx, vec![section(&["Equipe"], blocks)]);
+    let chunks = run(&doc);
+    assert!(chunks.len() > 1, "the rows do not fit one chunk");
+    for row in &rows {
+        assert!(
+            chunks.iter().any(|c| c.text.contains(row.as_str())),
+            "a row was cut or lost: {row}"
+        );
+    }
+    for chunk in &chunks {
+        assert_eq!(chunk.section_path, ["Equipe"]);
+        assert!(matches!(chunk.location, SourceLocation::Docx { .. }));
+        assert!(chunk.text.contains("Tabela: Nome | Cidade | Cargo"));
+    }
+}
+
+fn docx_at(path: &[&str], n: u32, table: Option<u32>) -> SourceLocation {
+    SourceLocation::docx_table(
+        path.iter().map(|s| s.to_string()).collect(),
+        Some((n, n)),
+        table,
+    )
+    .unwrap()
+}
+
+fn docx_row(path: &[&str], n: u32, table: u32, who: &str) -> ContentBlock {
+    block(
+        ContentKind::Record {
+            fields: vec![RecordField {
+                name: "Nome".into(),
+                value: who.into(),
+            }],
+        },
+        format!("Tabela {table}: Nome\nNome: {who}"),
+        docx_at(path, n, Some(table)),
+    )
+}
+
+#[test]
+fn a_docx_chunk_names_the_table_it_includes_unless_there_are_two() {
+    let path = ["Equipe"];
+    let only_rows = document(
+        DocumentType::Docx,
+        vec![section(
+            &path,
+            vec![
+                block(
+                    ContentKind::Heading { level: 1 },
+                    "Equipe",
+                    docx_at(&path, 1, None),
+                ),
+                docx_row(&path, 2, 1, "Ana"),
+                docx_row(&path, 3, 1, "Bia"),
+            ],
+        )],
+    );
+    let chunks = run(&only_rows);
+    assert_eq!(chunks.len(), 1);
+    let SourceLocation::Docx {
+        table,
+        heading_path,
+        ..
+    } = &chunks[0].location
+    else {
+        panic!("a DOCX location");
+    };
+    assert_eq!(heading_path, &["Equipe"]);
+    // A heading only names the section; the chunk's location is that of its content.
+    assert_eq!(*table, Some(1));
+
+    // Rows only (no prose) in one chunk: the chunk is that table.
+    let rows_only = document(
+        DocumentType::Docx,
+        vec![section(
+            &path,
+            vec![docx_row(&path, 2, 1, "Ana"), docx_row(&path, 3, 1, "Bia")],
+        )],
+    );
+    let chunks = run(&rows_only);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(
+        chunks[0].location,
+        docx_at(&path, 2, Some(1))
+            .merge(&docx_at(&path, 3, Some(1)))
+            .unwrap()
+    );
+    assert_eq!(chunks[0].location.label(), "Equipe, tabela 1");
+
+    // Two tables in one chunk: neither.
+    let two = document(
+        DocumentType::Docx,
+        vec![section(
+            &path,
+            vec![docx_row(&path, 2, 1, "Ana"), docx_row(&path, 3, 2, "Bia")],
+        )],
+    );
+    let chunks = run(&two);
+    assert_eq!(chunks.len(), 1);
+    assert!(matches!(
+        chunks[0].location,
+        SourceLocation::Docx { table: None, .. }
+    ));
+}
+
+#[test]
+fn docx_lists_and_sections_never_mix_in_a_chunk() {
+    let backend = ["Arquitetura", "Backend"];
+    let frontend = ["Arquitetura", "Frontend"];
+    let item = |path: &[&str], n: u32, text: &str| {
+        block(
+            ContentKind::ListItem {
+                ordered: false,
+                depth: 0,
+            },
+            text,
+            docx_at(path, n, None),
+        )
+    };
+    let doc = document(
+        DocumentType::Docx,
+        vec![
+            section(
+                &backend,
+                vec![item(&backend, 1, "alfa um"), item(&backend, 2, "alfa dois")],
+            ),
+            section(
+                &frontend,
+                vec![
+                    item(&frontend, 3, "beta um"),
+                    item(&frontend, 4, "beta dois"),
+                ],
+            ),
+        ],
+    );
+    let chunks = run(&doc);
+    assert_provenance(&doc, &chunks);
+    for chunk in &chunks {
+        let alfa = chunk.text.contains("alfa");
+        let beta = chunk.text.contains("beta");
+        assert!(alfa != beta, "one section per chunk: {:?}", chunk.text);
+        let expected: &[&str] = if alfa { &backend } else { &frontend };
+        assert_eq!(chunk.section_path, expected);
+        assert_eq!(chunk.location.label(), expected.join(" › "));
+    }
+    assert!(
+        chunks[0].text.contains("alfa um\nalfa dois"),
+        "items of one list stay together"
+    );
+}

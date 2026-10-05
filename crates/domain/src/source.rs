@@ -78,6 +78,28 @@ pub enum SourceLocation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         section: Option<String>,
     },
+    /// The headings that enclose the text (outermost first) and, when known, the 1-based
+    /// paragraphs (counting every body paragraph, headings included). `table` is the 1-based
+    /// position, among the tables of the document, of the table the text comes from or
+    /// includes (a merged location of text from two different tables names none).
+    Docx {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        heading_path: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        paragraph_start: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        paragraph_end: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        table: Option<u32>,
+    },
+    /// Data rows of one worksheet, 1-based and both included (the header row is not
+    /// counted). `sheet_index` is the 1-based position in the workbook.
+    Xlsx {
+        sheet_index: u32,
+        sheet_name: String,
+        row_start: u32,
+        row_end: u32,
+    },
 }
 
 impl SourceLocation {
@@ -121,6 +143,42 @@ impl SourceLocation {
         })
     }
 
+    /// `paragraphs` is `(first, last)`, both included.
+    pub fn docx(
+        heading_path: Vec<String>,
+        paragraphs: Option<(u32, u32)>,
+    ) -> Result<Self, LocationError> {
+        Self::docx_table(heading_path, paragraphs, None)
+    }
+
+    /// Like [`SourceLocation::docx`] for text that comes from table number `table`.
+    pub fn docx_table(
+        heading_path: Vec<String>,
+        paragraphs: Option<(u32, u32)>,
+        table: Option<u32>,
+    ) -> Result<Self, LocationError> {
+        Self::checked(Self::Docx {
+            heading_path,
+            paragraph_start: paragraphs.map(|(start, _)| start),
+            paragraph_end: paragraphs.map(|(_, end)| end),
+            table,
+        })
+    }
+
+    pub fn xlsx(
+        sheet_index: u32,
+        sheet_name: String,
+        row_start: u32,
+        row_end: u32,
+    ) -> Result<Self, LocationError> {
+        Self::checked(Self::Xlsx {
+            sheet_index,
+            sheet_name,
+            row_start,
+            row_end,
+        })
+    }
+
     fn checked(location: Self) -> Result<Self, LocationError> {
         location.validate()?;
         Ok(location)
@@ -160,6 +218,33 @@ impl SourceLocation {
                     Ok(())
                 }
             }
+            Self::Docx {
+                paragraph_start,
+                paragraph_end,
+                table,
+                ..
+            } => {
+                if *table == Some(0) {
+                    return Err(LocationError::ZeroPosition("tabela"));
+                }
+                match (paragraph_start, paragraph_end) {
+                    (None, None) => Ok(()),
+                    (Some(start), Some(end)) => range("parágrafos", *start, *end),
+                    _ => Err(LocationError::Incomplete("parágrafos")),
+                }
+            }
+            Self::Xlsx {
+                sheet_index,
+                row_start,
+                row_end,
+                ..
+            } => {
+                if *sheet_index == 0 {
+                    Err(LocationError::ZeroPosition("planilha"))
+                } else {
+                    range("linhas", *row_start, *row_end)
+                }
+            }
         }
     }
 
@@ -171,6 +256,8 @@ impl SourceLocation {
             Self::Text { .. } => DocumentType::Text,
             Self::Csv { .. } => DocumentType::Csv,
             Self::Epub { .. } => DocumentType::Epub,
+            Self::Docx { .. } => DocumentType::Docx,
+            Self::Xlsx { .. } => DocumentType::Xlsx,
         }
     }
 
@@ -297,6 +384,63 @@ impl SourceLocation {
                     None
                 },
             }),
+            (
+                Self::Docx {
+                    heading_path: a_path,
+                    paragraph_start: a_start,
+                    paragraph_end: a_end,
+                    table: a_table,
+                },
+                Self::Docx {
+                    heading_path: b_path,
+                    paragraph_start: b_start,
+                    paragraph_end: b_end,
+                    table: b_table,
+                },
+            ) => {
+                let common = a_path
+                    .iter()
+                    .zip(b_path)
+                    .take_while(|(a, b)| a == b)
+                    .map(|(a, _)| a.clone())
+                    .collect();
+                let (paragraph_start, paragraph_end) = match (a_start, a_end, b_start, b_end) {
+                    (Some(a_s), Some(a_e), Some(b_s), Some(b_e)) => {
+                        (Some(*a_s.min(b_s)), Some(*a_e.max(b_e)))
+                    }
+                    _ => (None, None),
+                };
+                Some(Self::Docx {
+                    heading_path: common,
+                    paragraph_start,
+                    paragraph_end,
+                    // The table the text includes: the one table on either side, none when
+                    // the two sides come from different tables.
+                    table: match (a_table, b_table) {
+                        (Some(a), Some(b)) if a != b => None,
+                        (a, b) => a.or(*b),
+                    },
+                })
+            }
+            (
+                Self::Xlsx {
+                    sheet_index: a_index,
+                    sheet_name: a_name,
+                    row_start: a_start,
+                    row_end: a_end,
+                },
+                Self::Xlsx {
+                    sheet_index: b_index,
+                    row_start: b_start,
+                    row_end: b_end,
+                    ..
+                },
+            ) if a_index == b_index => Some(Self::Xlsx {
+                sheet_index: *a_index,
+                sheet_name: a_name.clone(),
+                row_start: *a_start.min(b_start),
+                row_end: *a_end.max(b_end),
+            }),
             _ => None,
         }
     }
@@ -376,6 +520,39 @@ impl SourceLocation {
                     label.push_str(section);
                 }
                 label
+            }
+            Self::Docx {
+                heading_path,
+                table,
+                ..
+            } => {
+                // The section only: paragraph numbers are kept in the location but a label
+                // that says "parágrafo 12" means little in a document without pages.
+                let mut parts = Vec::new();
+                if !heading_path.is_empty() {
+                    parts.push(heading_path.join(HEADING_SEPARATOR));
+                }
+                if let Some(table) = table {
+                    parts.push(format!("tabela {table}"));
+                }
+                if parts.is_empty() {
+                    "documento".to_string()
+                } else {
+                    parts.join(", ")
+                }
+            }
+            Self::Xlsx {
+                sheet_index,
+                sheet_name,
+                row_start,
+                row_end,
+            } => {
+                let sheet = if sheet_name.is_empty() {
+                    format!("planilha {sheet_index}")
+                } else {
+                    sheet_name.clone()
+                };
+                format!("{sheet}, {}", lines_label(*row_start, *row_end))
             }
         }
     }
@@ -530,6 +707,9 @@ mod tests {
             SourceLocation::csv(2, 40).unwrap(),
             SourceLocation::epub(3, Some("A viagem".into()), Some("Partida".into())).unwrap(),
             SourceLocation::epub(1, None, None).unwrap(),
+            SourceLocation::docx(vec!["Contrato".into(), "Prazos".into()], Some((4, 9))).unwrap(),
+            SourceLocation::docx(vec![], None).unwrap(),
+            SourceLocation::xlsx(2, "Vendas".into(), 2, 40).unwrap(),
         ]
     }
 
@@ -575,6 +755,105 @@ mod tests {
             SourceLocation::epub(0, None, None),
             Err(LocationError::ZeroPosition("capítulo"))
         );
+        assert_eq!(
+            SourceLocation::docx(vec![], Some((0, 1))),
+            Err(LocationError::ZeroPosition("parágrafos"))
+        );
+        assert_eq!(
+            SourceLocation::docx(vec![], Some((3, 1))),
+            Err(LocationError::Reversed("parágrafos"))
+        );
+        assert_eq!(
+            SourceLocation::xlsx(0, "A".into(), 1, 1),
+            Err(LocationError::ZeroPosition("planilha"))
+        );
+        assert_eq!(
+            SourceLocation::xlsx(1, "A".into(), 4, 2),
+            Err(LocationError::Reversed("linhas"))
+        );
+    }
+
+    #[test]
+    fn a_docx_table_is_part_of_the_location() {
+        let table = |n: Option<u32>, para: u32| {
+            SourceLocation::docx_table(vec!["Equipe".into()], Some((para, para)), n).unwrap()
+        };
+        assert_eq!(table(Some(2), 5).label(), "Equipe, tabela 2");
+        assert_eq!(
+            SourceLocation::docx_table(vec![], None, Some(1))
+                .unwrap()
+                .label(),
+            "tabela 1"
+        );
+        assert_eq!(
+            SourceLocation::docx_table(vec![], None, Some(0)),
+            Err(LocationError::ZeroPosition("tabela"))
+        );
+        // Text that includes one table is "that table"; text from two different tables is not.
+        assert_eq!(
+            table(Some(2), 5).merge(&table(Some(2), 7)).unwrap(),
+            SourceLocation::docx_table(vec!["Equipe".into()], Some((5, 7)), Some(2)).unwrap()
+        );
+        assert_eq!(
+            table(Some(2), 5).merge(&table(Some(3), 9)).unwrap(),
+            table(None, 5).merge(&table(None, 9)).unwrap()
+        );
+        assert_eq!(
+            table(Some(2), 5).merge(&table(None, 6)).unwrap(),
+            table(Some(2), 5).merge(&table(Some(2), 6)).unwrap(),
+            "prose next to a table keeps the table"
+        );
+        assert_eq!(
+            table(None, 6).merge(&table(Some(2), 5)).unwrap(),
+            table(Some(2), 5).merge(&table(None, 6)).unwrap(),
+            "in either order"
+        );
+    }
+
+    #[test]
+    fn a_docx_label_names_the_section_and_not_the_paragraphs() {
+        let location =
+            SourceLocation::docx(vec!["Arquitetura".into(), "Backend".into()], Some((4, 9)))
+                .unwrap();
+        assert_eq!(location.label(), "Arquitetura › Backend");
+        assert_eq!(location.page_range(), None);
+        assert!(location.boxes().is_empty());
+    }
+
+    #[test]
+    fn a_docx_location_stored_before_tables_still_reads() {
+        let old: SourceLocation = serde_json::from_value(json!({
+            "kind": "docx",
+            "heading_path": ["A"],
+            "paragraph_start": 1,
+            "paragraph_end": 2
+        }))
+        .unwrap();
+        assert_eq!(
+            old,
+            SourceLocation::docx(vec!["A".into()], Some((1, 2))).unwrap()
+        );
+        let json = serde_json::to_value(&old).unwrap();
+        assert!(
+            json.get("table").is_none(),
+            "an absent table is not written"
+        );
+    }
+
+    #[test]
+    fn docx_and_xlsx_merge_within_their_unit() {
+        let docx = |path: &[&str], range| {
+            SourceLocation::docx(path.iter().map(|p| p.to_string()).collect(), range).unwrap()
+        };
+        assert_eq!(
+            docx(&["A", "B"], Some((1, 2)))
+                .merge(&docx(&["A", "C"], Some((5, 6))))
+                .unwrap(),
+            docx(&["A"], Some((1, 6)))
+        );
+        let xlsx = |sheet, start, end| SourceLocation::xlsx(sheet, "P".into(), start, end).unwrap();
+        assert_eq!(xlsx(1, 2, 3).merge(&xlsx(1, 5, 9)).unwrap(), xlsx(1, 2, 9));
+        assert_eq!(xlsx(1, 2, 3).merge(&xlsx(2, 2, 3)), None);
     }
 
     #[test]
@@ -604,6 +883,9 @@ mod tests {
                 DocumentType::Csv,
                 DocumentType::Epub,
                 DocumentType::Epub,
+                DocumentType::Docx,
+                DocumentType::Docx,
+                DocumentType::Xlsx,
             ]
         );
     }
@@ -650,6 +932,9 @@ mod tests {
                 "linhas 2–40",
                 "cap. 3 — A viagem, Partida",
                 "cap. 1",
+                "Contrato › Prazos",
+                "documento",
+                "Vendas, linhas 2–40",
             ]
         );
         assert_eq!(SourceLocation::csv(5, 5).unwrap().label(), "linha 5");
@@ -828,7 +1113,7 @@ mod tests {
 
     #[test]
     fn unknown_or_incomplete_json_is_rejected() {
-        assert!(serde_json::from_value::<SourceLocation>(json!({"kind": "docx"})).is_err());
+        assert!(serde_json::from_value::<SourceLocation>(json!({"kind": "odt"})).is_err());
         assert!(serde_json::from_value::<SourceLocation>(json!({"page_start": 1})).is_err());
         assert!(
             serde_json::from_value::<SourceLocation>(json!({"kind": "csv", "row_start": 1}))

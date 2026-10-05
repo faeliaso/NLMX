@@ -22,6 +22,7 @@ use nlmx_domain::{
 use nlmx_fs_library::FsLibrary;
 use nlmx_normalizer_text::TextNormalizer;
 use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
 use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
 use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
@@ -92,7 +93,9 @@ impl App {
             .with(Arc::new(MarkdownDocumentParser))
             .with(Arc::new(TextDocumentParser))
             .with(Arc::new(CsvDocumentParser))
-            .with(Arc::new(EpubDocumentParser::default()));
+            .with(Arc::new(EpubDocumentParser::default()))
+            .with(Arc::new(DocxDocumentParser::default()))
+            .with(Arc::new(XlsxDocumentParser::default()));
         let tokens = Arc::new(HeuristicTokenCounter);
         let ingestion = DocumentIngestion {
             pipeline: Some(Arc::new(ContentPipeline {
@@ -187,6 +190,12 @@ pub fn text_fixture(name: &str) -> PathBuf {
 pub fn epub_fixture(name: &str) -> PathBuf {
     root()
         .join("crates/adapters/parser-epub/tests/fixtures")
+        .join(name)
+}
+
+pub fn office_fixture(name: &str) -> PathBuf {
+    root()
+        .join("crates/adapters/parser-office/tests/fixtures")
         .join(name)
 }
 

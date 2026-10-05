@@ -56,7 +56,7 @@ fn workspace() -> Workspace {
 
 #[test]
 fn adapters_are_discovered() {
-    assert_eq!(workspace().adapters.len(), 12, "expected 12 adapter crates");
+    assert_eq!(workspace().adapters.len(), 13, "expected 13 adapter crates");
 }
 
 #[test]

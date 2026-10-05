@@ -24,6 +24,7 @@ nlmx-fs-library.workspace = true
 nlmx-structure-heuristic.workspace = true
 nlmx-parser-text.workspace = true
 nlmx-parser-epub.workspace = true
+nlmx-parser-office.workspace = true
 nlmx-normalizer-text.workspace = true
 nlmx-llm-fm.workspace = true
 nlmx-pdf-pdfium.workspace = true

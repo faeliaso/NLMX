@@ -233,7 +233,7 @@ async fn an_unknown_or_unregistered_format_is_unsupported() {
         Ok(sample_structured_document(DocumentType::Csv, 1)),
         Box::new(FakeDocumentNormalizer::default()),
     );
-    for path in ["/in/a.docx", "/in/a.epub", "/in/sem-extensao"] {
+    for path in ["/in/a.odt", "/in/a.epub", "/in/sem-extensao"] {
         let result = s
             .pipeline
             .run(&DocumentSource::from_path(path), 1, None)

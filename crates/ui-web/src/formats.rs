@@ -33,6 +33,14 @@ pub fn format_view(kind: DocumentType) -> FormatView {
             icon: "format-epub",
             label: "EPUB",
         },
+        DocumentType::Docx => FormatView {
+            icon: "format-docx",
+            label: "DOCX",
+        },
+        DocumentType::Xlsx => FormatView {
+            icon: "format-xlsx",
+            label: "XLSX",
+        },
     }
 }
 

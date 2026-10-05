@@ -36,6 +36,7 @@ use nlmx_llm_fm::FoundationModelsProvider;
 use nlmx_models_catalog::LocalModelProvider;
 use nlmx_normalizer_text::TextNormalizer;
 use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
 use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
 use nlmx_pdf_pdfium::{PDFIUM_BUILD, PdfiumDocumentEngine};
 use nlmx_store_sqlite::{DATABASE_FILE, Database};
@@ -283,7 +284,9 @@ pub fn build(
                 .with(Arc::new(MarkdownDocumentParser))
                 .with(Arc::new(TextDocumentParser))
                 .with(Arc::new(CsvDocumentParser))
-                .with(Arc::new(EpubDocumentParser::default()));
+                .with(Arc::new(EpubDocumentParser::default()))
+                .with(Arc::new(DocxDocumentParser::default()))
+                .with(Arc::new(XlsxDocumentParser::default()));
             let tokens = Arc::new(HeuristicTokenCounter);
             Ok(Arc::new(DocumentIngestion {
                 pipeline: Some(Arc::new(ContentPipeline {

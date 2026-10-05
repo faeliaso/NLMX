@@ -20,6 +20,7 @@ use nlmx_domain::{
 };
 use nlmx_normalizer_text::TextNormalizer;
 use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
 use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
 use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
@@ -45,7 +46,9 @@ fn pipeline_with(normalizer: Arc<dyn DocumentNormalizer>, policy: ChunkPolicy) -
         .with(Arc::new(MarkdownDocumentParser))
         .with(Arc::new(TextDocumentParser))
         .with(Arc::new(CsvDocumentParser))
-        .with(Arc::new(EpubDocumentParser::default()));
+        .with(Arc::new(EpubDocumentParser::default()))
+        .with(Arc::new(DocxDocumentParser::default()))
+        .with(Arc::new(XlsxDocumentParser::default()));
     ContentPipeline {
         parsers,
         normalizer,

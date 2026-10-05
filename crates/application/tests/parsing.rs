@@ -287,7 +287,7 @@ async fn the_registry_reports_unsupported_formats() {
     // Unknown extension and nothing declared.
     assert_eq!(
         registry
-            .parse(&DocumentSource::from_path("/in/x.docx"))
+            .parse(&DocumentSource::from_path("/in/x.odt"))
             .await,
         Err(ParseError::Unsupported)
     );

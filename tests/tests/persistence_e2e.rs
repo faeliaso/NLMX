@@ -21,6 +21,7 @@ use nlmx_domain::{
 };
 use nlmx_normalizer_text::TextNormalizer;
 use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
 use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
 use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_store_sqlite::Database;
@@ -48,7 +49,9 @@ fn pipeline() -> ContentPipeline {
             .with(Arc::new(MarkdownDocumentParser))
             .with(Arc::new(TextDocumentParser))
             .with(Arc::new(CsvDocumentParser))
-            .with(Arc::new(EpubDocumentParser::default())),
+            .with(Arc::new(EpubDocumentParser::default()))
+            .with(Arc::new(DocxDocumentParser::default()))
+            .with(Arc::new(XlsxDocumentParser::default())),
         normalizer: Arc::new(TextNormalizer),
         chunker: Arc::new(MultiFormatChunker),
         tokens: Arc::new(HeuristicTokenCounter),

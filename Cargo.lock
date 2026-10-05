@@ -2254,6 +2254,7 @@ dependencies = [
  "nlmx-models-catalog",
  "nlmx-normalizer-text",
  "nlmx-parser-epub",
+ "nlmx-parser-office",
  "nlmx-parser-text",
  "nlmx-pdf-pdfium",
  "nlmx-store-sqlite",
@@ -2343,6 +2344,18 @@ dependencies = [
 
 [[package]]
 name = "nlmx-parser-epub"
+version = "0.1.0"
+dependencies = [
+ "nlmx-application",
+ "nlmx-domain",
+ "nlmx-testing",
+ "quick-xml",
+ "tokio",
+ "zip",
+]
+
+[[package]]
+name = "nlmx-parser-office"
 version = "0.1.0"
 dependencies = [
  "nlmx-application",
@@ -2455,6 +2468,7 @@ dependencies = [
  "nlmx-models-catalog",
  "nlmx-normalizer-text",
  "nlmx-parser-epub",
+ "nlmx-parser-office",
  "nlmx-parser-text",
  "nlmx-pdf-pdfium",
  "nlmx-store-sqlite",

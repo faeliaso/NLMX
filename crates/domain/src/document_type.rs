@@ -15,6 +15,8 @@ pub enum DocumentType {
     Text,
     Csv,
     Epub,
+    Docx,
+    Xlsx,
 }
 
 /// A name that is not one of `DocumentType::as_str`.
@@ -30,8 +32,15 @@ impl fmt::Display for UnknownDocumentType {
 impl std::error::Error for UnknownDocumentType {}
 
 impl DocumentType {
-    pub const ALL: [DocumentType; 5] =
-        [Self::Pdf, Self::Markdown, Self::Text, Self::Csv, Self::Epub];
+    pub const ALL: [DocumentType; 7] = [
+        Self::Pdf,
+        Self::Markdown,
+        Self::Text,
+        Self::Csv,
+        Self::Epub,
+        Self::Docx,
+        Self::Xlsx,
+    ];
 
     /// Stable name (same as the serde representation).
     pub fn as_str(self) -> &'static str {
@@ -41,6 +50,8 @@ impl DocumentType {
             Self::Text => "text",
             Self::Csv => "csv",
             Self::Epub => "epub",
+            Self::Docx => "docx",
+            Self::Xlsx => "xlsx",
         }
     }
 
@@ -56,6 +67,8 @@ impl DocumentType {
             Self::Text => &["txt", "text"],
             Self::Csv => &["csv"],
             Self::Epub => &["epub"],
+            Self::Docx => &["docx"],
+            Self::Xlsx => &["xlsx"],
         }
     }
 
@@ -82,6 +95,10 @@ impl DocumentType {
             Self::Text => &["text/plain"],
             Self::Csv => &["text/csv", "application/csv"],
             Self::Epub => &["application/epub+zip"],
+            Self::Docx => {
+                &["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+            }
+            Self::Xlsx => &["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
         }
     }
 
@@ -107,6 +124,8 @@ impl DocumentType {
             Self::Text => "TXT",
             Self::Csv => "CSV",
             Self::Epub => "EPUB",
+            Self::Docx => "DOCX",
+            Self::Xlsx => "XLSX",
         }
     }
 
@@ -151,15 +170,18 @@ mod tests {
         }
         assert_eq!(DocumentType::parse("PDF"), None);
         assert_eq!(
-            "docx".parse::<DocumentType>(),
-            Err(UnknownDocumentType("docx".into()))
+            "odt".parse::<DocumentType>(),
+            Err(UnknownDocumentType("odt".into()))
         );
     }
 
     #[test]
     fn all_lists_each_type_once() {
         let names: Vec<_> = DocumentType::ALL.iter().map(|k| k.as_str()).collect();
-        assert_eq!(names, ["pdf", "markdown", "text", "csv", "epub"]);
+        assert_eq!(
+            names,
+            ["pdf", "markdown", "text", "csv", "epub", "docx", "xlsx"]
+        );
     }
 
     #[test]
@@ -173,11 +195,13 @@ mod tests {
             ("text", DocumentType::Text),
             ("csv", DocumentType::Csv),
             (".EPUB", DocumentType::Epub),
+            ("docx", DocumentType::Docx),
+            (".XLSX", DocumentType::Xlsx),
         ];
         for (extension, expected) in cases {
             assert_eq!(DocumentType::from_extension(extension), Some(expected));
         }
-        for unknown in ["", "docx", "html", "pdfx", "p.df"] {
+        for unknown in ["", "odt", "html", "pdfx", "p.df"] {
             assert_eq!(DocumentType::from_extension(unknown), None);
         }
     }
@@ -194,7 +218,7 @@ mod tests {
             Some(DocumentType::Markdown)
         );
         assert_eq!(DocumentType::from_path(Path::new("sem-extensao")), None);
-        assert_eq!(DocumentType::from_path(Path::new("a.docx")), None);
+        assert_eq!(DocumentType::from_path(Path::new("a.odt")), None);
     }
 
     #[test]
@@ -219,7 +243,10 @@ mod tests {
     #[test]
     fn display_names_are_set_for_every_type() {
         let names: Vec<_> = DocumentType::ALL.iter().map(|k| k.display_name()).collect();
-        assert_eq!(names, ["PDF", "Markdown", "TXT", "CSV", "EPUB"]);
+        assert_eq!(
+            names,
+            ["PDF", "Markdown", "TXT", "CSV", "EPUB", "DOCX", "XLSX"]
+        );
     }
 
     #[test]
@@ -260,7 +287,7 @@ mod tests {
             assert_eq!(json, format!("\"{}\"", kind.as_str()));
             assert_eq!(serde_json::from_str::<DocumentType>(&json).unwrap(), kind);
         }
-        assert!(serde_json::from_str::<DocumentType>("\"docx\"").is_err());
+        assert!(serde_json::from_str::<DocumentType>("\"odt\"").is_err());
         assert!(serde_json::from_str::<DocumentType>("\"Pdf\"").is_err());
     }
 }

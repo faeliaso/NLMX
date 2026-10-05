@@ -54,8 +54,56 @@ impl RecordChunker {
     where
         I: IntoIterator<Item = ContentBlock>,
     {
-        RecordChunks::new(context, dataset, records.into_iter(), policy, tokens)
+        RecordChunks::new(
+            Target::Csv,
+            0,
+            context,
+            dataset,
+            records.into_iter(),
+            policy,
+            tokens,
+        )
     }
+
+    /// Like [`RecordChunker::chunk`] for one worksheet: the preamble also names the sheet, the
+    /// location is `SourceLocation::Xlsx` and the section path is the sheet name. Chunk
+    /// indexes start at `first_index`, so the sheets of a workbook number consecutively.
+    #[allow(clippy::too_many_arguments)]
+    pub fn chunk_sheet<'a, I>(
+        &self,
+        context: &ChunkContext,
+        sheet_index: u32,
+        sheet_name: &str,
+        first_index: u32,
+        dataset: &DatasetMetadata,
+        records: I,
+        policy: &ChunkPolicy,
+        tokens: &'a dyn TokenCounter,
+    ) -> RecordChunks<'a, I::IntoIter>
+    where
+        I: IntoIterator<Item = ContentBlock>,
+    {
+        let target = Target::Sheet {
+            index: sheet_index,
+            name: sheet_name.to_string(),
+        };
+        RecordChunks::new(
+            target,
+            first_index,
+            context,
+            dataset,
+            records.into_iter(),
+            policy,
+            tokens,
+        )
+    }
+}
+
+/// What kind of table the records come from.
+#[derive(Debug, Clone)]
+enum Target {
+    Csv,
+    Sheet { index: u32, name: String },
 }
 
 /// A record, or one part of a record too large for a chunk.
@@ -94,6 +142,7 @@ impl Group {
 
 /// The lazy chunk stream returned by [`RecordChunker::chunk`].
 pub struct RecordChunks<'a, I> {
+    target: Target,
     records: I,
     tokens: &'a dyn TokenCounter,
     file_name: String,
@@ -119,6 +168,8 @@ pub struct RecordChunks<'a, I> {
 
 impl<'a, I: Iterator<Item = ContentBlock>> RecordChunks<'a, I> {
     fn new(
+        target: Target,
+        first_index: u32,
         context: &ChunkContext,
         dataset: &DatasetMetadata,
         records: I,
@@ -129,6 +180,7 @@ impl<'a, I: Iterator<Item = ContentBlock>> RecordChunks<'a, I> {
         let columns_line =
             columns_line(&columns, policy.max_tokens / COLUMNS_BUDGET_DIVISOR, tokens);
         let mut chunks = Self {
+            target,
             records,
             tokens,
             file_name: context
@@ -146,7 +198,7 @@ impl<'a, I: Iterator<Item = ContentBlock>> RecordChunks<'a, I> {
             queue: VecDeque::new(),
             pending: None,
             held: None,
-            next_index: 0,
+            next_index: first_index,
             fallback_row: 0,
         };
         chunks.overhead = tokens.count(&chunks.preamble(u32::MAX, u32::MAX));
@@ -165,6 +217,9 @@ impl<'a, I: Iterator<Item = ContentBlock>> RecordChunks<'a, I> {
             format!("Linhas {first}–{last}")
         };
         let mut text = format!("Arquivo: {}\n", self.file_name);
+        if let Target::Sheet { name, .. } = &self.target {
+            text.push_str(&format!("Planilha: {name}\n"));
+        }
         if !self.columns_line.is_empty() {
             text.push_str(&format!("Colunas: {}\n", self.columns_line));
         }
@@ -183,7 +238,10 @@ impl<'a, I: Iterator<Item = ContentBlock>> RecordChunks<'a, I> {
         }
         let block = self.records.next()?;
         let (row_start, row_end) = match block.location {
-            SourceLocation::Csv { row_start, row_end } => {
+            SourceLocation::Csv { row_start, row_end }
+            | SourceLocation::Xlsx {
+                row_start, row_end, ..
+            } => {
                 self.fallback_row = self.fallback_row.max(row_end);
                 (row_start, row_end)
             }
@@ -299,14 +357,29 @@ impl<'a, I: Iterator<Item = ContentBlock>> RecordChunks<'a, I> {
             chunk_id: None,
             index,
             token_count: Some(self.tokens.count(&text)),
-            section_path: Vec::new(),
-            location: SourceLocation::Csv {
-                row_start: first,
-                row_end: last,
+            section_path: match &self.target {
+                Target::Csv => Vec::new(),
+                Target::Sheet { name, .. } => vec![name.clone()],
             },
-            metadata: self
-                .context
-                .metadata(DocumentType::Csv, self.columns.clone()),
+            location: match &self.target {
+                Target::Csv => SourceLocation::Csv {
+                    row_start: first,
+                    row_end: last,
+                },
+                Target::Sheet { index, name } => SourceLocation::Xlsx {
+                    sheet_index: *index,
+                    sheet_name: name.clone(),
+                    row_start: first,
+                    row_end: last,
+                },
+            },
+            metadata: self.context.metadata(
+                match &self.target {
+                    Target::Csv => DocumentType::Csv,
+                    Target::Sheet { .. } => DocumentType::Xlsx,
+                },
+                self.columns.clone(),
+            ),
             content_hash: sha256_hex(&text),
             text,
         }

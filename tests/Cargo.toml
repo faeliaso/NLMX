@@ -30,6 +30,7 @@ nlmx-llm-fm.workspace = true
 nlmx-telemetry.workspace = true
 nlmx-parser-text.workspace = true
 nlmx-parser-epub.workspace = true
+nlmx-parser-office.workspace = true
 nlmx-normalizer-text.workspace = true
 nlmx-ui-web.workspace = true
 serde_json.workspace = true

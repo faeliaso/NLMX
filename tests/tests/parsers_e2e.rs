@@ -14,6 +14,7 @@ use nlmx_domain::{
     document_type::DocumentType, ingestion::PageLayout, parsed::ParseError, source::SourceLocation,
 };
 use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
 use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
 use nlmx_pdf_pdfium::PdfiumDocumentEngine;
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
@@ -39,6 +40,8 @@ fn registry() -> ParserRegistry {
         .with(Arc::new(TextDocumentParser))
         .with(Arc::new(CsvDocumentParser))
         .with(Arc::new(EpubDocumentParser::default()))
+        .with(Arc::new(DocxDocumentParser::default()))
+        .with(Arc::new(XlsxDocumentParser::default()))
 }
 
 fn text_fixture(name: &str) -> std::path::PathBuf {
@@ -193,7 +196,7 @@ async fn the_registry_refuses_unknown_files() {
     let registry = registry();
     assert_eq!(
         registry
-            .parse(&DocumentSource::from_path(text_fixture("guia.docx")))
+            .parse(&DocumentSource::from_path(text_fixture("guia.odt")))
             .await,
         Err(ParseError::Unsupported)
     );

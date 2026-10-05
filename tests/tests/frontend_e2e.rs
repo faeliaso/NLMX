@@ -25,25 +25,29 @@ use nlmx_testing::{FakeLlmProvider, FakeRuntime};
 use nlmx_ui_web::{AppState, router};
 use support::{
     fixture,
-    multiformat::{App, epub_fixture, imported},
+    multiformat::{App, epub_fixture, imported, office_fixture},
     root, shared_engine,
 };
 use tower::ServiceExt;
 
-/// A fragment of each format's icon (its drawing), to tell the five icons apart in the HTML.
-const ICONS: [(&str, &str); 5] = [
+/// A fragment of each format's icon (its drawing), to tell the icons apart in the HTML.
+const ICONS: [(&str, &str); 7] = [
     ("report.pdf", "M8.5 18v-5h1.75"),
     ("manual.md", "M8 18v-5l2 2.5"),
     ("reuniao.txt", "M9 13h6M9 16h6M9 19h3"),
     ("vendas.csv", "M8 12.5h8v6H8z"),
     ("livro.epub", "M4 19.5V5a2 2 0 0 1 2-2h13v15H6"),
+    ("contrato.docx", "M14 3H7a2 2 0 0 0-2 2v14"),
+    ("vendas.xlsx", "M4 10h16"),
 ];
-const FORMATS: [(&str, &str); 5] = [
+const FORMATS: [(&str, &str); 7] = [
     ("report.pdf", "PDF"),
     ("manual.md", "Markdown"),
     ("reuniao.txt", "TXT"),
     ("vendas.csv", "CSV"),
     ("livro.epub", "EPUB"),
+    ("contrato.docx", "DOCX"),
+    ("vendas.xlsx", "XLSX"),
 ];
 
 async fn request(app: &axum::Router, request: Request<Body>) -> (StatusCode, String) {
@@ -115,6 +119,8 @@ async fn setup(name: &str) -> Setup {
         ),
         ("vendas.csv", root().join("tests/golden/corpus/vendas.csv")),
         ("livro.epub", epub_fixture("livro.epub")),
+        ("contrato.docx", office_fixture("contrato.docx")),
+        ("vendas.xlsx", office_fixture("vendas.xlsx")),
     ];
     let mut ids = Vec::new();
     for (file, source) in &sources {
@@ -226,8 +232,9 @@ async fn sources_show_icon_name_format_and_status_in_every_list() {
     // Indexação: the same icon and format on every row.
     let (status, indexing) = get(&s.app, "/indexing").await;
     assert_eq!(status, StatusCode::OK);
-    // (the rows carry the document's title, which is not always the file name).
-    for ((file, icon), (_, format)) in ICONS.iter().zip(FORMATS) {
+    // (the rows carry the document's title, which is not always the file name). "Concluídos
+    // recentemente" lists the five last indexed, so the first documents are not there.
+    for ((file, icon), (_, format)) in ICONS.iter().zip(FORMATS).skip(ICONS.len() - 5) {
         assert!(indexing.contains(icon), "{file}: icon");
         assert!(
             indexing.contains(&format!(r#"list-row-meta tabular">{format}"#)),

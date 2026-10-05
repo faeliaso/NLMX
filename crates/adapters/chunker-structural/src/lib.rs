@@ -171,6 +171,9 @@ impl DocumentChunker for MultiFormatChunker {
                 )
                 .collect();
         }
+        if kind == DocumentType::Xlsx {
+            return chunk_workbook(document, context, policy, tokens);
+        }
         let items: Vec<core::Item<'_>> = document
             .sections()
             .iter()
@@ -200,9 +203,50 @@ impl DocumentChunker for MultiFormatChunker {
 }
 
 /// The columns of the first record, for a table-like document without dataset metadata.
+/// A workbook is chunked sheet by sheet (each has its own columns), numbering the chunks
+/// consecutively. A sheet whose blocks carry no sheet location is skipped.
+fn chunk_workbook(
+    document: &ParsedDocument,
+    context: &ChunkContext,
+    policy: &ChunkPolicy,
+    tokens: &dyn TokenCounter,
+) -> Vec<DocumentChunk> {
+    let mut chunks: Vec<DocumentChunk> = Vec::new();
+    for section in document.sections() {
+        let Some((sheet_index, sheet_name)) = section.blocks.iter().find_map(|block| match &block
+            .location
+        {
+            SourceLocation::Xlsx {
+                sheet_index,
+                sheet_name,
+                ..
+            } => Some((*sheet_index, sheet_name.clone())),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let dataset = dataset_from_blocks(section.blocks.iter());
+        let first_index = u32::try_from(chunks.len()).unwrap_or(u32::MAX);
+        chunks.extend(RecordChunker.chunk_sheet(
+            context,
+            sheet_index,
+            &sheet_name,
+            first_index,
+            &dataset,
+            section.blocks.iter().cloned(),
+            policy,
+            tokens,
+        ));
+    }
+    chunks
+}
+
 fn dataset_of(document: &ParsedDocument) -> DatasetMetadata {
-    let columns = document
-        .blocks()
+    dataset_from_blocks(document.blocks())
+}
+
+fn dataset_from_blocks<'a>(mut blocks: impl Iterator<Item = &'a ContentBlock>) -> DatasetMetadata {
+    let columns = blocks
         .find_map(|block| match &block.kind {
             ContentKind::Record { fields } => Some(
                 fields

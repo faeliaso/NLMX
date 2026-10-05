@@ -14,18 +14,28 @@ use nlmx_domain::{
 };
 use support::{
     fixture,
-    multiformat::{App, a_word_of, epub_fixture, imported, text_fixture},
+    multiformat::{App, a_word_of, epub_fixture, imported, office_fixture, text_fixture},
 };
 
 #[tokio::test]
 async fn every_format_goes_from_file_to_indexed() {
     let app = App::new("formats", true);
-    let cases: [(DocumentType, PathBuf, &str); 5] = [
+    let cases: [(DocumentType, PathBuf, &str); 7] = [
         (DocumentType::Pdf, fixture("report.pdf"), "report.pdf"),
         (DocumentType::Markdown, text_fixture("guia.md"), "guia.md"),
         (DocumentType::Text, text_fixture("notas.txt"), "notas.txt"),
         (DocumentType::Csv, text_fixture("vendas.csv"), "vendas.csv"),
         (DocumentType::Epub, epub_fixture("livro.epub"), "livro.epub"),
+        (
+            DocumentType::Docx,
+            office_fixture("contrato.docx"),
+            "contrato.docx",
+        ),
+        (
+            DocumentType::Xlsx,
+            office_fixture("vendas.xlsx"),
+            "vendas.xlsx",
+        ),
     ];
     for (kind, source, name) in cases {
         let path = app.user_file(&source, name);
@@ -51,6 +61,8 @@ async fn every_format_goes_from_file_to_indexed() {
                     | (SourceLocation::Text { .. }, DocumentType::Text)
                     | (SourceLocation::Csv { .. }, DocumentType::Csv)
                     | (SourceLocation::Epub { .. }, DocumentType::Epub)
+                    | (SourceLocation::Docx { .. }, DocumentType::Docx)
+                    | (SourceLocation::Xlsx { .. }, DocumentType::Xlsx)
             );
             assert!(matches_format, "{name}: {:?}", chunk.location);
         }
@@ -67,7 +79,7 @@ async fn every_format_goes_from_file_to_indexed() {
         let word = a_word_of(&stored[0].text);
         assert!(app.hits(&word).await.contains(&id), "{name}: {word}");
     }
-    assert_eq!(app.library_files().len(), 5);
+    assert_eq!(app.library_files().len(), 7);
 }
 
 #[tokio::test]

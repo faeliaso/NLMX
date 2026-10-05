@@ -24,6 +24,8 @@ pub fn sample_location(kind: DocumentType) -> SourceLocation {
         DocumentType::Text => SourceLocation::text(0, 5),
         DocumentType::Csv => SourceLocation::csv(1, 1),
         DocumentType::Epub => SourceLocation::epub(1, None, None),
+        DocumentType::Docx => SourceLocation::docx(vec![], None),
+        DocumentType::Xlsx => SourceLocation::xlsx(1, "Planilha1".into(), 1, 1),
     }
     .expect("a valid sample location")
 }

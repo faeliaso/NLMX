@@ -220,7 +220,7 @@ fn the_new_tables_reject_invalid_states() {
         &conn,
         &format!(
             "INSERT INTO documents (sha256, original_filename, library_path, file_size, format)
-             VALUES ('{sha}', 'x', 'l', 1, 'docx')"
+             VALUES ('{sha}', 'x', 'l', 1, 'odt')"
         ),
     );
     rejected(
@@ -516,7 +516,10 @@ async fn the_database_honours_the_document_store_contract() {
 #[tokio::test]
 async fn each_format_is_stored_with_its_location_and_the_placeholder_page() {
     let (db, path) = open().await;
-    for (kind, sha) in DocumentType::ALL.into_iter().zip(['a', 'b', 'c', 'd', 'e']) {
+    for (kind, sha) in DocumentType::ALL
+        .into_iter()
+        .zip(['a', 'b', 'c', 'd', 'e', 'f', 'g'])
+    {
         let id = insert(&db, kind, sha).await;
         let stored = sample_stored_extraction(&sample_nested_document(kind), id);
         db.save_processed(id, stored.clone()).await.unwrap();
@@ -887,5 +890,106 @@ async fn the_page_filter_only_matches_pdf_chunks() {
     assert!(
         in_documents(&hits, pdf) > 0,
         "a PDF chunk on page 1 still matches"
+    );
+}
+
+// ── Migration 0013 (DOCX and XLSX) ───────────────────────────────────────────
+
+#[test]
+fn migration_0013_accepts_docx_and_xlsx_and_leaves_existing_rows_alone() {
+    let mut conn = connection::open(&temp_db()).unwrap();
+    migrations::migrate_to(&mut conn, 12).unwrap();
+    conn.execute(
+        "INSERT INTO documents (id, sha256, original_filename, library_path, file_size, format)
+         VALUES (1, ?1, 'a.pdf', 'l', 1, 'pdf'), (2, ?2, 'b.md', 'm', 1, 'markdown')",
+        params!["a".repeat(64), "b".repeat(64)],
+    )
+    .unwrap();
+    // Make the rows distinguishable from what a touch would write.
+    conn.execute_batch("UPDATE documents SET status = status, version = 5, updated_at = '2020-01-01T00:00:00.000Z'")
+        .unwrap();
+    let before: Vec<(i64, i64, String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, version, updated_at, format FROM documents ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+
+    migrations::migrate_to_latest(&mut conn).unwrap();
+
+    let after: Vec<(i64, i64, String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, version, updated_at, format FROM documents ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(after, before, "the copy touches no row");
+
+    for (id, format) in [(3, "docx"), (4, "xlsx")] {
+        conn.execute(
+            "INSERT INTO documents (id, sha256, original_filename, library_path, file_size, format)
+             VALUES (?1, ?2, 'x', 'l', 1, ?3)",
+            params![id, format!("{id}").repeat(64), format],
+        )
+        .unwrap();
+    }
+    assert!(
+        conn.execute(
+            "INSERT INTO documents (id, sha256, original_filename, library_path, file_size, format)
+             VALUES (5, ?1, 'x', 'l', 1, 'odt')",
+            params!["5".repeat(64)],
+        )
+        .is_err(),
+        "other formats are still rejected"
+    );
+    let previewable: Vec<i64> = {
+        let mut stmt = conn
+            .prepare("SELECT previewable FROM documents ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(previewable, [1, 0, 0, 0]);
+    // The touch trigger is back.
+    conn.execute(
+        "UPDATE documents SET original_filename = 'y' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    let version: i64 = conn
+        .query_row("SELECT version FROM documents WHERE id = 1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(version, 6);
+    assert!(
+        strings(&conn, "PRAGMA integrity_check") == ["ok"]
+            && conn
+                .prepare("PRAGMA foreign_key_check")
+                .unwrap()
+                .query_map([], |_| Ok(()))
+                .unwrap()
+                .count()
+                == 0
+    );
+
+    // Downgrading drops the new formats and keeps the rest.
+    migrations::migrate_to(&mut conn, 12).unwrap();
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM documents"), 2);
+    assert!(
+        conn.execute(
+            "INSERT INTO documents (id, sha256, original_filename, library_path, file_size, format)
+             VALUES (9, ?1, 'x', 'l', 1, 'docx')",
+            params!["9".repeat(64)],
+        )
+        .is_err()
     );
 }
