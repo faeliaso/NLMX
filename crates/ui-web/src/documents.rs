@@ -14,6 +14,8 @@ pub struct DocumentRow {
     pub viewable: bool,
     /// Every source has information to show; only a PDF also has a preview (`viewable`).
     pub has_details: bool,
+    /// A note has no file: its title is its name and it has no file name or size to show.
+    pub is_note: bool,
     pub icon: &'static str,
     pub format: &'static str,
     pub title: String,
@@ -39,6 +41,7 @@ impl From<DocumentSummary> for DocumentRow {
             viewable: doc.page_count.is_some_and(|n| n > 0)
                 && !matches!(doc.status, DocumentStatus::Failed),
             has_details: !doc.document_type.previewable(),
+            is_note: doc.document_type.is_note(),
             icon: format_view(doc.document_type).icon,
             format: format_view(doc.document_type).label,
             // Pages exist only in a paged format.

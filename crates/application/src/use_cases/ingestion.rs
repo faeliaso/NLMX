@@ -14,6 +14,7 @@ use nlmx_domain::{
         ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, ImportOutcome, IngestPhase,
         IngestProgress, PageLayout,
     },
+    note::{clean_note_text, note_title},
     parsed::ParseError,
     telemetry::{ErrorKind, IngestStage, Measurement},
 };
@@ -138,10 +139,59 @@ impl DocumentIngestion {
             library_path: library_path.display().to_string(),
             file_size: digest.size,
             document_type,
+            note_text: None,
         };
         match self.documents.insert(new).await {
             Ok(InsertOutcome::Inserted(id)) => Enqueued::New(id),
             // Imported concurrently by someone else between the check and the insert.
+            Ok(InsertOutcome::AlreadyExists(id)) => Enqueued::Duplicate(id),
+            Err(err) => failed(err.message),
+        }
+    }
+
+    /// Registers a note: pasted text, kept in the database (no file anywhere). The text is
+    /// cleaned (`clean_note_text`), the same text is a duplicate, and the document waits in
+    /// status `queued` for [`process`](Self::process) like any other source. Its title is
+    /// stored as the document's name.
+    pub async fn enqueue_note(&self, text: &str) -> Enqueued {
+        let failed = |reason: String| Enqueued::Failed { id: None, reason };
+        let text = match clean_note_text(text) {
+            Ok(text) => text,
+            Err(err) => return failed(err.to_string()),
+        };
+        let supported = self
+            .pipeline
+            .as_ref()
+            .is_some_and(|pipeline| pipeline.parsers.parser_for(DocumentType::Note).is_some());
+        if !supported {
+            return failed(ParseError::Unsupported.to_string());
+        }
+        let digest = self.files.digest_text(&text);
+        match self.documents.find_by_sha256(&digest.sha256).await {
+            Ok(Some(id)) => {
+                return match self.documents.get(id).await {
+                    Ok(Some(doc)) if doc.status == DocumentStatus::Failed => Enqueued::Retry(id),
+                    Ok(_) => Enqueued::Duplicate(id),
+                    Err(err) => Enqueued::Failed {
+                        id: Some(id),
+                        reason: err.message,
+                    },
+                };
+            }
+            Ok(None) => {}
+            Err(err) => return failed(err.message),
+        }
+        let new = NewDocument {
+            sha256: digest.sha256,
+            original_filename: note_title(&text),
+            original_path: String::new(),
+            library_path: String::new(),
+            file_size: digest.size,
+            document_type: DocumentType::Note,
+            note_text: Some(text),
+        };
+        match self.documents.insert(new).await {
+            Ok(InsertOutcome::Inserted(id)) => Enqueued::New(id),
             Ok(InsertOutcome::AlreadyExists(id)) => Enqueued::Duplicate(id),
             Err(err) => failed(err.message),
         }
@@ -190,6 +240,7 @@ impl DocumentIngestion {
             library_path: library_path.display().to_string(),
             file_size: digest.size,
             document_type,
+            note_text: None,
         };
         if let Err(err) = self.documents.replace_source(id, new).await {
             // Nobody references the copy just made.
@@ -431,7 +482,10 @@ impl DocumentIngestion {
             .await
             .map_err(storage(IngestStage::Extract))?;
         let observer = Observer::new(self, &document);
-        let source = DocumentSource::of_type(&document.library_path, document.document_type);
+        let source = match &document.note_text {
+            Some(text) => DocumentSource::note(text.as_str()),
+            None => DocumentSource::of_type(&document.library_path, document.document_type),
+        };
         let processed = pipeline
             .run_with(
                 &source,
@@ -449,7 +503,14 @@ impl DocumentIngestion {
             .title
             .clone()
             .filter(|title| !title.trim().is_empty())
-            .unwrap_or_else(|| title_from_filename(&document.original_filename));
+            .unwrap_or_else(|| {
+                // A note's name is already its title, not a file name to clean up.
+                if document.document_type.is_note() {
+                    document.original_filename.clone()
+                } else {
+                    title_from_filename(&document.original_filename)
+                }
+            });
         let stored = processed.into_stored(title);
         let (chunk_count, status) = (stored.chunks.len() as u32, stored.status);
 

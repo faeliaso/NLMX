@@ -33,6 +33,7 @@ async fn setup(source: Arc<FixedEmbeddingSource>) -> Setup {
                 library_path: String::new(),
                 file_size: 1,
                 document_type: nlmx_domain::document_type::DocumentType::Pdf,
+                note_text: None,
             })
             .await
             .unwrap();

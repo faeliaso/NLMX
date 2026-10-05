@@ -364,6 +364,7 @@ async fn installed_app_end_to_end() {
         diagnostics: None,
         models: None,
         indexing: Err("indexação indisponível neste teste".into()),
+        notes: None,
     });
     let last = chat
         .messages(conversation.id)

@@ -24,7 +24,7 @@ use std::sync::Arc;
 use axum::routing::post;
 use axum::{Router, http::HeaderValue, middleware, response::Response, routing::get};
 use nlmx_application::{
-    ports::{Diagnostics, ModelProvider},
+    ports::{Diagnostics, ModelProvider, NoteSubmitter},
     use_cases::{
         ChatService, DocumentIngestion, GetSystemStatus, Indexing, RemoveDocument, ViewDocument,
     },
@@ -56,6 +56,8 @@ pub struct AppState {
     pub models: Option<Arc<dyn ModelProvider>>,
     /// The state of the index and the background work (unavailable without the database).
     pub indexing: Result<Arc<Indexing>, String>,
+    /// Adds pasted notes to the import queue (`None` hides "Adicionar nota").
+    pub notes: Option<Arc<dyn NoteSubmitter>>,
 }
 
 /// Builds the UI router served under the app's custom scheme.
@@ -78,6 +80,7 @@ pub fn router(state: AppState) -> Router {
         .route("/viewer/{doc}/search", get(viewer::search))
         .route("/documents/{id}/pages/{file}", get(viewer::page_image))
         .route("/documents", get(sections::documents))
+        .route("/documents/notes", post(sections::add_note))
         .route("/documents/{id}/delete", post(sections::remove_document))
         .route("/indexing", get(indexing::page))
         .route("/models", get(models::page))
@@ -147,6 +150,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         })
     }
 
@@ -339,6 +343,7 @@ mod tests {
             diagnostics: Some(Arc::new(FixedDiagnostics(snapshot))),
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
         let (_, _, body) = send(app, "/settings", true).await;
         assert!(body.contains("Diagnóstico") && body.contains("10 min"));
@@ -430,6 +435,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
         let (_, _, body) = send(app.clone(), "/documents", true).await;
         assert!(body.contains("Contrato") && body.contains("contrato.pdf"));
@@ -449,6 +455,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
         let (_, _, body) = send(unavailable, "/documents", true).await;
         assert!(body.contains("Biblioteca indisponível") && body.contains("PDFium não encontrado"));
@@ -473,6 +480,7 @@ mod tests {
                     library_path: String::new(),
                     file_size: 1,
                     document_type: nlmx_domain::document_type::DocumentType::Pdf,
+                    note_text: None,
                 })
                 .await
                 .unwrap();
@@ -516,6 +524,7 @@ mod tests {
                 diagnostics: None,
                 models: None,
                 indexing,
+                notes: None,
             })
         };
 
@@ -616,6 +625,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
 
         let (_, _, body) = send(app.clone(), "/documents", true).await;
@@ -787,6 +797,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         })
     }
 
@@ -802,6 +813,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
         let (_, _, body) = send(app, "/chat", true).await;
         assert!(body.contains(r#"data-scope="free""#), "{body}");
@@ -1123,6 +1135,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
         (app, doc, a)
     }
@@ -1232,6 +1245,23 @@ mod tests {
     /// A library with a Markdown file (1), a PDF (2) and a CSV (3); the conversations that cited
     /// the Markdown one are in `conversations`.
     async fn sources_app() -> (Router, i64) {
+        sources_app_with(None).await
+    }
+
+    /// Records the notes handed to the import queue, validating them like the real one.
+    #[derive(Default)]
+    struct RecordingNotes(std::sync::Mutex<Vec<String>>);
+
+    impl NoteSubmitter for RecordingNotes {
+        fn submit(&self, text: &str) -> Result<(), nlmx_application::ports::NoteSubmitError> {
+            let text = nlmx_domain::note::clean_note_text(text)
+                .map_err(nlmx_application::ports::NoteSubmitError::Invalid)?;
+            self.0.lock().unwrap().push(text);
+            Ok(())
+        }
+    }
+
+    async fn sources_app_with(notes: Option<Arc<dyn NoteSubmitter>>) -> (Router, i64) {
         use nlmx_application::ports::{
             ConversationRepository, DocumentRepository, FinishedAnswer, NewDocument,
         };
@@ -1246,20 +1276,32 @@ mod tests {
             ("arquitetura.md", DocumentType::Markdown, 'a'),
             ("relatorio.pdf", DocumentType::Pdf, 'b'),
             ("dados.csv", DocumentType::Csv, 'c'),
+            ("Arquitetura do novo módulo", DocumentType::Note, 'd'),
         ] {
+            let note = kind == DocumentType::Note;
             documents
                 .insert(NewDocument {
                     sha256: sha.to_string().repeat(64),
                     original_filename: name.into(),
-                    original_path: format!("/in/{name}"),
-                    library_path: format!("/lib/{name}"),
+                    original_path: if note {
+                        String::new()
+                    } else {
+                        format!("/in/{name}")
+                    },
+                    library_path: if note {
+                        String::new()
+                    } else {
+                        format!("/lib/{name}")
+                    },
                     file_size: 2048,
                     document_type: kind,
+                    note_text: note.then(|| "Texto da nota.".to_string()),
                 })
                 .await
                 .unwrap();
         }
         documents.force_status(1, DocumentStatus::Indexed);
+        documents.force_status(4, DocumentStatus::Indexed);
         documents.force_status(3, DocumentStatus::Failed);
         let conversations = Arc::new(nlmx_testing::FakeConversations::default());
         let c = conversations
@@ -1334,6 +1376,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes,
         });
         (app, a)
     }
@@ -1359,6 +1402,94 @@ mod tests {
         // Nothing to preview: no viewer, no PDF button, no content of the file.
         for forbidden in ["data-viewer", "/viewer/", "Abrir no PDF", "viewer-pages"] {
             assert!(!body.contains(forbidden), "{forbidden}: {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn documents_offer_adding_a_note_next_to_importing() {
+        let (app, _) = sources_app_with(Some(Arc::new(RecordingNotes::default()))).await;
+        let (status, _, body) = send(app, "/documents", false).await;
+        assert_eq!(status, StatusCode::OK);
+        for expected in [
+            r#"data-command="import_documents""#,
+            r#"data-dialog-open="add-note""#,
+            "Adicionar nota",
+            "Cole o texto copiado",
+            "Cole o texto copiado abaixo para enviá-lo como uma fonte.",
+            r#"hx-post="/documents/notes""#,
+            "<textarea",
+            "Cancelar",
+            "Inserir",
+        ] {
+            assert!(body.contains(expected), "{expected}: {body}");
+        }
+        // "Inserir" starts disabled: there is no text yet.
+        assert!(body.contains("data-note-submit disabled"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn a_pasted_note_goes_to_the_import_queue_and_blank_ones_are_refused() {
+        let notes = Arc::new(RecordingNotes::default());
+        let (app, _) = sources_app_with(Some(notes.clone())).await;
+
+        let (status, body) = post_form(
+            app.clone(),
+            "/documents/notes",
+            "text=Ol%C3%A1%0D%0A%0D%0Amundo+++",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains(r#"data-toast-on-load="info""#), "{body}");
+        assert_eq!(*notes.0.lock().unwrap(), ["Olá\n\nmundo"]);
+
+        for blank in ["text=", "text=+++%0A%09", ""] {
+            let (status, body) = post_form(app.clone(), "/documents/notes", blank).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(
+                body.contains(r#"data-toast-on-load="danger""#)
+                    && body.contains("A nota está vazia"),
+                "{blank:?}: {body}"
+            );
+        }
+        assert_eq!(
+            notes.0.lock().unwrap().len(),
+            1,
+            "blank notes are never queued"
+        );
+
+        // Without an import queue the user is told, not ignored.
+        let (without, _) = sources_app_with(None).await;
+        let (_, body) = post_form(without, "/documents/notes", "text=a").await;
+        assert!(body.contains(r#"data-toast-on-load="danger""#), "{body}");
+    }
+
+    #[tokio::test]
+    async fn a_note_is_a_normal_source_without_a_viewer_file_name_or_size() {
+        let (app, _) = sources_app().await;
+        let (_, _, list) = send(app.clone(), "/fragments/documents", true).await;
+        assert!(
+            list.contains("Arquitetura do novo módulo") && list.contains("Nota"),
+            "{list}"
+        );
+        assert!(list.contains(r#"hx-get="/chat?source=4""#), "{list}");
+        assert!(
+            !list.contains("/chat?view=4") && !list.contains("/viewer/4"),
+            "a note has no viewer: {list}"
+        );
+
+        let (status, _, panel) = send(app, "/sources/4", true).await;
+        assert_eq!(status, StatusCode::OK);
+        for expected in ["Arquitetura do novo módulo", "Nota", "Indexado", "Trechos"] {
+            assert!(panel.contains(expected), "{expected}: {panel}");
+        }
+        for forbidden in [
+            "Abrir no PDF",
+            "/viewer/",
+            "data-viewer",
+            "<dt>Arquivo</dt>",
+            "<dt>Tamanho</dt>",
+        ] {
+            assert!(!panel.contains(forbidden), "{forbidden}: {panel}");
         }
     }
 
@@ -1617,6 +1748,7 @@ mod tests {
             diagnostics: None,
             models: Some(models),
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         });
         let (_, _, body) = send(app.clone(), "/models", true).await;
         assert!(body.contains("Modelo a") && body.contains("Não instalado"));

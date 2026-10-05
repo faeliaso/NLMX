@@ -452,6 +452,7 @@ mod documents {
             library_path: format!("/lib/{}.pdf", sha.to_string().repeat(64)),
             file_size: 2048,
             document_type: nlmx_domain::document_type::DocumentType::Pdf,
+            note_text: None,
         }
     }
 
@@ -1363,6 +1364,7 @@ mod conversations {
                 library_path: "/lib/x.pdf".into(),
                 file_size: 10,
                 document_type: nlmx_domain::document_type::DocumentType::Pdf,
+                note_text: None,
             })
             .await
             .unwrap()

@@ -17,6 +17,8 @@ pub enum DocumentType {
     Epub,
     Docx,
     Xlsx,
+    /// Text pasted by the user: it has no file and no extension of its own.
+    Note,
 }
 
 /// A name that is not one of `DocumentType::as_str`.
@@ -32,7 +34,7 @@ impl fmt::Display for UnknownDocumentType {
 impl std::error::Error for UnknownDocumentType {}
 
 impl DocumentType {
-    pub const ALL: [DocumentType; 7] = [
+    pub const ALL: [DocumentType; 8] = [
         Self::Pdf,
         Self::Markdown,
         Self::Text,
@@ -40,6 +42,7 @@ impl DocumentType {
         Self::Epub,
         Self::Docx,
         Self::Xlsx,
+        Self::Note,
     ];
 
     /// Stable name (same as the serde representation).
@@ -52,6 +55,7 @@ impl DocumentType {
             Self::Epub => "epub",
             Self::Docx => "docx",
             Self::Xlsx => "xlsx",
+            Self::Note => "note",
         }
     }
 
@@ -68,7 +72,9 @@ impl DocumentType {
             Self::Csv => &["csv", "tsv"],
             Self::Epub => &["epub"],
             Self::Docx => &["docx"],
+            // Reserved: a note is never read from a file; the name only keeps the lookup total.
             Self::Xlsx => &["xlsx"],
+            Self::Note => &["nlmx-note"],
         }
     }
 
@@ -104,6 +110,7 @@ impl DocumentType {
                 &["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
             }
             Self::Xlsx => &["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+            Self::Note => &["application/x-nlmx-note"],
         }
     }
 
@@ -131,7 +138,13 @@ impl DocumentType {
             Self::Epub => "EPUB",
             Self::Docx => "DOCX",
             Self::Xlsx => "XLSX",
+            Self::Note => "Nota",
         }
+    }
+
+    /// Whether the content is pasted text kept in the database instead of a file.
+    pub fn is_note(self) -> bool {
+        matches!(self, Self::Note)
     }
 
     /// Whether the interface can show the document itself (the PDF viewer).
@@ -185,7 +198,9 @@ mod tests {
         let names: Vec<_> = DocumentType::ALL.iter().map(|k| k.as_str()).collect();
         assert_eq!(
             names,
-            ["pdf", "markdown", "text", "csv", "epub", "docx", "xlsx"]
+            [
+                "pdf", "markdown", "text", "csv", "epub", "docx", "xlsx", "note"
+            ]
         );
     }
 
@@ -252,7 +267,9 @@ mod tests {
         let names: Vec<_> = DocumentType::ALL.iter().map(|k| k.display_name()).collect();
         assert_eq!(
             names,
-            ["PDF", "Markdown", "TXT", "CSV", "EPUB", "DOCX", "XLSX"]
+            [
+                "PDF", "Markdown", "TXT", "CSV", "EPUB", "DOCX", "XLSX", "Nota"
+            ]
         );
     }
 

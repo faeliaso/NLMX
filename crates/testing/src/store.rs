@@ -129,12 +129,16 @@ fn new_document(kind: DocumentType, sha: char) -> NewDocument {
         library_path: format!("/biblioteca/{sha}.{}", kind.extensions()[0]),
         file_size: 1234,
         document_type: kind,
+        note_text: kind.is_note().then(|| "Texto da nota.".to_string()),
     }
 }
 
 /// The contract every `DocumentRepository` must honour for documents of every format.
 pub async fn document_store_contract(repo: &dyn DocumentRepository) {
-    for (kind, sha) in DocumentType::ALL.into_iter().zip(['a', 'b', 'c', 'd', 'e']) {
+    for (kind, sha) in DocumentType::ALL
+        .into_iter()
+        .zip(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
+    {
         let new = new_document(kind, sha);
         let InsertOutcome::Inserted(id) = repo.insert(new.clone()).await.unwrap() else {
             panic!("{kind}: a new document is inserted");

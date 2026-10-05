@@ -37,7 +37,9 @@ use nlmx_models_catalog::LocalModelProvider;
 use nlmx_normalizer_text::TextNormalizer;
 use nlmx_parser_epub::EpubDocumentParser;
 use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
-use nlmx_parser_text::{CsvDocumentParser, MarkdownDocumentParser, TextDocumentParser};
+use nlmx_parser_text::{
+    CsvDocumentParser, MarkdownDocumentParser, NoteDocumentParser, TextDocumentParser,
+};
 use nlmx_pdf_pdfium::{PDFIUM_BUILD, PdfiumDocumentEngine};
 use nlmx_store_sqlite::{DATABASE_FILE, Database};
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
@@ -175,6 +177,8 @@ pub struct Services {
     pub diagnostics: DiagnosticsState,
     /// Also cleans the library of orphan files at startup.
     pub remover: Result<Arc<RemoveDocument>, String>,
+    /// Where the UI hands pasted notes to the import queue (connected once the queue starts).
+    pub notes: Arc<crate::importer::NoteInbox>,
 }
 
 /// Builds the app from its data directory (`~/Library/Application Support/<identifier>`).
@@ -286,7 +290,8 @@ pub fn build(
                 .with(Arc::new(CsvDocumentParser))
                 .with(Arc::new(EpubDocumentParser::default()))
                 .with(Arc::new(DocxDocumentParser::default()))
-                .with(Arc::new(XlsxDocumentParser::default()));
+                .with(Arc::new(XlsxDocumentParser::default()))
+                .with(Arc::new(NoteDocumentParser::new()));
             let tokens = Arc::new(HeuristicTokenCounter);
             Ok(Arc::new(DocumentIngestion {
                 pipeline: Some(Arc::new(ContentPipeline {
@@ -345,6 +350,7 @@ pub fn build(
         running: Mutex::new(HashMap::new()),
         llm: language_model.clone(),
     };
+    let notes = Arc::new(crate::importer::NoteInbox::default());
     let ui = UiRouter(nlmx_ui_web::router(AppState {
         system_status: Arc::new(GetSystemStatus::new(
             language_model,
@@ -359,6 +365,7 @@ pub fn build(
         diagnostics: diagnostics.clone(),
         models: Some(models.clone() as Arc<dyn ModelProvider>),
         indexing: indexing.clone(),
+        notes: Some(notes.clone()),
     }));
     Services {
         ui,
@@ -374,6 +381,7 @@ pub fn build(
         chat,
         diagnostics: DiagnosticsState(diagnostics),
         remover,
+        notes,
     }
 }
 

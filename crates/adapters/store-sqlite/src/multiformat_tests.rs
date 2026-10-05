@@ -124,6 +124,7 @@ fn pdf_new(sha: char) -> NewDocument {
         library_path: format!("/biblioteca/{sha}.pdf"),
         file_size: 10,
         document_type: DocumentType::Pdf,
+        note_text: None,
     }
 }
 
@@ -136,6 +137,7 @@ async fn insert(db: &Database, kind: DocumentType, sha: char) -> i64 {
         library_path: format!("/biblioteca/{sha}.{ext}"),
         file_size: 10,
         document_type: kind,
+        note_text: None,
     };
     match db.insert(new).await.unwrap() {
         InsertOutcome::Inserted(id) => id,

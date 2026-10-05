@@ -8,6 +8,7 @@ mod csv_parser;
 mod decode;
 mod lines;
 mod markdown;
+mod note;
 mod sniff;
 mod stream;
 mod text;
@@ -25,6 +26,7 @@ use nlmx_domain::{
 pub use csv_parser::{CsvDocumentParser, MAX_ROWS};
 pub use decode::MAX_BYTES;
 pub use markdown::MarkdownDocumentParser;
+pub use note::NoteDocumentParser;
 pub use stream::{CsvLimits, CsvStream, MAX_STREAM_BYTES, MAX_STREAM_ROWS};
 pub use text::TextDocumentParser;
 

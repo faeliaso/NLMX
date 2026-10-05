@@ -165,6 +165,21 @@ fn prune(
 }
 
 impl FileStore for FsLibrary {
+    fn digest_text(&self, text: &str) -> FileDigest {
+        // Domain-separated from files: a note and a file with the same bytes are not the same.
+        let mut hasher = Sha256::new();
+        hasher.update(b"nlmx-note\0");
+        hasher.update(text.as_bytes());
+        FileDigest {
+            sha256: hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            size: text.len() as u64,
+        }
+    }
+
     fn digest<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, Result<FileDigest, StorageError>> {
         let path = path.to_path_buf();
         Box::pin(async move { blocking(move || digest_file(&path)).await })

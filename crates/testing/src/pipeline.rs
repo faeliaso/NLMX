@@ -25,6 +25,7 @@ pub fn sample_location_n(kind: DocumentType, n: u32) -> SourceLocation {
         DocumentType::Epub => SourceLocation::epub(1, Some("Capítulo 1".into()), None),
         DocumentType::Docx => SourceLocation::docx(vec!["Guia".into()], Some((n + 1, n + 1))),
         DocumentType::Xlsx => SourceLocation::xlsx(1, "Seção".into(), n + 1, n + 1),
+        DocumentType::Note => SourceLocation::note(n * 100, n * 100 + 80),
     }
     .expect("a valid sample location")
 }

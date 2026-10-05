@@ -28,7 +28,7 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | ID | Requisito | Status |
 |---|---|---|
 | **Biblioteca** | | |
-| RF01 | Importar documentos (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) via seletor, drag & drop ou pasta (recursiva) | ◐ só seletor (vários arquivos, vários formatos; ADR 0014) |
+| RF01 | Importar documentos (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) via seletor, drag & drop ou pasta (recursiva), e adicionar **notas** (texto colado, sem arquivo; ADR 0018) | ◐ só seletor e notas (vários arquivos, vários formatos; ADR 0014) |
 | RF02 | Detectar duplicatas por SHA-256 do conteúdo | ✓ |
 | RF03 | Copiar o arquivo para a biblioteca interna (`<data>/library/<sha>.<ext>`) | ✓ |
 | RF04 | Listar documentos com título, páginas, tamanho, data e status | ✓ |

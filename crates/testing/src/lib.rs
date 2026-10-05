@@ -465,6 +465,13 @@ impl FakeFileStore {
 }
 
 impl FileStore for FakeFileStore {
+    fn digest_text(&self, text: &str) -> FileDigest {
+        FileDigest {
+            sha256: Self::hash(format!("nlmx-note\0{text}").as_bytes()),
+            size: text.len() as u64,
+        }
+    }
+
     fn digest<'a>(
         &'a self,
         path: &'a std::path::Path,
@@ -639,6 +646,7 @@ impl DocumentRepository for FakeDocumentRepository {
                     file_size: r.new.file_size,
                     document_type: r.new.document_type,
                     mime_type: r.new.document_type.mime_types()[0].to_string(),
+                    note_text: r.new.note_text.clone(),
                 }))
         })
     }
@@ -2360,6 +2368,7 @@ pub async fn document_removal_contract(repo: &dyn DocumentRepository) {
         library_path: format!("/library/{sha}.pdf"),
         file_size: 10,
         document_type: nlmx_domain::document_type::DocumentType::Pdf,
+        note_text: None,
     };
     let InsertOutcome::Inserted(a) = repo.insert(new('a')).await.unwrap() else {
         panic!("inserted")
@@ -2430,6 +2439,7 @@ where
         library_path: format!("/library/{sha}.pdf"),
         file_size: 10,
         document_type: nlmx_domain::document_type::DocumentType::Pdf,
+        note_text: None,
     };
     let InsertOutcome::Inserted(a) = repo.insert(new('a')).await.unwrap() else {
         panic!("inserted")

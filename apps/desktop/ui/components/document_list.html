@@ -4,7 +4,7 @@
 {% call ds::alert("danger", "Biblioteca indisponível", reason) %}{% endcall %}
 {%- when Library::Documents(rows) %}
 {%- if rows.is_empty() %}
-{% call ds::empty_state("document", "Nenhum documento", "Use Importar documentos, no topo da página, para começar (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX ou XLSX). Eles são copiados para a biblioteca local e divididos em trechos para a busca.") %}
+{% call ds::empty_state("document", "Nenhum documento", "Use Importar documentos, no topo da página, para começar (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX ou XLSX), ou Adicionar nota para colar um texto. Os arquivos são copiados para a biblioteca local e divididos em trechos para a busca.") %}
 {% endcall %}
 {%- else %}
 <ul class="list" aria-label="Documentos">
@@ -13,7 +13,7 @@
     {% call ds::icon(doc.icon) %}{% endcall %}
     <div class="list-row-title">
       <p class="selectable truncate" title="{{ doc.title }}">{{ doc.title }}</p>
-      <p class="list-row-meta flex"><span class="truncate" title="{{ doc.filename }}">{{ doc.filename }}</span><span class="shrink-0 whitespace-nowrap">&nbsp;· {{ doc.format }}{% if !doc.pages.is_empty() %} · {{ doc.pages }}{% endif %} · {{ doc.chunks }} · {{ doc.imported_on }}</span></p>
+      <p class="list-row-meta flex">{% if !doc.is_note %}<span class="truncate" title="{{ doc.filename }}">{{ doc.filename }}</span>{% endif %}<span class="shrink-0 whitespace-nowrap">{% if !doc.is_note %}&nbsp;· {% endif %}{{ doc.format }}{% if !doc.pages.is_empty() %} · {{ doc.pages }}{% endif %} · {{ doc.chunks }} · {{ doc.imported_on }}</span></p>
       {%- if !doc.error.is_empty() %}<p class="field-error selectable">{{ doc.error }}</p>{% endif %}
     </div>
     {% call ds::badge(doc.status_label, doc.status_kind, true) %}{% endcall %}

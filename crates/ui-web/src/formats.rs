@@ -50,6 +50,11 @@ pub fn format_view(kind: DocumentType) -> FormatView {
             label: "XLSX",
             description: "Planilha do Microsoft Excel",
         },
+        DocumentType::Note => FormatView {
+            icon: "format-note",
+            label: "Nota",
+            description: "Texto colado como fonte",
+        },
     }
 }
 

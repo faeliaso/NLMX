@@ -8,6 +8,7 @@ use std::{
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
+    sync::Arc,
 };
 
 use nlmx_domain::{
@@ -140,6 +141,8 @@ pub struct DocumentSource {
     pub path: PathBuf,
     /// The declared format; when `None` it is read from the file extension.
     pub document_type: Option<DocumentType>,
+    /// The text itself, for a source that has no file (a note): the path is then never read.
+    pub text: Option<Arc<str>>,
 }
 
 impl DocumentSource {
@@ -150,6 +153,7 @@ impl DocumentSource {
         Self {
             path,
             document_type,
+            text: None,
         }
     }
 
@@ -158,6 +162,16 @@ impl DocumentSource {
         Self {
             path: path.into(),
             document_type: Some(document_type),
+            text: None,
+        }
+    }
+
+    /// A note: the pasted text, with no file behind it.
+    pub fn note(text: impl Into<Arc<str>>) -> Self {
+        Self {
+            path: PathBuf::new(),
+            document_type: Some(DocumentType::Note),
+            text: Some(text.into()),
         }
     }
 }
@@ -182,6 +196,32 @@ pub trait DocumentParser: Send + Sync {
     ) -> BoxFuture<'a, Result<ParsedDocument, ParseError>>;
 }
 
+// ── Notes ────────────────────────────────────────────────────────────────────
+
+/// Why a note was not accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteSubmitError {
+    /// Empty, only whitespace, or too long.
+    Invalid(nlmx_domain::note::NoteError),
+    /// Importing is not available (no worker or no library).
+    Unavailable,
+}
+
+impl fmt::Display for NoteSubmitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Invalid(error) => error.fmt(f),
+            Self::Unavailable => f.write_str("Não foi possível adicionar a nota agora."),
+        }
+    }
+}
+
+/// Hands a pasted note to the import queue: it is validated at once and registered, indexed
+/// and reported like any other source. The interface never touches the pipeline itself.
+pub trait NoteSubmitter: Send + Sync {
+    fn submit(&self, text: &str) -> Result<(), NoteSubmitError>;
+}
+
 // ── Ingestion ────────────────────────────────────────────────────────────────
 
 use nlmx_domain::ingestion::{
@@ -198,6 +238,9 @@ pub struct FileDigest {
 
 /// The on-disk document library.
 pub trait FileStore: Send + Sync {
+    /// The digest of a note's text. It never equals the digest of a file with the same bytes,
+    /// because a note and a file are different documents.
+    fn digest_text(&self, text: &str) -> FileDigest;
     fn digest<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, Result<FileDigest, StorageError>>;
     /// Copies `path` into the library under its hash and returns the library path. Idempotent.
     fn store<'a>(
@@ -284,6 +327,8 @@ pub struct NewDocument {
     pub file_size: u64,
     /// The format of the file; its media type is derived from it.
     pub document_type: DocumentType,
+    /// The text of a note (`DocumentType::Note`); `None` for every document that has a file.
+    pub note_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,6 +348,8 @@ pub struct DocumentRecord {
     pub file_size: u64,
     pub document_type: DocumentType,
     pub mime_type: String,
+    /// The text of a note; `None` for a document that has a file.
+    pub note_text: Option<String>,
 }
 
 impl DocumentRecord {

@@ -97,15 +97,17 @@ pub fn run() {
                 });
             }
             // Picking files only queues them: this worker imports them one at a time.
-            app.manage(importer::ImportQueueState(
-                services.ingestion.0.clone().ok().map(|ingestion| {
-                    importer::ImportQueue::start(
-                        ingestion,
-                        services.indexing.activity.clone(),
-                        std::sync::Arc::new(importer::TauriNotifier(app.handle().clone())),
-                    )
-                }),
-            ));
+            let queue = services.ingestion.0.clone().ok().map(|ingestion| {
+                std::sync::Arc::new(importer::ImportQueue::start(
+                    ingestion,
+                    services.indexing.activity.clone(),
+                    std::sync::Arc::new(importer::TauriNotifier(app.handle().clone())),
+                ))
+            });
+            if let Some(queue) = &queue {
+                services.notes.connect(queue.clone());
+            }
+            app.manage(importer::ImportQueueState(queue));
             app.manage(wiring::IngestProgressState(services.progress.clone()));
             app.manage(services.ui);
             app.manage(services.ingestion);

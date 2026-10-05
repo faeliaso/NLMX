@@ -67,7 +67,9 @@ impl ParserRegistry {
             .or_else(|| DocumentType::from_path(&source.path))
             .ok_or(ParseError::Unsupported)?;
         let parser = self.parser_for(kind).ok_or(ParseError::Unsupported)?;
-        Ok((parser, DocumentSource::of_type(source.path.clone(), kind)))
+        let mut resolved = DocumentSource::of_type(source.path.clone(), kind);
+        resolved.text = source.text.clone();
+        Ok((parser, resolved))
     }
 
     /// Parses a file with the parser of its format. `Unsupported` when the format is unknown

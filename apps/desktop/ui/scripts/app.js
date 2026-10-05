@@ -148,6 +148,36 @@
     if (event.target.matches?.("textarea[data-autogrow]")) autogrow(event.target);
   });
 
+  // ── Add note: "Inserir" only with text, one submission, an empty field on each open ──
+  const noteForm = (node) => node.closest?.("[data-note-form]");
+  function syncNote(form) {
+    const submit = form.querySelector("[data-note-submit]");
+    const text = form.querySelector("[data-note-text]");
+    submit.disabled = form.hasAttribute("data-busy") || !text.value.trim();
+  }
+  document.addEventListener("input", (event) => {
+    const form = noteForm(event.target);
+    if (form) syncNote(form);
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.('[data-dialog-open="add-note"]')) return;
+    const form = document.querySelector("[data-note-form]");
+    if (!form) return;
+    form.reset();
+    form.removeAttribute("data-busy");
+    form.querySelector("[data-note-submit]").removeAttribute("aria-busy");
+    syncNote(form);
+  });
+  // htmx reads the field when it handles the submit on the form itself; this runs after it.
+  document.addEventListener("submit", (event) => {
+    const form = noteForm(event.target);
+    if (!form) return;
+    form.setAttribute("data-busy", "");
+    form.querySelector("[data-note-submit]").setAttribute("aria-busy", "true");
+    syncNote(form);
+    form.closest("dialog")?.close();
+  });
+
   // One answer at a time: while one is being generated the composer is locked and its
   // send button becomes a stop button (a `cancel_answer` command, see "Tauri commands").
   function updateComposer() {

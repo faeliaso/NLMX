@@ -68,6 +68,8 @@ pub enum SourceLocation {
     },
     /// The range `[start, end)` in characters (Unicode scalar values) of the decoded text.
     Text { start: u32, end: u32 },
+    /// The range `[start, end)` in characters of a note's text (a note has no file, page or sheet).
+    Note { start: u32, end: u32 },
     /// Data rows, 1-based and both included. The header row is not counted.
     Csv { row_start: u32, row_end: u32 },
     /// `chapter_index` is the 1-based position of the chapter in reading order.
@@ -125,6 +127,10 @@ impl SourceLocation {
 
     pub fn text(start: u32, end: u32) -> Result<Self, LocationError> {
         Self::checked(Self::Text { start, end })
+    }
+
+    pub fn note(start: u32, end: u32) -> Result<Self, LocationError> {
+        Self::checked(Self::Note { start, end })
     }
 
     pub fn csv(row_start: u32, row_end: u32) -> Result<Self, LocationError> {
@@ -201,7 +207,7 @@ impl SourceLocation {
                 (Some(start), Some(end)) => range("linhas", *start, *end),
                 _ => Err(LocationError::Incomplete("linhas")),
             },
-            Self::Text { start, end } => {
+            Self::Text { start, end } | Self::Note { start, end } => {
                 if end < start {
                     Err(LocationError::Reversed("texto"))
                 } else if end == start {
@@ -254,6 +260,7 @@ impl SourceLocation {
             Self::Pdf { .. } => DocumentType::Pdf,
             Self::Markdown { .. } => DocumentType::Markdown,
             Self::Text { .. } => DocumentType::Text,
+            Self::Note { .. } => DocumentType::Note,
             Self::Csv { .. } => DocumentType::Csv,
             Self::Epub { .. } => DocumentType::Epub,
             Self::Docx { .. } => DocumentType::Docx,
@@ -348,6 +355,19 @@ impl SourceLocation {
                     end: b_end,
                 },
             ) => Some(Self::Text {
+                start: *a_start.min(b_start),
+                end: *a_end.max(b_end),
+            }),
+            (
+                Self::Note {
+                    start: a_start,
+                    end: a_end,
+                },
+                Self::Note {
+                    start: b_start,
+                    end: b_end,
+                },
+            ) => Some(Self::Note {
                 start: *a_start.min(b_start),
                 end: *a_end.max(b_end),
             }),
@@ -503,7 +523,9 @@ impl SourceLocation {
                     parts.join(", ")
                 }
             }
-            Self::Text { start, end } => format!("caracteres {start}–{end}"),
+            Self::Text { start, end } | Self::Note { start, end } => {
+                format!("caracteres {start}–{end}")
+            }
             Self::Csv { row_start, row_end } => lines_label(*row_start, *row_end),
             Self::Epub {
                 chapter_index,
@@ -710,6 +732,7 @@ mod tests {
             SourceLocation::docx(vec!["Contrato".into(), "Prazos".into()], Some((4, 9))).unwrap(),
             SourceLocation::docx(vec![], None).unwrap(),
             SourceLocation::xlsx(2, "Vendas".into(), 2, 40).unwrap(),
+            SourceLocation::note(0, 320).unwrap(),
         ]
     }
 
@@ -886,6 +909,7 @@ mod tests {
                 DocumentType::Docx,
                 DocumentType::Docx,
                 DocumentType::Xlsx,
+                DocumentType::Note,
             ]
         );
     }
@@ -935,6 +959,7 @@ mod tests {
                 "Contrato › Prazos",
                 "documento",
                 "Vendas, linhas 2–40",
+                "caracteres 0–320",
             ]
         );
         assert_eq!(SourceLocation::csv(5, 5).unwrap().label(), "linha 5");

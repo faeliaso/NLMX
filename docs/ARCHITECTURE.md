@@ -86,6 +86,18 @@ seletor ─► import_documents (Tauri) ─► DocumentIngestion::import(path)
 - Sem modelo de embeddings ativo, o documento fica em `embedding` (job `waiting_model`) e a busca é só lexical.
 - Mudança na saída do analisador ou do chunker ⇒ incrementar `structure_heuristic::VERSION` / `chunker_structural::VERSION`.
 
+### Notas (ADR 0018)
+
+```
+"Adicionar nota" (dialog) ─► POST /documents/notes ─► NoteSubmitter (NoteInbox) ─► ImportQueue::push_note
+  clean_note_text (vazio/só espaços ⇒ recusa) ─► DocumentIngestion::enqueue_note
+  ─► digest_text (duplicata) ─► documents (format 'note', note_text, sem arquivo) ─► queued
+  ─► ingest(id): NoteDocumentParser(DocumentSource::note(texto)) ─► normalizer ─► MultiFormatChunker
+  ─► save_processed (SourceLocation::Note) ─► EmbedDocuments ─► VectorStore ─► RAG
+```
+
+É o mesmo pipeline e a mesma fila dos arquivos; só a origem do texto muda (banco em vez de `<sha>.<ext>`). Reindexar e retomar leem `note_text`.
+
 ### Indexação (tela)
 
 ```

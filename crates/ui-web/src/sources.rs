@@ -38,6 +38,8 @@ pub struct SourceInfoView {
     /// What the format is called in full ("Planilha do Microsoft Excel").
     pub description: &'static str,
     pub title: String,
+    /// A note has no file name or size.
+    pub is_note: bool,
     pub file_name: String,
     pub status_label: &'static str,
     pub status_kind: &'static str,
@@ -125,7 +127,12 @@ pub async fn render(
         icon: format.icon,
         format: format.label,
         description: format.description,
-        title: details.file_name.clone(),
+        title: if details.document_type.is_note() {
+            details.title.clone()
+        } else {
+            details.file_name.clone()
+        },
+        is_note: details.document_type.is_note(),
         file_name: details.file_name,
         status_label,
         status_kind,

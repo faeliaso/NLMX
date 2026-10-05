@@ -110,6 +110,43 @@ pub async fn remove_document(
     page(&headers, Some(Section::Documents), render(view))
 }
 
+#[derive(serde::Deserialize)]
+pub struct NoteForm {
+    #[serde(default)]
+    text: String,
+}
+
+/// `POST /documents/notes`: the text pasted in the "Adicionar nota" dialog goes to the import
+/// queue like any other source (it shows in the library as `queued` and is indexed in the
+/// background). The outcome of the submission is announced as a toast.
+pub async fn add_note(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Form(form): axum::Form<NoteForm>,
+) -> Response {
+    let notice = match &state.notes {
+        None => Notice {
+            kind: "danger",
+            message: "Não foi possível adicionar a nota: a importação não está disponível.".into(),
+        },
+        Some(notes) => match notes.submit(&form.text) {
+            Ok(()) => Notice {
+                kind: "info",
+                message: "Nota adicionada. Ela é indexada em segundo plano.".into(),
+            },
+            Err(err) => Notice {
+                kind: "danger",
+                message: err.to_string(),
+            },
+        },
+    };
+    let view = DocumentsView {
+        library: library(&state).await,
+        notice: Some(notice),
+    };
+    page(&headers, Some(Section::Documents), render(view))
+}
+
 /// Re-rendered after an import (`documents-changed` event).
 pub async fn documents_fragment(State(state): State<AppState>) -> Response {
     match render(DocumentListFragment {

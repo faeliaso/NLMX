@@ -176,18 +176,20 @@ fn insert(conn: &mut Connection, doc: &NewDocument) -> rusqlite::Result<InsertOu
     let tx = conn.transaction()?;
     let inserted: Option<DocumentId> = tx
         .query_row(
-            "INSERT INTO documents (sha256, original_filename, original_path, library_path, file_size, format, mime_type)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO documents (sha256, original_filename, original_path, library_path, file_size, format, mime_type, note_text)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT (sha256) DO NOTHING
              RETURNING id",
             params![
                 doc.sha256,
                 doc.original_filename,
-                doc.original_path,
+                // A note has no file, so no path either.
+                Some(&doc.original_path).filter(|path| !path.is_empty()),
                 doc.library_path,
                 doc.file_size as i64,
                 doc.document_type.as_str(),
-                doc.document_type.mime_types()[0]
+                doc.document_type.mime_types()[0],
+                doc.note_text
             ],
             |row| row.get(0),
         )
@@ -218,7 +220,7 @@ fn replace_source(
     let tx = conn.transaction()?;
     let changed = tx.execute(
         "UPDATE documents SET sha256 = ?2, original_filename = ?3, original_path = ?4,
-             library_path = ?5, file_size = ?6, format = ?7, mime_type = ?8,
+             library_path = ?5, file_size = ?6, format = ?7, mime_type = ?8, note_text = ?9,
              status = 'queued', error = NULL
          WHERE id = ?1",
         params![
@@ -229,7 +231,8 @@ fn replace_source(
             doc.library_path,
             doc.file_size as i64,
             doc.document_type.as_str(),
-            doc.document_type.mime_types()[0]
+            doc.document_type.mime_types()[0],
+            doc.note_text
         ],
     )?;
     if changed == 0 {
@@ -423,7 +426,7 @@ impl DocumentRepository for Database {
     fn get(&self, id: DocumentId) -> BoxFuture<'_, Result<Option<DocumentRecord>, StorageError>> {
         Box::pin(self.run(move |conn| {
             conn.query_row(
-                "SELECT id, sha256, original_filename, library_path, status, file_size, format, mime_type
+                "SELECT id, sha256, original_filename, library_path, status, file_size, format, mime_type, note_text
                  FROM documents WHERE id = ?1",
                 [id],
                 |row| {
@@ -440,6 +443,7 @@ impl DocumentRepository for Database {
                         // Rows from before multi-format support have no media type stored.
                         mime_type: mime_type
                             .unwrap_or_else(|| document_type.mime_types()[0].to_string()),
+                        note_text: row.get(8)?,
                     })
                 },
             )

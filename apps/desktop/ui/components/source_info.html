@@ -24,11 +24,11 @@
     </div>
     {%- endif %}
     <dl class="source-info-list">
-      <div><dt>Arquivo</dt><dd class="selectable">{{ file_name }}</dd></div>
+      {%- if !is_note %}<div><dt>Arquivo</dt><dd class="selectable">{{ file_name }}</dd></div>{% endif %}
       <div><dt>Trechos</dt><dd class="tabular">{{ chunks }}</dd></div>
       {%- if let Some(p) = pages %}<div><dt>Páginas</dt><dd class="tabular">{{ p }}</dd></div>{% endif %}
       {%- if let Some(n) = sheets %}<div><dt>Planilhas</dt><dd class="tabular">{{ n }}</dd></div>{% endif %}
-      <div><dt>Tamanho</dt><dd class="tabular">{{ size }}</dd></div>
+      {%- if !is_note %}<div><dt>Tamanho</dt><dd class="tabular">{{ size }}</dd></div>{% endif %}
       <div><dt>Importado em</dt><dd class="tabular">{{ imported_on }}</dd></div>
       <div><dt>Indexado em</dt><dd class="tabular">{% if let Some(d) = indexed_on %}{{ d }}{% else %}—{% endif %}</dd></div>
       <div><dt>Usado em</dt><dd>{{ used_in }}</dd></div>

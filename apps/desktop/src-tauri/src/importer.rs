@@ -7,8 +7,11 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use nlmx_application::use_cases::{ActivityGuard, DocumentIngestion, Enqueued, IndexingActivity};
-use nlmx_domain::ingestion::ImportOutcome;
+use nlmx_application::{
+    ports::{NoteSubmitError, NoteSubmitter},
+    use_cases::{ActivityGuard, DocumentIngestion, Enqueued, IndexingActivity},
+};
+use nlmx_domain::{ingestion::ImportOutcome, note::clean_note_text};
 use serde::Serialize;
 use tauri::{Emitter, Manager, Runtime};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -192,8 +195,60 @@ impl ImportQueue {
     }
 }
 
+impl ImportQueue {
+    /// Queues a pasted note like a one-file import: it is validated here (so the user sees the
+    /// reason at once), shows in the library as `queued`, and is processed behind the batches
+    /// already waiting.
+    pub fn push_note(&self, text: &str) -> Result<(), NoteSubmitError> {
+        let text = clean_note_text(text).map_err(NoteSubmitError::Invalid)?;
+        if self.tx.is_closed() {
+            return Err(NoteSubmitError::Unavailable);
+        }
+        let running = self.activity.begin();
+        let (ingestion, notify, tx) =
+            (self.ingestion.clone(), self.notify.clone(), self.tx.clone());
+        tauri::async_runtime::spawn(async move {
+            let task = {
+                let ingestion = ingestion.clone();
+                tauri::async_runtime::spawn(async move { ingestion.enqueue_note(&text).await })
+            };
+            let enqueued = task.await.unwrap_or_else(|_| Enqueued::Failed {
+                id: None,
+                reason: "falha interna ao registrar a nota".to_string(),
+            });
+            notify.documents_changed();
+            let _ = tx.send(Waiting {
+                batch: Batch {
+                    items: vec![("Nota".to_string(), enqueued)],
+                },
+                _running: running,
+            });
+        });
+        Ok(())
+    }
+}
+
+/// Lets the UI, which is built before the queue exists, hand notes to the queue once it runs.
+#[derive(Default)]
+pub struct NoteInbox(std::sync::OnceLock<Arc<ImportQueue>>);
+
+impl NoteInbox {
+    pub fn connect(&self, queue: Arc<ImportQueue>) {
+        let _ = self.0.set(queue);
+    }
+}
+
+impl NoteSubmitter for NoteInbox {
+    fn submit(&self, text: &str) -> Result<(), NoteSubmitError> {
+        self.0
+            .get()
+            .ok_or(NoteSubmitError::Unavailable)?
+            .push_note(text)
+    }
+}
+
 /// The queue in Tauri's managed state (`None`: importing is unavailable).
-pub struct ImportQueueState(pub Option<ImportQueue>);
+pub struct ImportQueueState(pub Option<Arc<ImportQueue>>);
 
 /// Tells the interface through Tauri events.
 pub struct TauriNotifier<R: Runtime>(pub tauri::AppHandle<R>);

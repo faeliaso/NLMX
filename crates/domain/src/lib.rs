@@ -10,6 +10,7 @@ pub mod generation;
 pub mod indexing;
 pub mod ingestion;
 pub mod models;
+pub mod note;
 pub mod parsed;
 pub mod rag_intent;
 pub mod retrieval;
