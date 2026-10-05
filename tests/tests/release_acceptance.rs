@@ -2,7 +2,7 @@
 //! (PDFium, llama-server and its libraries from inside `NLMX.app`) with a fresh data directory:
 //! model download through the Model Manager (confirmed, checksum), then — offline, verified with
 //! `lsof` — ingestion, RAG with Apple Foundation Models, chat, citations and the PDF viewer.
-//! Writes `target/acceptance/report.json` for docs/releases/<version>.md.
+//! Writes `target/acceptance/report.json`.
 
 mod support;
 

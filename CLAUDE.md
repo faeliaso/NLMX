@@ -8,7 +8,6 @@ Implemented: app shell, design system, Apple FM status, SQLite persistence, PDFi
 - `docs/README.md` — index of the docs below.
 - `docs/PRODUCT.md` — product vision, requirements (RF01–RF29) with implementation status, measured targets, open risks, next steps.
 - `docs/ARCHITECTURE.md` — current modules, ports, flows, process/model management, SQLite schema, packaging.
-- `docs/releases/` — verification report per release.
 - `docs/adr/` — accepted decisions. Write a new ADR when changing any of them.
 - `docs/DESIGN_SYSTEM.md` — tokens, components, states, accessibility rules.
 

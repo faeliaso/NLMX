@@ -1,6 +1,6 @@
 # NLMX — Produto
 
-Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITECTURE.md`](ARCHITECTURE.md). Estado da última release: [`releases/0.1.0.md`](releases/0.1.0.md).
+Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Visão
 
