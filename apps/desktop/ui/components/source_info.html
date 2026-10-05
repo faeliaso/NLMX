@@ -7,6 +7,7 @@
     <div class="viewer-heading">
       <h2 class="viewer-title" tabindex="-1" data-panel-title title="{{ title }}">{{ title }}</h2>
       <p class="viewer-origin">Informações da fonte{% if !origin.is_empty() %} · {{ origin }}{% endif %}</p>
+      <p class="source-info-kind">{{ description }}</p>
     </div>
     <button type="button" class="btn btn-ghost btn-icon btn-sm" data-close-panel aria-label="Fechar informações da fonte" title="Fechar">{% call ds::icon("x") %}{% endcall %}</button>
   </header>
@@ -26,6 +27,7 @@
       <div><dt>Arquivo</dt><dd class="selectable">{{ file_name }}</dd></div>
       <div><dt>Trechos</dt><dd class="tabular">{{ chunks }}</dd></div>
       {%- if let Some(p) = pages %}<div><dt>Páginas</dt><dd class="tabular">{{ p }}</dd></div>{% endif %}
+      {%- if let Some(n) = sheets %}<div><dt>Planilhas</dt><dd class="tabular">{{ n }}</dd></div>{% endif %}
       <div><dt>Tamanho</dt><dd class="tabular">{{ size }}</dd></div>
       <div><dt>Importado em</dt><dd class="tabular">{{ imported_on }}</dd></div>
       <div><dt>Indexado em</dt><dd class="tabular">{% if let Some(d) = indexed_on %}{{ d }}{% else %}—{% endif %}</dd></div>

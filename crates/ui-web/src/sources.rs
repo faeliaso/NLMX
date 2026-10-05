@@ -35,6 +35,8 @@ pub struct SourceInfoView {
     pub id: DocumentId,
     pub icon: &'static str,
     pub format: &'static str,
+    /// What the format is called in full ("Planilha do Microsoft Excel").
+    pub description: &'static str,
     pub title: String,
     pub file_name: String,
     pub status_label: &'static str,
@@ -43,6 +45,8 @@ pub struct SourceInfoView {
     pub chunks: String,
     pub size: String,
     pub pages: Option<String>,
+    /// Worksheets of a workbook.
+    pub sheets: Option<String>,
     pub imported_on: String,
     pub indexed_on: Option<String>,
     pub used_in: String,
@@ -120,6 +124,7 @@ pub async fn render(
         id,
         icon: format.icon,
         format: format.label,
+        description: format.description,
         title: details.file_name.clone(),
         file_name: details.file_name,
         status_label,
@@ -128,6 +133,7 @@ pub async fn render(
         chunks: plural(details.chunks, "trecho", "trechos"),
         size: size_label(details.file_size),
         pages: details.page_count.map(|n| plural(n, "página", "páginas")),
+        sheets: details.sheets.map(|n| plural(n, "planilha", "planilhas")),
         imported_on: date_label(&details.imported_at),
         indexed_on: details.indexed_at.as_deref().map(date_label),
         used_in: match details.conversations {

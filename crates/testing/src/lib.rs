@@ -803,6 +803,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 chunks: d.chunk_count,
                 file_size: size,
                 page_count: d.page_count,
+                sheets: None,
                 imported_at: d.imported_at,
                 indexed_at: None,
                 conversations: 0,

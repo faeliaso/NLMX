@@ -33,7 +33,7 @@ pub use xlsx::{MAX_ROWS, parse_xlsx, parse_xlsx_with_limits};
 /// Version of the DOCX parser's output; bump it when the same file would parse differently.
 pub const DOCX_VERSION: u32 = 3;
 /// Version of the XLSX parser's output.
-pub const XLSX_VERSION: u32 = 1;
+pub const XLSX_VERSION: u32 = 2;
 
 fn read_file(path: &Path, limits: Limits) -> Result<Vec<u8>, ParseError> {
     let size = std::fs::metadata(path).map_err(io_error)?.len();

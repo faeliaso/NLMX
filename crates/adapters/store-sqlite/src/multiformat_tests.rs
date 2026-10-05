@@ -993,3 +993,27 @@ fn migration_0013_accepts_docx_and_xlsx_and_leaves_existing_rows_alone() {
         .is_err()
     );
 }
+
+#[tokio::test]
+async fn source_details_count_the_sheets_of_a_workbook_and_nothing_for_other_formats() {
+    let (db, _path) = open().await;
+    for (kind, sha) in [
+        (DocumentType::Xlsx, 'a'),
+        (DocumentType::Docx, 'b'),
+        (DocumentType::Pdf, 'c'),
+    ] {
+        let id = insert(&db, kind, sha).await;
+        let stored = sample_stored_extraction(&sample_nested_document(kind), id);
+        db.save_processed(id, stored).await.unwrap();
+        let sections = db.sections_of(id).await.unwrap().len() as u32;
+        let details = db.source_details(id).await.unwrap().unwrap();
+        assert_eq!(details.document_type, kind);
+        assert!(details.chunks > 0, "{kind}");
+        if kind == DocumentType::Xlsx {
+            assert!(sections > 0);
+            assert_eq!(details.sheets, Some(sections), "one section per sheet");
+        } else {
+            assert_eq!(details.sheets, None, "{kind}");
+        }
+    }
+}

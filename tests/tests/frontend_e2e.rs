@@ -37,8 +37,8 @@ const ICONS: [(&str, &str); 7] = [
     ("reuniao.txt", "M9 13h6M9 16h6M9 19h3"),
     ("vendas.csv", "M8 12.5h8v6H8z"),
     ("livro.epub", "M4 19.5V5a2 2 0 0 1 2-2h13v15H6"),
-    ("contrato.docx", "M14 3H7a2 2 0 0 0-2 2v14"),
-    ("vendas.xlsx", "M4 10h16"),
+    ("contrato.docx", "M9 12.5h6M9 15.5h6M9 18.5h3"),
+    ("vendas.xlsx", "M8.5 12h7v7h-7z"),
 ];
 const FORMATS: [(&str, &str); 7] = [
     ("report.pdf", "PDF"),
@@ -101,6 +101,8 @@ fn item<'a>(html: &'a str, marker: &str, name: &str) -> &'a str {
 }
 
 struct Setup {
+    /// The database file the app uses, to compare what the panels say with what is stored.
+    db_path: std::path::PathBuf,
     app: axum::Router,
     ids: Vec<(&'static str, i64)>,
     chat: Arc<ChatService>,
@@ -108,6 +110,7 @@ struct Setup {
 
 async fn setup(name: &str) -> Setup {
     let app = App::new(name, true);
+    let db_path = app.dir.join("nlmx.sqlite3");
     let inbox = app.dir.join("inbox");
     std::fs::create_dir_all(&inbox).unwrap();
     let sources = [
@@ -185,6 +188,7 @@ async fn setup(name: &str) -> Setup {
         indexing: Ok(indexing),
     });
     Setup {
+        db_path,
         app: router,
         ids,
         chat,
@@ -285,6 +289,19 @@ async fn citations_and_sources_open_the_right_panel_and_never_a_viewer_for_non_p
         }
         urls.push((*file, url));
     }
+    // A spreadsheet source names its sheet and rows, a DOCX its section; neither mentions a page.
+    let sheet = item(&answer, r#"class="source-item""#, "vendas.xlsx");
+    assert!(sheet.contains("Resumo, linhas"), "{sheet}");
+    assert!(
+        !sheet.contains("página") && !sheet.contains("p. "),
+        "{sheet}"
+    );
+    let word = item(&answer, r#"class="source-item""#, "contrato.docx");
+    assert!(
+        !word.contains("página") && !word.contains("parágrafo"),
+        "{word}"
+    );
+
     // The [n] markers in the text are buttons into the same panels.
     assert!(
         answer
@@ -399,4 +416,120 @@ async fn the_pdf_viewer_still_works_on_a_pdf_indexed_by_the_app_pipeline() {
     let csv = id_of(&s, "vendas.csv");
     let (_, page) = get(&s.app, &format!("/chat?source={csv}")).await;
     assert!(page.contains("data-source-info") && !page.contains("data-viewer "));
+}
+
+/// The text of an HTML fragment without its tags, with entities of the few characters askama escapes.
+fn text_of(html: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                out.push(' ');
+            }
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_source_panel_of_a_docx_and_an_xlsx_shows_real_numbers_and_never_a_viewer() {
+    let s = setup("fe-panels").await;
+    let sql = rusqlite::Connection::open(&s.db_path).unwrap();
+    let count = |query: &str, id: i64| -> i64 { sql.query_row(query, [id], |r| r.get(0)).unwrap() };
+
+    // Before any answer: indexed, never used.
+    for (file, kind, sheets) in [
+        ("contrato.docx", "Documento do Microsoft Word", None),
+        ("vendas.xlsx", "Planilha do Microsoft Excel", Some(2)),
+    ] {
+        let id = id_of(&s, file);
+        let (status, panel) = get(&s.app, &format!("/sources/{id}")).await;
+        assert_eq!(status, StatusCode::OK, "{file}");
+        let text = text_of(&panel);
+        assert!(text.contains(file), "{file}: name");
+        assert!(text.contains(kind), "{file}: type description in {text}");
+        assert!(
+            text.contains("Indexado") || text.contains("Aguardando embeddings"),
+            "{file}: status"
+        );
+        let chunks = count(
+            "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?1",
+            id,
+        );
+        assert!(chunks > 0);
+        assert!(
+            text.contains(&format!("{chunks} trecho")),
+            "{file}: chunks {chunks} in {text}"
+        );
+        assert!(
+            text.contains("Ainda não usado em conversas"),
+            "{file}: {text}"
+        );
+        match sheets {
+            Some(n) => {
+                // The workbook has three sheets, one of them hidden: the panel counts the two indexed.
+                let stored = count(
+                    "SELECT COUNT(*) FROM document_sections WHERE document_id = ?1",
+                    id,
+                );
+                assert_eq!(stored, n);
+                assert!(
+                    text.contains(&format!("Planilhas {n} planilhas")),
+                    "{file}: {text}"
+                );
+            }
+            None => assert!(!text.contains("Planilhas"), "{file}: {text}"),
+        }
+        // No viewer, no preview, no way to open the file.
+        assert!(!panel.contains("/viewer/"), "{file}");
+        assert!(
+            !panel.contains("Abrir no PDF") && !panel.contains("data-viewer"),
+            "{file}"
+        );
+        assert!(!panel.contains("viewer-pages"), "{file}");
+    }
+
+    // After an answer that cites every source, "Usado em" counts the real conversations.
+    let c = s.chat.start(ConversationScope::Library).await.unwrap();
+    let (_, form) = (0, "q=Onde+se+fala+de+car%C3%AAncia%3F");
+    let (_, turn) = post(&s.app, &format!("/chat/{}/messages", c.id), form).await;
+    let answer_id: i64 = attr(&turn, "data-chat-turn", "data-answer")
+        .parse()
+        .unwrap();
+    s.chat
+        .answer(answer_id, &|_| {}, CancelFlag::default())
+        .await
+        .unwrap();
+    for file in ["contrato.docx", "vendas.xlsx", "report.pdf"] {
+        let id = id_of(&s, file);
+        let conversations = count(
+            "SELECT COUNT(DISTINCT m.conversation_id) FROM citations ct JOIN messages m ON m.id = ct.message_id WHERE ct.document_id = ?1 AND ct.cited = 1",
+            id,
+        );
+        let (_, panel) = get(&s.app, &format!("/sources/{id}")).await;
+        let text = text_of(&panel);
+        let expected = match conversations {
+            0 => "Ainda não usado em conversas".to_string(),
+            1 => "1 conversa".to_string(),
+            n => format!("{n} conversas"),
+        };
+        assert!(
+            text.contains(&format!("Usado em {expected}")),
+            "{file}: {expected} in {text}"
+        );
+    }
+
+    // The PDF panel keeps what it had: pages and the way into the viewer.
+    let (_, pdf) = get(&s.app, &format!("/sources/{}", id_of(&s, "report.pdf"))).await;
+    let text = text_of(&pdf);
+    assert!(
+        text.contains("Documento PDF") && text.contains("Páginas") && text.contains("Abrir no PDF"),
+        "{text}"
+    );
+    assert!(!text.contains("Planilhas"));
 }

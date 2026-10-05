@@ -83,7 +83,8 @@ pub fn parse_xlsx_with_limits(bytes: &[u8], limits: Limits) -> Result<ParsedDocu
         };
         let rows = read_rows(&bytes, &shared, &styles, MAX_ROWS - rows_total)?;
         rows_total += u32::try_from(rows.len()).unwrap_or(u32::MAX);
-        if let Some(section) = sheet_section(index, &sheet.name, rows, &mut warnings)? {
+        let table = sheet_table(&mut package, &target)?;
+        if let Some(section) = sheet_section(index, &sheet.name, rows, table, &mut warnings)? {
             sections.push(section);
         }
     }
@@ -338,57 +339,195 @@ fn column_of(reference: &str) -> Option<usize> {
     (seen && column > 0).then(|| column - 1)
 }
 
-/// One sheet as a section of records; `None` when it has no content.
+/// An Excel table (`xl/tables/tableN.xml`) on a sheet: where it is, in Excel's own numbers
+/// (rows 1-based, columns 0-based, both ends included). Its first row is the header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TableRange {
+    first_row: u32,
+    last_row: u32,
+    first_col: usize,
+    last_col: usize,
+}
+
+/// `A3:D10` → the range; `None` for a single cell or anything else.
+fn parse_range(reference: &str) -> Option<TableRange> {
+    let (from, to) = reference.split_once(':')?;
+    let row = |cell: &str| {
+        cell.trim_start_matches(|c: char| c.is_ascii_alphabetic() || c == '$')
+            .trim_start_matches('$')
+            .parse::<u32>()
+            .ok()
+    };
+    let (first_col, last_col) = (
+        column_of(&from.replace('$', ""))?,
+        column_of(&to.replace('$', ""))?,
+    );
+    let (first_row, last_row) = (row(from)?, row(to)?);
+    (first_row >= 1 && last_row >= first_row && last_col >= first_col).then_some(TableRange {
+        first_row,
+        last_row,
+        first_col,
+        last_col,
+    })
+}
+
+/// The first Excel table of the sheet that has a header row, if any. A missing or unreadable
+/// part just means the sheet is read without a hint.
+fn sheet_table(
+    package: &mut Package<'_>,
+    sheet_path: &str,
+) -> Result<Option<TableRange>, ParseError> {
+    let Some(rels) = package.optional(&rels_of(sheet_path))? else {
+        return Ok(None);
+    };
+    let base = dir_of(sheet_path).to_string();
+    for rel in relationships(&rels)
+        .into_iter()
+        .filter(|r| r.kind.ends_with("/table"))
+    {
+        let Some(bytes) = package.optional(&resolve(&base, &rel.target))? else {
+            continue;
+        };
+        let mut reader = reader(&bytes);
+        while let Ok(event) = reader.read_event() {
+            match event {
+                Event::Start(e) if lower(e.local_name().as_ref()) == "table" => {
+                    let has_header = attr(&e, "headerrowcount").is_none_or(|v| v != "0");
+                    if let Some(range) = attr(&e, "ref").as_deref().and_then(parse_range)
+                        && has_header
+                    {
+                        return Ok(Some(range));
+                    }
+                    break;
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Column names that differ from each other: a repeated name gets " (2)", " (3)", ...
+fn unique_names(names: Vec<String>) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::with_capacity(names.len());
+    for name in names {
+        let mut candidate = name.clone();
+        let mut n = 2;
+        while seen.contains(&candidate) {
+            candidate = format!("{name} ({n})");
+            n += 1;
+        }
+        seen.push(candidate);
+    }
+    seen
+}
+
+/// One sheet as a section of records; `None` when it has no content. With an Excel table the
+/// header and the records are those of the table, and the rows around it (a title, notes) are
+/// kept as plain text lines; without one, the first row is the header when the data confirms it.
 fn sheet_section(
     index: u32,
     name: &str,
     mut rows: Vec<Row>,
+    table: Option<TableRange>,
     warnings: &mut Vec<ParseWarning>,
 ) -> Result<Option<DocumentSection>, ParseError> {
     if rows.is_empty() {
         return Ok(None);
     }
-    let width = rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
-    // The first row is the header when it is all text and something follows it.
-    let header_is_text = rows[0].cells.iter().all(|c| c.text.is_empty() || c.textual);
-    let has_header = header_is_text && rows.len() > 1;
-    let columns: Vec<String> = if has_header {
-        let header = rows.remove(0);
-        (0..width)
-            .map(|i| match header.cells.get(i) {
-                Some(c) if !c.text.is_empty() => c.text.clone(),
-                _ => format!("Coluna {}", i + 1),
-            })
-            .collect()
-    } else {
-        warnings.push(ParseWarning::NoHeaderRow);
-        (0..width).map(|i| format!("Coluna {}", i + 1)).collect()
+    let table = table.filter(|t| rows.iter().any(|r| r.number == t.first_row));
+    let location_of = |row: u32| {
+        SourceLocation::xlsx(index, name.to_string(), row, row)
+            .map_err(|error| ParseError::Engine(error.to_string()))
     };
-    if has_header && rows.iter().all(|r| r.cells.iter().all(|c| c.textual)) {
-        warnings.push(ParseWarning::UncertainHeader);
-    }
-    let mut blocks = Vec::with_capacity(rows.len());
+    let (first_col, width) = match table {
+        Some(t) => (t.first_col, t.last_col - t.first_col + 1),
+        None => (0, rows.iter().map(|r| r.cells.len()).max().unwrap_or(0)),
+    };
+    let named = |header: Option<&Row>| -> Vec<String> {
+        unique_names(
+            (0..width)
+                .map(|i| match header.and_then(|h| h.cells.get(first_col + i)) {
+                    Some(c) if !c.text.is_empty() => c.text.clone(),
+                    _ => format!("Coluna {}", i + 1),
+                })
+                .collect(),
+        )
+    };
+    let mut entries: Vec<(u32, ContentBlock)> = Vec::with_capacity(rows.len());
+    let columns: Vec<String> = if let Some(t) = table {
+        let header = rows
+            .iter()
+            .position(|r| r.number == t.first_row)
+            .map(|i| rows.remove(i));
+        // Rows that are not in the table keep their place, as lines of text.
+        let (inside, outside): (Vec<Row>, Vec<Row>) = rows
+            .into_iter()
+            .partition(|r| r.number > t.first_row && r.number <= t.last_row);
+        for row in &outside {
+            let line: Vec<&str> = row
+                .cells
+                .iter()
+                .map(|c| c.text.as_str())
+                .filter(|t| !t.is_empty())
+                .collect();
+            entries.push((
+                row.number,
+                ContentBlock {
+                    kind: ContentKind::Paragraph,
+                    text: format!("Linha {}: {}", row.number, line.join(" | ")),
+                    location: location_of(row.number)?,
+                },
+            ));
+        }
+        rows = inside;
+        named(header.as_ref())
+    } else {
+        // The first row is the header when it is all text and something follows it.
+        let header_is_text = rows[0].cells.iter().all(|c| c.text.is_empty() || c.textual);
+        if header_is_text && rows.len() > 1 {
+            let header = rows.remove(0);
+            if rows.iter().all(|r| r.cells.iter().all(|c| c.textual)) {
+                warnings.push(ParseWarning::UncertainHeader);
+            }
+            named(Some(&header))
+        } else {
+            warnings.push(ParseWarning::NoHeaderRow);
+            named(None)
+        }
+    };
     for row in rows {
         let fields: Vec<RecordField> = columns
             .iter()
             .enumerate()
             .map(|(i, column)| RecordField {
                 name: column.clone(),
-                value: row.cells.get(i).map(|c| c.text.clone()).unwrap_or_default(),
+                value: row
+                    .cells
+                    .get(first_col + i)
+                    .map(|c| c.text.clone())
+                    .unwrap_or_default(),
             })
             .collect();
+        if fields.iter().all(|f| f.value.is_empty()) {
+            continue;
+        }
         let mut text = format!("Registro {}:", row.number);
         for field in fields.iter().filter(|f| !f.value.is_empty()) {
             text.push_str(&format!("\n{}: {}", field.name, field.value));
         }
-        let location = SourceLocation::xlsx(index, name.to_string(), row.number, row.number)
-            .map_err(|error| ParseError::Engine(error.to_string()))?;
-        blocks.push(ContentBlock {
-            kind: ContentKind::Record { fields },
-            text,
-            location,
-        });
+        entries.push((
+            row.number,
+            ContentBlock {
+                kind: ContentKind::Record { fields },
+                text,
+                location: location_of(row.number)?,
+            },
+        ));
     }
+    entries.sort_by_key(|(number, _)| *number);
+    let blocks: Vec<ContentBlock> = entries.into_iter().map(|(_, block)| block).collect();
     Ok(DocumentSection::new(
         Some(name.to_string()),
         1,
@@ -400,6 +539,33 @@ fn sheet_section(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn table_ranges_are_read_from_references() {
+        assert_eq!(
+            parse_range("A3:D10"),
+            Some(TableRange {
+                first_row: 3,
+                last_row: 10,
+                first_col: 0,
+                last_col: 3
+            })
+        );
+        assert_eq!(parse_range("$B$2:$C$2").map(|r| r.first_col), Some(1));
+        assert_eq!(parse_range("A1"), None);
+        assert_eq!(parse_range("D5:A1"), None);
+    }
+
+    #[test]
+    fn repeated_column_names_are_told_apart() {
+        let names = ["Valor", "Valor", "Nome", "Valor"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            unique_names(names),
+            ["Valor", "Valor (2)", "Nome", "Valor (3)"]
+        );
+    }
 
     #[test]
     fn columns_are_read_from_references() {

@@ -284,13 +284,13 @@ fn rows_are_records_with_the_header_as_column_names() {
     assert_eq!(blocks.len(), 2, "the header is not a record");
     assert_eq!(
         blocks[0].text,
-        "Registro 2:\nRegião: Nordeste\nProduto: Cadeira\nVendas: 1250.5\nRegião: 2024-03-01"
+        "Registro 2:\nRegião: Nordeste\nProduto: Cadeira\nVendas: 1250.5\nRegião (2): 2024-03-01"
     );
     let ContentKind::Record { fields } = &blocks[1].kind else {
         panic!("a record");
     };
     let names: Vec<_> = fields.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(names, ["Região", "Produto", "Vendas", "Região"]);
+    assert_eq!(names, ["Região", "Produto", "Vendas", "Região (2)"]);
     assert_eq!(
         fields[3].value, "2024-03-02",
         "custom date formats are dates"
@@ -495,4 +495,21 @@ async fn a_declared_type_that_differs_is_unsupported() {
         DocxDocumentParser::new().parse(&source).await,
         Err(ParseError::Unsupported)
     );
+}
+
+#[test]
+fn the_golden_corpus_files_are_the_ones_the_generator_builds() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/corpus");
+    for (name, bytes) in common::golden_corpus() {
+        assert_eq!(
+            std::fs::read(dir.join(name)).unwrap(),
+            bytes,
+            "{name}: run the generate_fixtures example"
+        );
+        // And they parse.
+        match name.rsplit('.').next() {
+            Some("docx") => assert!(parse_docx(&bytes).unwrap().has_text()),
+            _ => assert!(parse_xlsx(&bytes).unwrap().has_text()),
+        }
+    }
 }

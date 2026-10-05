@@ -959,3 +959,268 @@ fn docx_lists_and_sections_never_mix_in_a_chunk() {
         "items of one list stay together"
     );
 }
+
+#[test]
+fn an_xlsx_sheet_with_a_title_row_takes_its_columns_from_the_records() {
+    let loc = |row: u32| SourceLocation::xlsx(1, "Relatório".into(), row, row).unwrap();
+    let record = |row: u32, who: &str| {
+        block(
+            ContentKind::Record {
+                fields: vec![
+                    RecordField {
+                        name: "Produto".into(),
+                        value: who.into(),
+                    },
+                    RecordField {
+                        name: "Produto (2)".into(),
+                        value: "x".into(),
+                    },
+                ],
+            },
+            format!("Registro {row}:\nProduto: {who}\nProduto (2): x"),
+            loc(row),
+        )
+    };
+    let doc = document(
+        DocumentType::Xlsx,
+        vec![section(
+            &["Relatório"],
+            vec![
+                block(
+                    ContentKind::Paragraph,
+                    "Linha 1: Relatório de vendas",
+                    loc(1),
+                ),
+                record(4, "Notebook"),
+                record(5, "Monitor"),
+                block(ContentKind::Paragraph, "Linha 8: Valores em reais", loc(8)),
+            ],
+        )],
+    );
+    let chunks = MultiFormatChunker.chunk(&doc, &context(), &ChunkPolicy::default(), &WordCounter);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].metadata.columns, ["Produto", "Produto (2)"]);
+    assert_eq!(
+        chunks[0].location,
+        SourceLocation::xlsx(1, "Relatório".into(), 1, 8).unwrap()
+    );
+    assert_eq!(chunks[0].location.label(), "Relatório, linhas 1–8");
+    for part in [
+        "Planilha: Relatório",
+        "Linha 1: Relatório de vendas",
+        "Registro 4:",
+        "Linha 8: Valores em reais",
+    ] {
+        assert!(chunks[0].text.contains(part), "{part}");
+    }
+}
+
+fn sheet_record(sheet: u32, name: &str, row: u32, fields: &[(&str, &str)]) -> ContentBlock {
+    let mut text = format!("Registro {row}:");
+    for (column, value) in fields.iter().filter(|(_, v)| !v.is_empty()) {
+        text.push_str(&format!("\n{column}: {value}"));
+    }
+    block(
+        ContentKind::Record {
+            fields: fields
+                .iter()
+                .map(|(name, value)| RecordField {
+                    name: name.to_string(),
+                    value: value.to_string(),
+                })
+                .collect(),
+        },
+        text,
+        SourceLocation::xlsx(sheet, name.into(), row, row).unwrap(),
+    )
+}
+
+fn rows_of(chunk: &DocumentChunk) -> (u32, u32) {
+    match &chunk.location {
+        SourceLocation::Xlsx {
+            row_start, row_end, ..
+        } => (*row_start, *row_end),
+        other => panic!("not an XLSX location: {other:?}"),
+    }
+}
+
+#[test]
+fn a_large_sheet_is_split_into_contiguous_chunks_that_each_carry_the_columns() {
+    let records: Vec<_> = (2..=121u32)
+        .map(|r| {
+            sheet_record(
+                1,
+                "Clientes",
+                r,
+                &[
+                    ("Cliente", &format!("Cliente{r}")),
+                    ("Cidade", "Fortaleza"),
+                    ("Status", if r % 2 == 0 { "Ativo" } else { "Inativo" }),
+                ],
+            )
+        })
+        .collect();
+    let doc = document(DocumentType::Xlsx, vec![section(&["Clientes"], records)]);
+    let chunks = run(&doc);
+    assert!(chunks.len() > 3, "{} chunks", chunks.len());
+    let mut next_row = 2;
+    for (i, chunk) in chunks.iter().enumerate() {
+        assert_eq!(chunk.index, i as u32);
+        // Header context on every chunk, never bare values.
+        assert!(
+            chunk
+                .text
+                .contains("Planilha: Clientes\nColunas: Cliente, Cidade, Status\n"),
+            "{}",
+            chunk.text
+        );
+        assert_eq!(chunk.metadata.columns, ["Cliente", "Cidade", "Status"]);
+        assert_eq!(chunk.section_path, ["Clientes"]);
+        assert!(
+            chunk.token_count.unwrap() <= policy().max_tokens,
+            "{}",
+            chunk.text
+        );
+        // Rows are contiguous, never repeated and never skipped.
+        let (start, end) = rows_of(chunk);
+        assert_eq!(start, next_row, "chunk {i} starts where the last ended");
+        assert!(end >= start);
+        next_row = end + 1;
+        // The preamble's range is the location's range.
+        let range = if start == end {
+            format!("Linha {start}\n")
+        } else {
+            format!("Linhas {start}–{end}\n")
+        };
+        assert!(chunk.text.contains(&range), "{range} in {}", chunk.text);
+        // Every record in the chunk reads "Coluna: valor".
+        assert!(chunk.text.contains("Cliente: Cliente"));
+        assert!(!chunk.text.lines().any(|l| l.trim() == "Fortaleza"));
+    }
+    assert_eq!(next_row, 122, "all 120 rows are covered");
+}
+
+#[test]
+fn worksheets_never_share_a_chunk_and_number_their_chunks_in_one_sequence() {
+    let one: Vec<_> = (2..=3)
+        .map(|r| {
+            sheet_record(
+                1,
+                "Clientes",
+                r,
+                &[("Cliente", "Ana"), ("Cidade", "Recife")],
+            )
+        })
+        .collect();
+    let two: Vec<_> = (2..=3)
+        .map(|r| sheet_record(2, "Pedidos", r, &[("Pedido", "P-1"), ("Valor", "10")]))
+        .collect();
+    let doc = document(
+        DocumentType::Xlsx,
+        vec![section(&["Clientes"], one), section(&["Pedidos"], two)],
+    );
+    let chunks = MultiFormatChunker.chunk(&doc, &context(), &ChunkPolicy::default(), &WordCounter);
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks[0].location.label(), "Clientes, linhas 2–3");
+    assert_eq!(chunks[1].location.label(), "Pedidos, linhas 2–3");
+    assert_eq!(chunks[0].metadata.columns, ["Cliente", "Cidade"]);
+    assert_eq!(chunks[1].metadata.columns, ["Pedido", "Valor"]);
+    assert!(!chunks[0].text.contains("Pedido"));
+    assert!(!chunks[1].text.contains("Cliente"));
+    assert_eq!(chunks.iter().map(|c| c.index).collect::<Vec<_>>(), [0, 1]);
+}
+
+#[test]
+fn mixed_data_keeps_every_value_with_its_column_and_leaves_empty_cells_out() {
+    let doc = document(
+        DocumentType::Xlsx,
+        vec![section(
+            &["Mix"],
+            vec![
+                sheet_record(
+                    1,
+                    "Mix",
+                    2,
+                    &[
+                        ("Nome", "João"),
+                        ("Idade", "30"),
+                        ("Início", "2024-03-01"),
+                        ("Nota", ""),
+                    ],
+                ),
+                sheet_record(
+                    1,
+                    "Mix",
+                    3,
+                    &[
+                        ("Nome", "Maria"),
+                        ("Idade", ""),
+                        ("Início", ""),
+                        ("Nota", "Ativa em 2024-05-02, 1250.5 pontos"),
+                    ],
+                ),
+            ],
+        )],
+    );
+    let chunks = MultiFormatChunker.chunk(&doc, &context(), &ChunkPolicy::default(), &WordCounter);
+    assert_eq!(chunks.len(), 1);
+    let text = &chunks[0].text;
+    assert!(text.contains("Nome: João\nIdade: 30\nInício: 2024-03-01"));
+    assert!(text.contains("Nome: Maria\nNota: Ativa em 2024-05-02, 1250.5 pontos"));
+    assert!(
+        !text.contains("Nota: \n") && !text.contains("Idade: \n"),
+        "no empty cells: {text}"
+    );
+    assert_eq!(rows_of(&chunks[0]), (2, 3));
+}
+
+#[test]
+fn a_record_larger_than_a_chunk_is_split_by_fields_and_every_part_keeps_the_context() {
+    let long = "palavra ".repeat(60);
+    let doc = document(
+        DocumentType::Xlsx,
+        vec![section(
+            &["Notas"],
+            vec![sheet_record(
+                1,
+                "Notas",
+                7,
+                &[("Título", "Reunião"), ("Texto", &long), ("Autor", "Ana")],
+            )],
+        )],
+    );
+    let chunks = run(&doc);
+    assert!(chunks.len() > 1);
+    for chunk in &chunks {
+        assert!(chunk.text.contains("Planilha: Notas\n"));
+        assert!(chunk.text.contains("Linha 7\n"));
+        assert_eq!(rows_of(chunk), (7, 7));
+        assert!(chunk.text.contains("(parte "), "{}", chunk.text);
+        assert!(chunk.token_count.unwrap() <= policy().max_tokens);
+    }
+}
+
+#[test]
+fn a_sheet_without_records_invents_no_columns() {
+    let loc = |row: u32| SourceLocation::xlsx(1, "Notas".into(), row, row).unwrap();
+    let doc = document(
+        DocumentType::Xlsx,
+        vec![section(
+            &["Notas"],
+            vec![
+                block(
+                    ContentKind::Paragraph,
+                    "Linha 1: Relatório de vendas",
+                    loc(1),
+                ),
+                block(ContentKind::Paragraph, "Linha 2: Valores em reais", loc(2)),
+            ],
+        )],
+    );
+    let chunks = MultiFormatChunker.chunk(&doc, &context(), &ChunkPolicy::default(), &WordCounter);
+    assert_eq!(chunks.len(), 1);
+    assert!(!chunks[0].text.contains("Colunas:"));
+    assert!(chunks[0].metadata.columns.is_empty());
+    assert!(chunks[0].text.contains("Planilha: Notas"));
+    assert_eq!(chunks[0].location.label(), "Notas, linhas 1–2");
+}

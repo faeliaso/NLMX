@@ -68,7 +68,8 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
   - `rag_multiformat_e2e`: recuperação, ranking, prompt, citações e mensagens salvas dos 5 formatos com proveniência preservada (e canário de privacidade).
   - `pdf_regression_e2e`: o PDF pelo pipeline do app × caminho legado (mesmos chunks, páginas, caixas, seções, texto).
   - `multiformat_stages_e2e`: cada etapa (detecção → provenance) nos 5 formatos e entradas difíceis.
-  - `rag_multiformat_quality`: 7 tipos de pergunta com proveniência exata (determinístico; real com `--ignored`).
+  - `rag_multiformat_quality`: tipos de pergunta com proveniência exata em 7 formatos, incluindo `only-docx`, `only-xlsx`, `pdf+docx`, `pdf+xlsx`, `markdown+docx`, `csv+xlsx` e `many-formats` (determinístico; real com `--ignored`, ou seja, os mesmos casos rodam com Qwen3 + Apple FM em `make test-real`). Uma pergunta pode ter `"scope"` (arquivos) para manter a biblioteca original de um caso antigo.
+  - `rag_office_cases_e2e`: os 7 casos de DOCX/XLSX com a biblioteca de todos os formatos: o prompt do modelo contém o conteúdo que responde, a proveniência e o rótulo de cada fonte ficam intactos (`Manual.docx · Arquitetura › Backend`, `Indicadores.xlsx · Metas, linhas 2–4`, `Arquitetura.pdf · p. 1`), só o PDF tem `viewer_target`, e a conversa salva e relê as mesmas fontes.
   - `frontend_e2e`: interface sobre a pilha real, sem viewer para não‑PDF.
   - os demais `*_e2e` cobrem ingestão, retriever, RAG e chat.
 - **Privacidade** (`privacy_canary`): um marcador no texto, no título e no nome do arquivo de um PDF, e também na pergunta e na resposta, nunca aparece:

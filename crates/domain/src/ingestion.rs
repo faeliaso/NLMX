@@ -282,6 +282,8 @@ pub struct SourceDetails {
     pub file_size: u64,
     /// Pages of a paged format (PDF).
     pub page_count: Option<u32>,
+    /// Worksheets that were indexed, for a workbook (hidden and empty sheets are not counted).
+    pub sheets: Option<u32>,
     pub imported_at: String,
     /// When it last reached `indexed` (`None` before).
     pub indexed_at: Option<String>,

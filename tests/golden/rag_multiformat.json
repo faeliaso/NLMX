@@ -4,7 +4,9 @@
     { "file": "manual.md", "source": "tests/golden/corpus/manual.md" },
     { "file": "reuniao.txt", "source": "tests/golden/corpus/reuniao.txt" },
     { "file": "vendas.csv", "source": "tests/golden/corpus/vendas.csv" },
-    { "file": "livro.epub", "source": "crates/adapters/parser-epub/tests/fixtures/livro.epub" }
+    { "file": "livro.epub", "source": "crates/adapters/parser-epub/tests/fixtures/livro.epub" },
+    { "file": "operacoes.docx", "source": "tests/golden/corpus/operacoes.docx" },
+    { "file": "indicadores.xlsx", "source": "tests/golden/corpus/indicadores.xlsx" }
   ],
   "questions": [
     { "kind": "only-pdf", "question": "Quem resolve os casos omissos?",
@@ -28,11 +30,43 @@
         { "file": "reuniao.txt", "phrase": "adotar o fornecedor Aurora" }
       ] },
     { "kind": "many-formats", "question": "Qual é a carência prevista?",
+      "scope": ["report.pdf", "manual.md", "reuniao.txt", "vendas.csv", "livro.epub"],
       "expect": [
         { "file": "report.pdf", "pages": [2, 3] },
         { "file": "manual.md", "heading": "Compras" },
         { "file": "reuniao.txt", "phrase": "prazo de carência de quinze dias" },
         { "file": "vendas.csv", "phrase": "carência zero" }
+      ] },
+    { "kind": "only-docx", "question": "Qual a expiração do token JWT emitido pelo serviço de autenticação do backend?",
+      "expect": [{ "file": "operacoes.docx", "section": "Backend" }] },
+    { "kind": "only-xlsx", "question": "Qual a meta de satisfação do cliente no painel de indicadores?",
+      "expect": [{ "file": "indicadores.xlsx", "sheet": "Dashboard", "phrase": "Satisfação do cliente" }] },
+    { "kind": "pdf+docx", "question": "Quais exames laboratoriais estão cobertos e em quanto tempo o resultado chega ao prontuário?",
+      "expect": [
+        { "file": "report.pdf", "pages": [1] },
+        { "file": "operacoes.docx", "section": "Backend" }
+      ] },
+    { "kind": "pdf+xlsx", "question": "Quem resolve os casos omissos e qual a meta de dias úteis para a operadora?",
+      "expect": [
+        { "file": "report.pdf", "pages": [3] },
+        { "file": "indicadores.xlsx", "sheet": "Metas", "phrase": "Casos omissos resolvidos" }
+      ] },
+    { "kind": "markdown+docx", "question": "Como o certificado do painel expirado é renovado?",
+      "expect": [
+        { "file": "manual.md", "heading": "Erros conhecidos" },
+        { "file": "operacoes.docx", "section": "Deploy" }
+      ] },
+    { "kind": "csv+xlsx", "question": "Quantas unidades de Cafe Torrado foram vendidas e qual a meta por trimestre?",
+      "expect": [
+        { "file": "vendas.csv", "phrase": "Cafe Torrado" },
+        { "file": "indicadores.xlsx", "sheet": "Metas", "phrase": "Cafe Torrado" }
+      ] },
+    { "kind": "many-formats", "question": "Quem é o fornecedor Aurora e o que ele entrega?",
+      "expect": [
+        { "file": "manual.md", "heading": "Compras" },
+        { "file": "reuniao.txt", "phrase": "adotar o fornecedor Aurora" },
+        { "file": "operacoes.docx", "section": "Deploy" },
+        { "file": "indicadores.xlsx", "sheet": "Metas", "phrase": "fornecedor Aurora" }
       ] },
     { "kind": "not-found", "question": "Qual o preço da gasolina em Marte?", "expect": [] },
     { "kind": "not-found", "question": "Receita de bolo de chocolate com morangos", "expect": [] }

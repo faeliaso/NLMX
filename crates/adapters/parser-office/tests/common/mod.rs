@@ -327,6 +327,358 @@ pub fn manual() -> Vec<u8> {
     )
 }
 
+fn text_cell(reference: &str, value: &str) -> Cell {
+    cell(reference, "inlineStr", value)
+}
+
+fn sheet(name: &str, rows: Vec<Vec<Cell>>) -> Sheet {
+    Sheet {
+        name: name.into(),
+        state: "visible",
+        rows,
+    }
+}
+
+/// One sheet "Janeiro": the example of the product.
+pub fn uma_aba() -> Vec<u8> {
+    xlsx(
+        &[],
+        &[sheet(
+            "Janeiro",
+            vec![
+                vec![
+                    text_cell("A1", "Produto"),
+                    text_cell("B1", "Quantidade"),
+                    text_cell("C1", "Valor"),
+                ],
+                vec![
+                    text_cell("A2", "Notebook"),
+                    cell("B2", "n", "10"),
+                    cell("C2", "n", "5000"),
+                ],
+            ],
+        )],
+        &[],
+    )
+}
+
+/// Three months, one sheet each, the same columns.
+pub fn varias_abas() -> Vec<u8> {
+    let month = |name: &str, product: &str, qty: &str| {
+        sheet(
+            name,
+            vec![
+                vec![text_cell("A1", "Produto"), text_cell("B1", "Quantidade")],
+                vec![text_cell("A2", product), cell("B2", "n", qty)],
+            ],
+        )
+    };
+    xlsx(
+        &[],
+        &[
+            month("Janeiro", "Notebook", "10"),
+            month("Fevereiro", "Monitor", "7"),
+            month("Março", "Teclado", "25"),
+        ],
+        &[],
+    )
+}
+
+pub fn cabecalho() -> Vec<u8> {
+    xlsx(
+        &[],
+        &[sheet(
+            "Equipe",
+            vec![
+                vec![
+                    text_cell("A1", "Nome"),
+                    text_cell("B1", "Cidade"),
+                    text_cell("C1", "Cargo"),
+                ],
+                vec![
+                    text_cell("A2", "João"),
+                    text_cell("B2", "Fortaleza"),
+                    text_cell("C2", "Engenheiro"),
+                ],
+                vec![
+                    text_cell("A3", "Maria"),
+                    text_cell("B3", "Recife"),
+                    text_cell("C3", "Analista"),
+                ],
+            ],
+        )],
+        &[],
+    )
+}
+
+/// Gaps: an empty middle cell, an empty last cell, a blank row and a column without a name.
+pub fn vazias() -> Vec<u8> {
+    xlsx(
+        &[],
+        &[sheet(
+            "Lacunas",
+            vec![
+                vec![
+                    text_cell("A1", "Nome"),
+                    text_cell("B1", "Cidade"),
+                    text_cell("D1", "Cargo"),
+                ],
+                vec![text_cell("A2", "Ana"), text_cell("D2", "Gerente")],
+                vec![text_cell("A3", "Bia"), text_cell("B3", "Recife")],
+                vec![
+                    text_cell("A5", "Caio"),
+                    text_cell("B5", "Natal"),
+                    text_cell("C5", "sem nome de coluna"),
+                    text_cell("D5", "Dev"),
+                ],
+            ],
+        )],
+        &[],
+    )
+}
+
+pub fn numeros() -> Vec<u8> {
+    xlsx(
+        &[],
+        &[sheet(
+            "Números",
+            vec![
+                vec![text_cell("A1", "Tipo"), text_cell("B1", "Valor")],
+                vec![text_cell("A2", "inteiro"), cell("B2", "n", "10")],
+                vec![text_cell("A3", "decimal"), cell("B3", "n", "1250.5")],
+                vec![text_cell("A4", "negativo"), cell("B4", "n", "-3")],
+                vec![text_cell("A5", "científico"), cell("B5", "n", "1.5E-5")],
+                vec![text_cell("A6", "grande"), cell("B6", "n", "12345678901")],
+                vec![text_cell("A7", "fração"), cell("B7", "n", "0.1")],
+                vec![text_cell("A8", "fórmula"), cell("B8", "fn", "6000")],
+                vec![text_cell("A9", "booleano"), cell("B9", "b", "1")],
+            ],
+        )],
+        &[],
+    )
+}
+
+/// A date, a date with time and a number in a custom date format.
+pub fn datas() -> Vec<u8> {
+    xlsx(
+        &[],
+        &[sheet(
+            "Datas",
+            vec![
+                vec![text_cell("A1", "Evento"), text_cell("B1", "Quando")],
+                vec![text_cell("A2", "início"), styled("B2", "45352", 1)],
+                vec![text_cell("A3", "reunião"), styled("B3", "45352.5", 1)],
+                vec![text_cell("A4", "entrega"), styled("B4", "45383", 2)],
+                vec![text_cell("A5", "versão"), styled("B5", "45352", 0)],
+            ],
+        )],
+        &[],
+    )
+}
+
+pub fn textos() -> Vec<u8> {
+    xlsx(
+        &["Descrição", "Ação & reação", "Cadeira de escritório"],
+        &[sheet(
+            "Textos",
+            vec![
+                vec![cell("A1", "s", "0"), text_cell("B1", "Observação")],
+                vec![
+                    cell("A2", "s", "1"),
+                    text_cell("B2", "  espaços   extras  "),
+                ],
+                vec![
+                    cell("A3", "s", "2"),
+                    text_cell("B3", "linha um\nlinha dois"),
+                ],
+            ],
+        )],
+        &[],
+    )
+}
+
+/// An Excel table (A3:C6) under a title, with a note after it.
+pub fn tabela_excel() -> Vec<u8> {
+    let rels = "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/table\" Target=\"../tables/table1.xml\"/></Relationships>";
+    let table = "<table xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" id=\"1\" name=\"Vendas\" displayName=\"Vendas\" ref=\"A3:C6\" headerRowCount=\"1\"/>";
+    xlsx(
+        &[],
+        &[sheet(
+            "Relatório",
+            vec![
+                vec![text_cell("A1", "Relatório de vendas 2024")],
+                vec![
+                    text_cell("A3", "Produto"),
+                    text_cell("B3", "Região"),
+                    text_cell("C3", "Total"),
+                ],
+                vec![
+                    text_cell("A4", "Notebook"),
+                    text_cell("B4", "Norte"),
+                    cell("C4", "n", "100"),
+                ],
+                vec![
+                    text_cell("A5", "Monitor"),
+                    text_cell("B5", "Sul"),
+                    cell("C5", "n", "200"),
+                ],
+                vec![
+                    text_cell("A6", "Teclado"),
+                    text_cell("B6", "Leste"),
+                    cell("C6", "n", "300"),
+                ],
+                vec![text_cell("A8", "Valores em reais")],
+            ],
+        )],
+        &[
+            ("xl/worksheets/_rels/sheet1.xml.rels", rels.as_bytes()),
+            ("xl/tables/table1.xml", table.as_bytes()),
+        ],
+    )
+}
+
+pub fn muitas_linhas() -> Vec<u8> {
+    let mut rows = vec![vec![text_cell("A1", "Id"), text_cell("B1", "Item")]];
+    for n in 2..=301u32 {
+        rows.push(vec![
+            cell(&format!("A{n}"), "n", &(n - 1).to_string()),
+            text_cell(&format!("B{n}"), &format!("Item número {}", n - 1)),
+        ]);
+    }
+    xlsx(&[], &[sheet("Itens", rows)], &[])
+}
+
+/// Every XLSX fixture file: `(file name, bytes)`.
+pub fn xlsx_fixtures() -> Vec<(&'static str, Vec<u8>)> {
+    vec![
+        ("uma-aba.xlsx", uma_aba()),
+        ("varias-abas.xlsx", varias_abas()),
+        ("cabecalho.xlsx", cabecalho()),
+        ("vazias.xlsx", vazias()),
+        ("numeros.xlsx", numeros()),
+        ("datas.xlsx", datas()),
+        ("textos.xlsx", textos()),
+        ("tabela-excel.xlsx", tabela_excel()),
+        ("muitas-linhas.xlsx", muitas_linhas()),
+    ]
+}
+
+// ---- The golden corpus of the RAG tests (`tests/golden/corpus/`): documents with facts of their
+// own and facts that complete those of the PDF, Markdown, TXT and CSV of the same corpus.
+
+/// A manual: Arquitetura › Backend/Frontend, Deploy with a table.
+pub fn operacoes() -> Vec<u8> {
+    docx_with_core(
+        &[
+            p(Some("Ttulo1"), "Arquitetura"),
+            p(None, "Plataforma Zeta com backend e frontend separados, serviços ligados por filas de mensagens."),
+            p(Some("Ttulo2"), "Backend"),
+            p(None, "O serviço de autenticação do backend emite tokens JWT com expiração de quinze minutos e renovação automática."),
+            p(None, "A integração com o laboratório envia o resultado dos exames laboratoriais ao prontuário em até quatro horas."),
+            li(1, 0, "Fila de eventos com reprocessamento"),
+            li(1, 0, "Cache de sessões em memória"),
+            p(Some("Ttulo2"), "Frontend"),
+            p(None, "Interface web baseada na biblioteca Lumen, com tela de entrada em até dois segundos."),
+            p(Some("Ttulo1"), "Deploy"),
+            p(None, "O deploy em produção ocorre toda quinta-feira às 19h, com rollback automático em caso de falha."),
+            p(None, "A renovação do certificado do painel é automatizada pelo pipeline de deploy a cada sessenta dias."),
+            p(None, "O fornecedor Aurora também entrega o hardware dos servidores usados no deploy."),
+            table_header(&[
+                &["Ambiente", "Região", "Responsável"],
+                &["Produção", "sa-east-1", "Marina"],
+                &["Homologação", "us-east-1", "Carlos"],
+            ]),
+        ]
+        .concat(),
+        Some(&core(
+            Some("Manual de Arquitetura e Deploy"),
+            Some("Equipe de Plataforma"),
+            None,
+            None,
+            None,
+        )),
+    )
+}
+
+/// A dashboard of indicators and a sheet of targets.
+pub fn indicadores() -> Vec<u8> {
+    let indicators = [
+        ("Disponibilidade da plataforma", "99.9", "99.95", "%"),
+        ("Satisfação do cliente", "90", "86", "%"),
+        ("Tempo médio de resposta", "2", "2.4", "s"),
+        ("Chamados abertos", "120", "98", "un"),
+        ("Chamados resolvidos", "110", "104", "un"),
+        ("Backups concluídos", "30", "30", "un"),
+        ("Incidentes críticos", "0", "1", "un"),
+        ("Cobertura de testes", "80", "76", "%"),
+        ("Tempo de deploy", "15", "12", "min"),
+        ("Erros por mil requisições", "2", "1.4", "un"),
+        ("Usuários ativos por dia", "5000", "5230", "un"),
+        ("Fila de eventos pendentes", "100", "40", "un"),
+        ("Custo mensal de nuvem", "20000", "18900", "R$"),
+        ("Alertas ruidosos", "10", "14", "un"),
+        ("Atualizações de segurança aplicadas", "12", "12", "un"),
+        ("Tempo de recuperação de falhas", "30", "25", "min"),
+        ("Documentos indexados", "1000", "1180", "un"),
+        ("Consultas respondidas com fonte", "95", "93", "%"),
+        ("Treinamentos realizados", "4", "3", "un"),
+        ("Revisões de acesso concluídas", "6", "6", "un"),
+    ];
+    let mut dashboard = vec![vec![
+        text_cell("A1", "Indicador"),
+        text_cell("B1", "Meta"),
+        text_cell("C1", "Atual"),
+        text_cell("D1", "Unidade"),
+    ]];
+    for (i, (name, goal, now, unit)) in indicators.iter().enumerate() {
+        let r = i + 2;
+        dashboard.push(vec![
+            text_cell(&format!("A{r}"), name),
+            cell(&format!("B{r}"), "n", goal),
+            cell(&format!("C{r}"), "n", now),
+            text_cell(&format!("D{r}"), unit),
+        ]);
+    }
+    let goals = [
+        ("Unidades vendidas de Cafe Torrado", "500", "por trimestre"),
+        ("Casos omissos resolvidos pela operadora", "5", "dias úteis"),
+        ("Entregas do fornecedor Aurora no prazo", "95", "por cento"),
+    ];
+    let mut metas = vec![vec![
+        text_cell("A1", "Meta"),
+        text_cell("B1", "Valor"),
+        text_cell("C1", "Período"),
+    ]];
+    for (i, (name, value, period)) in goals.iter().enumerate() {
+        let r = i + 2;
+        metas.push(vec![
+            text_cell(&format!("A{r}"), name),
+            cell(&format!("B{r}"), "n", value),
+            text_cell(&format!("C{r}"), period),
+        ]);
+    }
+    let core = core(
+        Some("Indicadores de Plataforma"),
+        Some("Equipe de Plataforma"),
+        None,
+        None,
+        None,
+    );
+    xlsx(
+        &[],
+        &[sheet("Dashboard", dashboard), sheet("Metas", metas)],
+        &[("docProps/core.xml", core.as_bytes())],
+    )
+}
+
+/// The golden-corpus files: `(file name, bytes)`.
+pub fn golden_corpus() -> Vec<(&'static str, Vec<u8>)> {
+    vec![
+        ("operacoes.docx", operacoes()),
+        ("indicadores.xlsx", indicadores()),
+    ]
+}
+
 /// Every fixture file: `(file name, bytes)`.
 pub fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     vec![
@@ -443,6 +795,7 @@ pub fn xlsx(shared: &[&str], sheets: &[Sheet], extra: &[(&str, &[u8])]) -> Vec<u
                             match *kind {
                                 "inlineStr" => format!("<c r=\"{reference}\" t=\"inlineStr\"{style}><is><t>{}</t></is></c>", esc(value)),
                                 "n" => format!("<c r=\"{reference}\"{style}><v>{value}</v></c>"),
+                                "fn" => format!("<c r=\"{reference}\"{style}><f>SUM(A1:A2)</f><v>{value}</v></c>"),
                                 kind => format!("<c r=\"{reference}\" t=\"{kind}\"{style}><v>{}</v></c>", esc(value)),
                             }
                         })
@@ -470,6 +823,11 @@ pub fn xlsx(shared: &[&str], sheets: &[Sheet], extra: &[(&str, &[u8])]) -> Vec<u
     ];
     for (name, bytes) in &sheet_xml {
         entries.push((name, bytes));
+    }
+    // A core part given in `extra` replaces the default one (a zip cannot hold two entries of a
+    // name).
+    if extra.iter().any(|(name, _)| *name == "docProps/core.xml") {
+        entries.retain(|(name, _)| *name != "docProps/core.xml");
     }
     entries.extend_from_slice(extra);
     zip(&entries)

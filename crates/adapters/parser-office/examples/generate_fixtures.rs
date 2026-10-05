@@ -19,7 +19,16 @@ fn main() {
     let mut protegido = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
     protegido.extend_from_slice(&[0; 512]);
 
-    for (name, bytes) in common::fixtures() {
+    // The corpus of the RAG golden set lives with the other golden files.
+    let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/corpus");
+    for (name, bytes) in common::golden_corpus() {
+        fs::write(golden.join(name), bytes).expect("write a golden corpus file");
+    }
+
+    for (name, bytes) in common::fixtures()
+        .into_iter()
+        .chain(common::xlsx_fixtures())
+    {
         fs::write(dir.join(name), bytes).expect("write a fixture");
     }
 

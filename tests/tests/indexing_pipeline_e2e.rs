@@ -429,3 +429,29 @@ async fn enqueued_files_are_listed_at_once_and_indexed_one_by_one() {
     assert_eq!(app.status(id).await, DocumentStatus::Indexed);
     assert!(app.hits("melancia").await.contains(&id));
 }
+
+#[tokio::test]
+async fn the_import_dialog_offers_docx_and_xlsx_from_the_registered_parsers() {
+    // The dialog's filters are built from `supported_types()` (see `import_documents`), so a
+    // format with a parser is importable by the one existing flow, without a list of its own.
+    let app = App::new("import-filters", true);
+    let kinds = app.ingestion.supported_types();
+    assert_eq!(kinds, DocumentType::ALL);
+    let extensions: Vec<&str> = kinds
+        .iter()
+        .flat_map(|kind| kind.extensions().iter().copied())
+        .collect();
+    for extension in ["pdf", "md", "txt", "csv", "epub", "docx", "xlsx"] {
+        assert!(extensions.contains(&extension), "{extension}");
+    }
+    // And by that flow a DOCX and an XLSX are queued and indexed like any other file.
+    for (name, source) in [
+        ("a.docx", office_fixture("contrato.docx")),
+        ("b.xlsx", office_fixture("vendas.xlsx")),
+    ] {
+        let path = app.user_file(&source, name);
+        let (_, chunks, status) = imported(app.ingestion.import(&path).await);
+        assert!(chunks > 0, "{name}");
+        assert_eq!(status, DocumentStatus::Indexed, "{name}");
+    }
+}

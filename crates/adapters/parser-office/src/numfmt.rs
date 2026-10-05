@@ -147,6 +147,13 @@ mod tests {
             Some("2024-03-01 14:30")
         );
         assert_eq!(serial_to_text(-1.0, false), None);
+        // The 1904 system counts from 1904-01-01 and has no 1900 leap-year quirk.
+        assert_eq!(serial_to_text(0.0, true).as_deref(), Some("1904-01-01"));
+        assert_eq!(serial_to_text(1461.0, true).as_deref(), Some("1908-01-01"));
+        assert_eq!(
+            serial_to_text(43_890.0, true).as_deref(),
+            Some("2024-03-01")
+        );
     }
 
     #[test]

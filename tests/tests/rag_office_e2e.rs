@@ -82,7 +82,7 @@ async fn a_docx_and_an_xlsx_are_retrieved_with_their_own_provenance() {
             DocumentType::Xlsx,
             "Cadeira Nordeste",
             "vendas.xlsx",
-            "Resumo, linha",
+            "Resumo",
         ),
     ] {
         let ctx = office
@@ -228,4 +228,51 @@ async fn a_cell_of_a_docx_table_is_found_with_the_table_marker_and_no_viewer() {
     ));
     assert!(!hit.provenance.previewable());
     assert!(hit.provenance.label().starts_with("contrato.docx · "));
+}
+
+#[tokio::test]
+async fn csv_and_xlsx_stay_different_formats_with_their_own_provenance() {
+    let app = App::new("office-csv-vs-xlsx", true);
+    let inbox = app.dir.join("inbox");
+    std::fs::create_dir_all(&inbox).unwrap();
+    let csv = inbox.join("dados.csv");
+    std::fs::write(&csv, "produto;quantidade\nCadeira;10\nMesa;4\n").unwrap();
+    let xlsx = app.user_file(&office_fixture("vendas.xlsx"), "vendas.xlsx");
+    let csv_id = imported(app.ingestion.import(&csv).await).0;
+    let xlsx_id = imported(app.ingestion.import(&xlsx).await).0;
+
+    use nlmx_application::ports::DocumentRepository;
+    let csv_chunks = app.db.chunks_of(csv_id).await.unwrap();
+    let xlsx_chunks = app.db.chunks_of(xlsx_id).await.unwrap();
+    assert!(
+        csv_chunks
+            .iter()
+            .all(|c| matches!(c.location, SourceLocation::Csv { .. })
+                && c.metadata.document_type == DocumentType::Csv)
+    );
+    assert!(
+        xlsx_chunks
+            .iter()
+            .all(|c| matches!(c.location, SourceLocation::Xlsx { .. })
+                && c.metadata.document_type == DocumentType::Xlsx)
+    );
+    // A CSV has no sheets and says rows; a workbook says its sheet.
+    assert!(
+        csv_chunks[0]
+            .text
+            .starts_with("Arquivo: dados.csv\nColunas:")
+    );
+    assert!(xlsx_chunks[0].text.contains("Planilha: Resumo"));
+    assert_eq!(xlsx_chunks[0].location.label(), "Resumo, linhas 2–4");
+    assert!(csv_chunks[0].location.label().starts_with("linha"));
+    // One chunk per visible sheet here, numbered across sheets.
+    let sheets: Vec<_> = xlsx_chunks
+        .iter()
+        .map(|c| c.section_path.join(""))
+        .collect();
+    assert_eq!(sheets, ["Resumo", "Notas"]);
+    assert_eq!(
+        xlsx_chunks.iter().map(|c| c.index).collect::<Vec<_>>(),
+        [0, 1]
+    );
 }

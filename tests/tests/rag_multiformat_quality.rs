@@ -1,8 +1,8 @@
-//! RAG quality over a corpus with one document of each format (`tests/golden/rag_multiformat.json`):
+//! RAG quality over a corpus with at least one document of each format (`tests/golden/rag_multiformat.json`):
 //! questions whose answer is only in the PDF, only in the Markdown, only in the TXT, only in the
-//! CSV, only in the EPUB, spread over two formats and over several, and questions the documents
+//! CSV, only in the EPUB, DOCX or XLSX, spread over two formats and over several, and questions the documents
 //! cannot answer. A source counts only if it is the right document **and** the right place
-//! (page, heading, text range, rows, chapter): provenance is part of the answer.
+//! (page, heading, text range, rows, chapter, DOCX section, XLSX sheet): provenance is part of the answer.
 //!
 //! The deterministic run (hash embedder, lexical in practice) guards against regressions; the
 //! `#[ignore]`d run uses Qwen3 embeddings and Apple Foundation Models (`make test-real`).
@@ -20,7 +20,7 @@ use nlmx_application::{
         retriever::{Passage, Retriever, RetrieverOptions},
     },
 };
-use nlmx_domain::{ingestion::DocumentId, source::SourceLocation};
+use nlmx_domain::{ingestion::DocumentId, retrieval::RetrievalFilter, source::SourceLocation};
 use nlmx_testing::FakeLlmProvider;
 use support::{
     multiformat::{App, imported},
@@ -41,11 +41,23 @@ enum Check {
     /// A phrase of a TXT (its range must contain it) or of a CSV (its rows must contain it).
     Phrase(String),
     Chapter(u32),
+    /// A DOCX: the section path contains this heading.
+    Section(String),
+    /// An XLSX: the sheet, and a phrase that the chunk's rows contain.
+    Sheet {
+        sheet: String,
+        phrase: String,
+    },
 }
 
 struct Question {
     kind: String,
     text: String,
+    /// Files the question is asked against (all of the corpus when absent). A case written for
+    /// the first five formats keeps its original library: a document added later with passages
+    /// of middling similarity would displace its weakest expected source from the top 6 of the
+    /// deterministic embedder, which says nothing about the new formats.
+    scope: Option<Vec<String>>,
     expect: Vec<Expected>,
 }
 
@@ -74,13 +86,27 @@ fn golden() -> Golden {
             .map(|q| Question {
                 kind: text(&q["kind"]),
                 text: text(&q["question"]),
+                scope: q.get("scope").map(|s| {
+                    s.as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|f| f.as_str().unwrap().to_string())
+                        .collect()
+                }),
                 expect: q["expect"]
                     .as_array()
                     .unwrap()
                     .iter()
                     .map(|e| Expected {
                         file: text(&e["file"]),
-                        check: if let Some(p) = e.get("pages") {
+                        check: if let Some(sheet) = e.get("sheet") {
+                            Check::Sheet {
+                                sheet: text(sheet),
+                                phrase: text(&e["phrase"]),
+                            }
+                        } else if let Some(section) = e.get("section") {
+                            Check::Section(text(section))
+                        } else if let Some(p) = e.get("pages") {
                             Check::Pages(
                                 p.as_array()
                                     .unwrap()
@@ -176,6 +202,22 @@ impl Corpus {
                     && passage.content.contains(phrase.as_str())
             }
             (Check::Chapter(n), SourceLocation::Epub { chapter_index, .. }) => chapter_index == n,
+            (Check::Section(section), SourceLocation::Docx { heading_path, .. }) => {
+                heading_path.iter().any(|x| x == section)
+            }
+            (
+                Check::Sheet { sheet, phrase },
+                SourceLocation::Xlsx {
+                    sheet_name,
+                    row_start,
+                    row_end,
+                    ..
+                },
+            ) => {
+                sheet_name == sheet
+                    && row_start <= row_end
+                    && passage.content.contains(phrase.as_str())
+            }
             _ => false,
         }
     }
@@ -252,6 +294,17 @@ async fn evaluate(name: &str, install: impl FnOnce(&App), llm: Arc<dyn LlmProvid
             continue;
         }
         q.questions += 1;
+        let filter = RetrievalFilter {
+            documents: question
+                .scope
+                .as_ref()
+                .map(|files| files.iter().map(|f| corpus.ids[f]).collect()),
+            ..Default::default()
+        };
+        let options = RetrieverOptions {
+            filter: filter.clone(),
+            ..options.clone()
+        };
         let ctx = retriever.retrieve(&question.text, &options).await.unwrap();
         if std::env::var_os("NLMX_DEBUG_RANK").is_some() {
             eprintln!("# {}", question.text);
@@ -295,7 +348,13 @@ async fn evaluate(name: &str, install: impl FnOnce(&App), llm: Arc<dyn LlmProvid
         let answer = rag
             .ask(
                 &question.text,
-                &RagOptions::default(),
+                &RagOptions {
+                    retriever: RetrieverOptions {
+                        filter,
+                        ..RagOptions::default().retriever
+                    },
+                    ..RagOptions::default()
+                },
                 &|_| {},
                 CancelFlag::default(),
             )

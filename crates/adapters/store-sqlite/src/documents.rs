@@ -509,7 +509,10 @@ impl DocumentRepository for Database {
                         d.file_size, d.page_count, d.imported_at, d.indexed_at,
                         (SELECT count(DISTINCT m.conversation_id)
                            FROM citations ct JOIN messages m ON m.id = ct.message_id
-                          WHERE ct.document_id = d.id AND ct.cited = 1)
+                          WHERE ct.document_id = d.id AND ct.cited = 1),
+                        CASE WHEN d.format = 'xlsx'
+                             THEN (SELECT count(*) FROM document_sections s WHERE s.document_id = d.id)
+                        END
                  FROM documents d WHERE d.id = ?1",
                 [id],
                 |row| {
@@ -523,6 +526,7 @@ impl DocumentRepository for Database {
                         chunks: row.get(6)?,
                         file_size: row.get::<_, i64>(7)?.max(0) as u64,
                         page_count: row.get(8)?,
+                        sheets: row.get(12)?,
                         imported_at: row.get(9)?,
                         indexed_at: row.get(10)?,
                         conversations: row.get(11)?,

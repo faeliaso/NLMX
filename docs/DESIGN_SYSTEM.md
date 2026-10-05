@@ -56,7 +56,7 @@ Galeria interativa (somente builds debug): **Configurações › Sobre › Desig
 | Estado | Padrão |
 |---|---|
 | Loading | Skeleton no lugar do conteúdo; spinner em ações; barra global no topo do conteúdo durante navegação |
-| Fonte (qualquer formato) | Ícone do formato (`format-pdf/markdown/text/csv/epub/docx/xlsx`, vindo de `ui-web::formats`, nunca um `match` na view) + nome + formato + status + localização/meta. Só PDF tem preview (viewer); o clique em qualquer fonte ou referência `[n]` abre o painel lateral: viewer (PDF) ou **Informações da fonte** (`/sources/{id}`, os demais). Um `[n]` é sempre um botão (`aria-label` diz "Abrir a fonte n no PDF" ou "Ver informações da fonte n"). |
+| Fonte (qualquer formato) | Ícone do formato (`format-pdf/markdown/text/csv/epub/docx/xlsx (mesma família: contorno de página + glifo)`, vindo de `ui-web::formats`, nunca um `match` na view) + nome + formato + status + localização/meta. Só PDF tem preview (viewer); o clique em qualquer fonte ou referência `[n]` abre o painel lateral: viewer (PDF) ou **Informações da fonte** (`/sources/{id}`, os demais). Um `[n]` é sempre um botão (`aria-label` diz "Abrir a fonte n no PDF" ou "Ver informações da fonte n"). |
 | Empty | `ds::empty_state(ícone, título, descrição)` com a ação principal no corpo |
 | Error | `ds::alert("danger", …)` (`role="alert"`) com ação de recuperação; falhas sem resposta viram toast de erro |
 | Success | `ds::alert("success", …)` ou `DS.toast("success", msg)` (`role="status"`, some em 5 s). Uma resposta do servidor pede o toast com um marcador `<p hidden data-toast-on-load="KIND" data-toast-message="…"></p>` (o `app.js` o transforma em toast e o remove) |
