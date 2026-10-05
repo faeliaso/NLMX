@@ -27,7 +27,7 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
 - **Integration**: cada adaptador contra a coisa real ou um fake de processo, por exemplo:
   - SQLite: migrações reversíveis, cascatas, contrato do `ConversationRepository`;
   - PDFium (`crates/adapters/pdf-pdfium/tests`);
-  - `fake-llama-server`, `fake-fm`;
+  - `fake-llama-server`;
   - servidor HTTP local para downloads.
 
   Os **contratos dos ports** (`nlmx_testing::*_contract`) rodam contra o fake e contra o adaptador real.

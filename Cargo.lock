@@ -2309,7 +2309,6 @@ version = "0.1.0"
 dependencies = [
  "nlmx-application",
  "nlmx-domain",
- "nlmx-testing",
  "reqwest",
  "serde",
  "serde_json",
