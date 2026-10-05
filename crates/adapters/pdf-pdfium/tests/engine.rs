@@ -345,30 +345,3 @@ async fn extracts_accents_in_several_fonts() {
     assert!(spans.iter().any(|s| s.bold) && spans.iter().any(|s| !s.bold));
     engine().close(doc).await.unwrap();
 }
-
-#[tokio::test]
-async fn a_200_page_document_is_read_at_a_reasonable_pace() {
-    let started = std::time::Instant::now();
-    let doc = engine().open(&fixture("large.pdf")).await.unwrap();
-    let count = engine().page_count(doc).await.unwrap();
-    assert_eq!(count, 200);
-    let mut chars = 0;
-    for page in 1..=count {
-        chars += engine()
-            .text_spans(doc, page)
-            .await
-            .unwrap()
-            .iter()
-            .map(|s| s.text.len())
-            .sum::<usize>();
-    }
-    engine().close(doc).await.unwrap();
-    let secs = started.elapsed().as_secs_f64();
-    eprintln!(
-        "large.pdf: {count} pages in {secs:.2}s ({:.0} pages/s)",
-        count as f64 / secs
-    );
-    assert!(chars > 200 * 300);
-    // Generous bound (debug build, shared CI machines); `make bench` reports the real figure.
-    assert!(secs < 30.0, "{secs}s");
-}

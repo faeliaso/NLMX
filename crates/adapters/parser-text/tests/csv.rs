@@ -319,3 +319,118 @@ async fn a_file_larger_than_the_document_limit_is_still_streamed() {
     assert_eq!(expected, rows);
     assert_eq!(stream.row_count(), Some(rows));
 }
+
+// --- TSV: a `.tsv` is tab-separated; everything else about it is the CSV pipeline.
+
+#[tokio::test]
+async fn a_tsv_with_header_becomes_records() {
+    let parsed = parse("funcionarios.tsv").await;
+    let dataset = parsed.metadata().dataset.as_ref().unwrap();
+    assert_eq!(dataset.delimiter, '\t');
+    assert!(dataset.has_header);
+    assert_eq!(column_names(&parsed), ["Nome", "Cidade", "Idade"]);
+    let texts = texts(&parsed);
+    assert_eq!(texts.len(), 4);
+    assert_eq!(
+        texts[0],
+        "Registro 1:\nNome: João\nCidade: Fortaleza\nIdade: 32"
+    );
+    // Empty cell left out; accents and non-Latin text kept.
+    assert_eq!(texts[2], "Registro 3:\nNome: Zoë\nIdade: 41");
+    assert_eq!(
+        texts[3],
+        "Registro 4:\nNome: 李雷\nCidade: São Paulo\nIdade: 19"
+    );
+}
+
+#[tokio::test]
+async fn a_tsv_without_header_numbers_its_columns() {
+    let parsed = parse("sem-cabecalho.tsv").await;
+    assert_eq!(parsed.warnings(), [ParseWarning::NoHeaderRow]);
+    assert_eq!(column_names(&parsed), ["coluna 1", "coluna 2", "coluna 3"]);
+    assert_eq!(parsed.blocks().count(), 2);
+}
+
+#[tokio::test]
+async fn the_tsv_extension_forces_the_tab_even_when_commas_dominate() {
+    let parsed = parse("virgulas.tsv").await;
+    assert_eq!(parsed.metadata().dataset.as_ref().unwrap().delimiter, '\t');
+    assert_eq!(column_names(&parsed), ["Nome", "Endereço"]);
+    assert_eq!(
+        texts(&parsed)[0],
+        "Registro 1:\nNome: Ana\nEndereço: Rua A, 10, Centro, Fortaleza"
+    );
+}
+
+#[tokio::test]
+async fn a_tsv_with_many_columns_keeps_them_all() {
+    let parsed = parse("muitas-colunas.tsv").await;
+    assert_eq!(column_names(&parsed).len(), 60);
+    assert_eq!(parsed.blocks().count(), 3);
+}
+
+#[tokio::test]
+async fn tsv_rows_of_different_widths_do_not_fail() {
+    let parsed = parse("inconsistente.tsv").await;
+    assert_eq!(parsed.blocks().count(), 2);
+    assert_eq!(
+        texts(&parsed)[0],
+        "Registro 1:\nNome: Ana\nCidade: Fortaleza"
+    );
+}
+
+#[tokio::test]
+async fn a_quoted_tab_and_newline_stay_inside_the_cell() {
+    let parsed = parse("tab-em-campo.tsv").await;
+    assert_eq!(parsed.blocks().count(), 2);
+    assert_eq!(
+        texts(&parsed)[0],
+        "Registro 1:\nNome: Ana\nNota: linha 1 com tab linha 2"
+    );
+}
+
+#[tokio::test]
+async fn a_large_tsv_is_streamed_and_located_by_row() {
+    let dir = std::env::temp_dir().join(format!("nlmx-tsv-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("grande.tsv");
+    let mut data = String::from("id\tnome\tvalor\n");
+    for row in 1..=100_000u32 {
+        data.push_str(&format!("{row}\tpessoa {row}\t{}\n", row * 3));
+    }
+    fs::write(&path, data).unwrap();
+    let stream = CsvStream::open_with_delimiter(&path, CsvLimits::default(), Some(b'\t')).unwrap();
+    assert_eq!(stream.dataset().delimiter, '\t');
+    let blocks: Vec<_> = stream.map(Result::unwrap).collect();
+    assert_eq!(blocks.len(), 100_000);
+    assert_eq!(
+        blocks[99_999].text,
+        "Registro 100000:\nid: 100000\nnome: pessoa 100000\nvalor: 300000"
+    );
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
+async fn a_csv_keeps_its_detected_delimiter() {
+    // Same tab-separated content, `.csv` name: detection, as before.
+    assert_eq!(
+        parse("tabulado.csv")
+            .await
+            .metadata()
+            .dataset
+            .as_ref()
+            .unwrap()
+            .delimiter,
+        '\t'
+    );
+    assert_eq!(
+        parse("vendas.csv")
+            .await
+            .metadata()
+            .dataset
+            .as_ref()
+            .unwrap()
+            .delimiter,
+        ';'
+    );
+}

@@ -22,7 +22,8 @@ const KIND: DocumentType = DocumentType::Csv;
 /// file without holding it).
 pub const MAX_ROWS: u32 = 250_000;
 
-/// CSV with the delimiter (`,` `;` tab or `|`) and the header row detected. Each data row is
+/// CSV (and TSV, whose delimiter is the tab) with the delimiter (`,` `;` tab or `|`) and the
+/// header row detected. Each data row is
 /// a record read "Registro n:" followed by "Coluna: valor" lines (empty cells left out);
 /// locations are 1-based data rows, the header not counted.
 #[derive(Debug, Clone, Copy, Default)]
@@ -40,12 +41,18 @@ impl CsvDocumentParser {
     }
 
     fn parse_path(path: &Path) -> Result<ParsedDocument, ParseError> {
-        collect(CsvStream::open_with_limits(
+        // A `.tsv` is tab-separated by definition; any other file has its delimiter detected.
+        let is_tsv = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("tsv"));
+        collect(CsvStream::open_with_delimiter(
             path,
             CsvLimits {
                 max_rows: MAX_ROWS,
                 ..CsvLimits::default()
             },
+            is_tsv.then_some(b'\t'),
         )?)
     }
 }

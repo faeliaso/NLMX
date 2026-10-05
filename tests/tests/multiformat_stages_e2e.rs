@@ -101,6 +101,8 @@ fn detection_reads_the_format_from_the_extension_and_the_media_type() {
         ("a.txt", Some(DocumentType::Text)),
         ("a.text", Some(DocumentType::Text)),
         ("a.csv", Some(DocumentType::Csv)),
+        ("a.tsv", Some(DocumentType::Csv)),
+        ("a.TSV", Some(DocumentType::Csv)),
         ("a.epub", Some(DocumentType::Epub)),
         ("a.docx", Some(DocumentType::Docx)),
         ("a.XLSX", Some(DocumentType::Xlsx)),
@@ -116,6 +118,10 @@ fn detection_reads_the_format_from_the_extension_and_the_media_type() {
         ("text/markdown; charset=utf-8", Some(DocumentType::Markdown)),
         ("TEXT/PLAIN", Some(DocumentType::Text)),
         ("text/csv", Some(DocumentType::Csv)),
+        (
+            "text/tab-separated-values; charset=utf-8",
+            Some(DocumentType::Csv),
+        ),
         ("application/epub+zip", Some(DocumentType::Epub)),
         ("application/zip", None),
     ] {

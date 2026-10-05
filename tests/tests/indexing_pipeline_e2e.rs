@@ -441,7 +441,7 @@ async fn the_import_dialog_offers_docx_and_xlsx_from_the_registered_parsers() {
         .iter()
         .flat_map(|kind| kind.extensions().iter().copied())
         .collect();
-    for extension in ["pdf", "md", "txt", "csv", "epub", "docx", "xlsx"] {
+    for extension in ["pdf", "md", "txt", "csv", "tsv", "epub", "docx", "xlsx"] {
         assert!(extensions.contains(&extension), "{extension}");
     }
     // And by that flow a DOCX and an XLSX are queued and indexed like any other file.

@@ -28,3 +28,7 @@ A ingestão só conhecia PDF: `DocumentEngine` → `StructureAnalyzer` → `Chun
 - **Leitura incremental:** `CsvStream` (`parser-text`) valida a codificação em blocos, lê uma amostra do início para detectar delimitador, cabeçalho e tipos e entrega os registros um a um, com memória proporcional a um registro. `DocumentParser::parse` usa o mesmo fluxo, mas coleta até 250 mil linhas (`TooLarge` acima); o fluxo vai até 5 milhões de linhas e 1 GiB (`CsvLimits`).
 - **`RecordChunker`** (`chunker-structural`, preguiçoso): agrupa registros até `target_tokens` com um preâmbulo (`Arquivo`, `Colunas`, `Linhas a–b`) em todo chunk, sem sobreposição (`overlap_tokens` é ignorado: registros são atômicos), funde uma cauda menor que `min_tokens`, trunca uma lista longa de colunas e divide por campos um registro maior que o orçamento ("Registro 7 (parte 2/3)"). O chunk é um `DocumentChunk` com `Csv { a, b }`, `file_name` e `columns`.
 - O chunker ainda não é um port: nada o chama. O port e a escolha do chunker por formato entram com a etapa que religa `DocumentIngestion` a todos os formatos (migração, `fs-library`, `wiring.rs`).
+
+## Adendo: TSV
+
+`.tsv` (`text/tab-separated-values`) é o mesmo `DocumentType::Csv`: mesma extensão de parser, `RecordChunker` e `SourceLocation::Csv`. A única diferença é que a extensão `.tsv` força o delimitador `\t` (`CsvStream::open_with_delimiter`) em vez de detectá-lo. Não há tipo, migração nem visualizador próprios.

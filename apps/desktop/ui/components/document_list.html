@@ -4,7 +4,7 @@
 {% call ds::alert("danger", "Biblioteca indisponível", reason) %}{% endcall %}
 {%- when Library::Documents(rows) %}
 {%- if rows.is_empty() %}
-{% call ds::empty_state("document", "Nenhum documento", "Use Importar documentos, no topo da página, para começar (PDF, Markdown, TXT, CSV, EPUB, DOCX ou XLSX). Eles são copiados para a biblioteca local e divididos em trechos para a busca.") %}
+{% call ds::empty_state("document", "Nenhum documento", "Use Importar documentos, no topo da página, para começar (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX ou XLSX). Eles são copiados para a biblioteca local e divididos em trechos para a busca.") %}
 {% endcall %}
 {%- else %}
 <ul class="list" aria-label="Documentos">

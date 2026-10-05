@@ -33,7 +33,7 @@ pub fn format_view(kind: DocumentType) -> FormatView {
         DocumentType::Csv => FormatView {
             icon: "format-csv",
             label: "CSV",
-            description: "Tabela CSV (valores separados)",
+            description: "Tabela CSV/TSV (valores separados)",
         },
         DocumentType::Epub => FormatView {
             icon: "format-epub",

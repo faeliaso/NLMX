@@ -65,7 +65,7 @@ impl DocumentType {
             Self::Pdf => &["pdf"],
             Self::Markdown => &["md", "markdown"],
             Self::Text => &["txt", "text"],
-            Self::Csv => &["csv"],
+            Self::Csv => &["csv", "tsv"],
             Self::Epub => &["epub"],
             Self::Docx => &["docx"],
             Self::Xlsx => &["xlsx"],
@@ -93,7 +93,12 @@ impl DocumentType {
             Self::Pdf => &["application/pdf"],
             Self::Markdown => &["text/markdown", "text/x-markdown"],
             Self::Text => &["text/plain"],
-            Self::Csv => &["text/csv", "application/csv"],
+            Self::Csv => &[
+                "text/csv",
+                "application/csv",
+                "text/tab-separated-values",
+                "text/tsv",
+            ],
             Self::Epub => &["application/epub+zip"],
             Self::Docx => {
                 &["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
@@ -194,6 +199,8 @@ mod tests {
             (".txt", DocumentType::Text),
             ("text", DocumentType::Text),
             ("csv", DocumentType::Csv),
+            ("tsv", DocumentType::Csv),
+            (".TSV", DocumentType::Csv),
             (".EPUB", DocumentType::Epub),
             ("docx", DocumentType::Docx),
             (".XLSX", DocumentType::Xlsx),

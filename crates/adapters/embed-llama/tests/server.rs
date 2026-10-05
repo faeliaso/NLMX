@@ -164,7 +164,6 @@ async fn server_output_goes_to_the_log_file_and_recent_logs() {
     let dir = data_dir("logs");
     let server = LlamaServer::new(fake_config(&dir, &[]));
     server.start().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
         server
             .recent_logs()

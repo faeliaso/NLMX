@@ -53,7 +53,7 @@ tests/                    testes de workspace: arquitetura, E2E, qualidade do RA
 | Port | Para quê | Adapter |
 |---|---|---|
 | `DocumentEngine` | abrir PDF, metadados, spans de texto com bbox, imagens, renderizar página | `pdf-pdfium` |
-| `DocumentParser` | ler um formato (PDF, Markdown, TXT, CSV, EPUB, DOCX, XLSX) em `ParsedDocument`: metadados, seções, blocos tipados e localização; registro por formato em `ParserRegistry` (ainda não ligado à ingestão, ADR 0011) | `PdfDocumentParser` (em `application`, sobre `DocumentEngine` + `StructureAnalyzer`), `parser-text` (Markdown, TXT, CSV), `parser-epub`, `parser-office` (DOCX e XLSX, ADR 0017) |
+| `DocumentParser` | ler um formato (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) em `ParsedDocument`: metadados, seções, blocos tipados e localização; registro por formato em `ParserRegistry` (ainda não ligado à ingestão, ADR 0011) | `PdfDocumentParser` (em `application`, sobre `DocumentEngine` + `StructureAnalyzer`), `parser-text` (Markdown, TXT, CSV), `parser-epub`, `parser-office` (DOCX e XLSX, ADR 0017) |
 | `DocumentNormalizer` · `DocumentChunker` | limpar o texto de um `ParsedDocument` e cortá-lo em `DocumentChunk`s que mantêm caminho de seção e `SourceLocation`; compostos com o parser por `ContentPipeline` (parse → normalize → chunk, sem embeddings; ADR 0012; ligado à ingestão pelo ADR 0014) | `normalizer-text`, `chunker-structural` (`MultiFormatChunker`) |
 | `FileStore` | hash e cópia do PDF para a biblioteca | `fs-library` |
 | `StructureAnalyzer` · `Chunker` · `TokenCounter` | layout → seções/blocos → chunks | `structure-heuristic`, `chunker-structural` |

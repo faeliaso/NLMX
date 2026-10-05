@@ -87,6 +87,16 @@ impl CsvStream {
     }
 
     pub fn open_with_limits(path: &Path, limits: CsvLimits) -> Result<Self, ParseError> {
+        Self::open_with_delimiter(path, limits, None)
+    }
+
+    /// Like [`Self::open_with_limits`], but with the delimiter given (TSV: tab) instead of
+    /// detected. `None` detects it.
+    pub fn open_with_delimiter(
+        path: &Path,
+        limits: CsvLimits,
+        delimiter: Option<u8>,
+    ) -> Result<Self, ParseError> {
         let metadata = std::fs::metadata(path).map_err(io_error)?;
         if !metadata.is_file() {
             return Err(ParseError::NotFound);
@@ -98,6 +108,7 @@ impl CsvStream {
         Self::build(
             move || File::open(&path).map(|file| Box::new(file) as Source),
             limits.max_rows,
+            delimiter,
         )
     }
 
@@ -121,10 +132,15 @@ impl CsvStream {
         Self::build(
             move || Ok(Box::new(Cursor::new(data.clone())) as Source),
             limits.max_rows,
+            None,
         )
     }
 
-    fn build(open: impl Fn() -> io::Result<Source>, max_rows: u32) -> Result<Self, ParseError> {
+    fn build(
+        open: impl Fn() -> io::Result<Source>,
+        max_rows: u32,
+        forced_delimiter: Option<u8>,
+    ) -> Result<Self, ParseError> {
         let charset = detect_charset(open().map_err(io_error)?)?;
         let mut decoded = DecodeReaderBytesBuilder::new()
             .encoding(Some(charset.encoding))
@@ -145,7 +161,7 @@ impl CsvStream {
         if !truncated && text.trim().is_empty() {
             return Err(ParseError::Empty);
         }
-        let delimiter = detect_delimiter(&text);
+        let delimiter = forced_delimiter.unwrap_or_else(|| detect_delimiter(&text));
         let records = sample_records(&text, delimiter);
         let header = decide_header(&records);
         let width = records.iter().map(Vec::len).max().unwrap_or(1).max(1);

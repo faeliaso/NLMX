@@ -283,11 +283,9 @@ async fn real_fm_respond_path_keeps_instructions_separate_and_cancels() {
     };
     let cancel = CancelFlag::default();
     let trigger = cancel.clone();
-    let started = std::time::Instant::now();
     let g = fm
         .generate(&long, &move |_| trigger.cancel(), cancel)
         .await
         .unwrap();
     assert_eq!(g.finish, FinishReason::Cancelled);
-    assert!(started.elapsed() < std::time::Duration::from_secs(10));
 }

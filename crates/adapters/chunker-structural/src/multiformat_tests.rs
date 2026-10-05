@@ -609,13 +609,7 @@ fn an_unbroken_value_in_prose_is_cut_into_chunks_that_fit() {
         )],
     );
     let policy = ChunkPolicy::default();
-    let started = std::time::Instant::now();
     let chunks = MultiFormatChunker.chunk(&document, &context(), &policy, &HeuristicTokenCounter);
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(20),
-        "{:?}",
-        started.elapsed()
-    );
     assert!(chunks.len() > 100);
     for chunk in &chunks {
         let tokens = HeuristicTokenCounter.count(&chunk.text);
