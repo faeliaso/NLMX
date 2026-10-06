@@ -41,6 +41,33 @@
   }).observe(document.body, { childList: true, subtree: true });
   document.addEventListener("DOMContentLoaded", () => showMarkedToasts(document.body));
 
+  // ── "Ative a IA local": opened when the server renders it (Apple FM not authorized) ──
+  // The server decides from the real `fm` state; here we only show it, move focus after each
+  // re-check and close it a moment after the success state appears.
+  const fmSetup = document.getElementById("fm-setup");
+  if (fmSetup) {
+    let closing = false;
+    const focusTarget = (dialog) => dialog.querySelector("[data-fm-focus]")?.focus({ preventScroll: true });
+    new MutationObserver(() => {
+      const dialog = fmSetup.querySelector("dialog");
+      if (!dialog) return;
+      if (!dialog.open) {
+        dialog.showModal();
+        focusTarget(dialog);
+      } else if (!dialog.querySelector("[data-fm-setup-done]")) {
+        focusTarget(dialog);
+      }
+      if (dialog.querySelector("[data-fm-setup-done]") && !closing) {
+        closing = true;
+        setTimeout(() => {
+          dialog.close();
+          dialog.remove();
+          document.body.dispatchEvent(new CustomEvent("fm-setup-done"));
+        }, 1500);
+      }
+    }).observe(fmSetup, { childList: true, subtree: true });
+  }
+
   // ── Errors ──────────────────────────────────────────────────────────────────
   // HTTP errors arrive as rendered error fragments (HTMX 4 swaps 4xx/5xx). Network or
   // protocol failures have no response to swap, so they surface as a toast.
@@ -322,7 +349,7 @@
     if (!button) return;
     const text = document.getElementById(button.dataset.copyFrom)?.content?.textContent;
     if (!text) return;
-    if (await copyText(text)) window.DS?.toast("success", "Copiado.");
+    if (await copyText(text)) window.DS?.toast("success", button.dataset.copyMessage || "Copiado.");
     else window.DS?.toast("danger", "Não foi possível copiar.");
   });
   document.addEventListener("click", async (event) => {

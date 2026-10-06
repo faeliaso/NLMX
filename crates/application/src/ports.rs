@@ -31,6 +31,11 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// The answer-generating model (Apple Foundation Models in the app).
 pub trait LlmProvider: Send + Sync {
     fn status(&self) -> BoxFuture<'_, LanguageModelStatus>;
+    /// Asks the system again, ignoring any cached answer (e.g. after the user accepted the
+    /// license). Providers without a cache just report their status.
+    fn recheck(&self) -> BoxFuture<'_, LanguageModelStatus> {
+        self.status()
+    }
     fn capabilities(&self) -> LlmCapabilities;
     /// Exact token count of the request (instructions + user turn) as the model sees it.
     fn count_tokens<'a>(

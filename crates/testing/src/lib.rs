@@ -28,7 +28,8 @@ use nlmx_domain::{
 /// A scripted language model: fixed status, a canned answer (streamed word by word) or error,
 /// token counts of ≈ 4 characters per token unless scripted, and a record of every request.
 pub struct FakeLlmProvider {
-    status: LanguageModelStatus,
+    status: Mutex<LanguageModelStatus>,
+    rechecks: Mutex<usize>,
     context_tokens: u32,
     answer: Result<String, LlmError>,
     token_counts: Mutex<Vec<u32>>,
@@ -41,7 +42,8 @@ pub struct FakeLlmProvider {
 impl FakeLlmProvider {
     pub fn new(status: LanguageModelStatus) -> Self {
         Self {
-            status,
+            status: Mutex::new(status),
+            rechecks: Mutex::new(0),
             context_tokens: 4096,
             answer: Ok(String::new()),
             token_counts: Mutex::new(Vec::new()),
@@ -89,12 +91,27 @@ impl FakeLlmProvider {
     pub fn count_calls(&self) -> usize {
         *self.counted.lock().unwrap()
     }
+
+    /// Changes what the system reports from now on (e.g. the user accepted the license).
+    pub fn set_status(&self, status: LanguageModelStatus) {
+        *self.status.lock().unwrap() = status;
+    }
+
+    /// How many times `recheck` was called.
+    pub fn recheck_calls(&self) -> usize {
+        *self.rechecks.lock().unwrap()
+    }
 }
 
 impl LlmProvider for FakeLlmProvider {
     fn status(&self) -> BoxFuture<'_, LanguageModelStatus> {
-        let status = self.status.clone();
+        let status = self.status.lock().unwrap().clone();
         Box::pin(async move { status })
+    }
+
+    fn recheck(&self) -> BoxFuture<'_, LanguageModelStatus> {
+        *self.rechecks.lock().unwrap() += 1;
+        self.status()
     }
 
     fn capabilities(&self) -> LlmCapabilities {

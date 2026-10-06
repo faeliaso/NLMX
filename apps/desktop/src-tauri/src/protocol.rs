@@ -83,15 +83,20 @@ mod tests {
     use std::sync::Arc;
 
     use nlmx_application::use_cases::GetSystemStatus;
+    use nlmx_domain::generation::LanguageModelStatus;
     use nlmx_testing::{FakeLlmProvider, FakeStorage};
     use nlmx_ui_web::AppState;
 
     use super::*;
 
     fn router() -> Router {
+        router_with(Arc::new(FakeLlmProvider::available()))
+    }
+
+    fn router_with(llm: Arc<FakeLlmProvider>) -> Router {
         nlmx_ui_web::router(AppState {
             system_status: Arc::new(GetSystemStatus::new(
-                Arc::new(FakeLlmProvider::available()),
+                llm,
                 Arc::new(FakeStorage::healthy()),
                 Ok("chromium/7881".into()),
                 Arc::new(nlmx_testing::FakeRuntime::llama()),
@@ -115,6 +120,109 @@ mod tests {
         let response = dispatch(router(), request).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(String::from_utf8_lossy(response.body()).contains("Disponível"));
+    }
+
+    async fn body_of(router: &Router, method: &str, path: &str) -> String {
+        let request = Request::builder()
+            .method(method)
+            .uri(format!("nlmx://localhost{path}"))
+            .body(Vec::new())
+            .unwrap();
+        let response = dispatch(router.clone(), request).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        String::from_utf8_lossy(response.body()).into_owned()
+    }
+
+    const SETUP: &str = "/fragments/fm-setup";
+    const RECHECK: &str = "/fragments/fm-setup/recheck";
+
+    #[tokio::test]
+    async fn fm_setup_is_absent_when_authorized() {
+        let llm = Arc::new(FakeLlmProvider::available());
+        let html = body_of(&router_with(llm.clone()), "GET", SETUP).await;
+        assert!(html.trim().is_empty(), "{html}");
+        assert_eq!(
+            llm.recheck_calls(),
+            0,
+            "startup reads the status, no forced re-check"
+        );
+    }
+
+    #[tokio::test]
+    async fn fm_setup_opens_with_the_exact_command_when_not_authorized() {
+        let llm = Arc::new(FakeLlmProvider::new(LanguageModelStatus::LicenseRequired));
+        let html = body_of(&router_with(llm), "GET", SETUP).await;
+        assert!(html.contains("Ative a IA local"));
+        assert!(html.contains("O NLMX usa o Apple Foundation Models diretamente no seu Mac."));
+        assert!(html.contains("autorização única"));
+        assert!(html.contains("Não sabe qual senha usar?"));
+        assert!(html.contains("nenhum caractere aparece na tela"));
+        assert!(html.contains("não tiver privilégios administrativos"));
+        // The copy button copies this template's text — exactly the command, nothing else.
+        assert!(html.contains(r#"<template id="fm-license-command">sudo fm license</template>"#));
+        assert!(html.contains(r#"data-copy-from="fm-license-command""#));
+        // Copying is client-side only: no Tauri command, no request, nothing executed.
+        assert!(!html.contains("data-command"));
+        assert!(!html.contains("crie uma senha"));
+    }
+
+    #[tokio::test]
+    async fn fm_setup_for_a_missing_fm_does_not_offer_the_license_command() {
+        let llm = Arc::new(FakeLlmProvider::new(LanguageModelStatus::NotInstalled));
+        let html = body_of(&router_with(llm), "GET", SETUP).await;
+        assert!(html.contains("Apple Foundation Models indisponível"));
+        assert!(html.contains("O NLMX não encontrou o fm neste Mac."));
+        assert!(!html.contains("sudo fm license"));
+        assert!(!html.contains("fm-license-command"));
+    }
+
+    #[tokio::test]
+    async fn fm_setup_for_a_failed_check_is_friendly_and_has_no_technical_detail() {
+        let llm = Arc::new(FakeLlmProvider::new(LanguageModelStatus::Unavailable {
+            kind: nlmx_domain::generation::UnavailableKind::Other,
+            reason: "Traceback at /Users/someone/secret/path".into(),
+        }));
+        let html = body_of(&router_with(llm), "GET", SETUP).await;
+        assert!(html.contains("Não foi possível verificar o estado da IA local"));
+        assert!(html.contains("Tentar novamente"));
+        assert!(!html.contains("/Users/someone"));
+        assert!(!html.contains("Traceback"));
+        assert!(!html.contains("sudo fm license"));
+    }
+
+    #[tokio::test]
+    async fn recheck_asks_again_keeps_the_dialog_while_pending_and_closes_when_authorized() {
+        let llm = Arc::new(FakeLlmProvider::new(LanguageModelStatus::LicenseRequired));
+        let router = router_with(llm.clone());
+
+        let pending = body_of(&router, "POST", RECHECK).await;
+        assert_eq!(llm.recheck_calls(), 1);
+        assert!(pending.contains("A autorização ainda não foi identificada."));
+        assert!(pending.contains("Execute sudo fm license no Terminal e tente novamente."));
+        assert!(!pending.contains("data-fm-setup-done"));
+
+        // The user ran `sudo fm license` in Terminal and came back.
+        llm.set_status(LanguageModelStatus::Available);
+        let done = body_of(&router, "POST", RECHECK).await;
+        assert_eq!(llm.recheck_calls(), 2);
+        assert!(done.contains("data-fm-setup-done"));
+        assert!(done.contains("IA local ativada"));
+        assert!(done.contains("O Apple Foundation Models está pronto para uso."));
+    }
+
+    #[tokio::test]
+    async fn a_later_launch_follows_the_real_state_not_a_remembered_one() {
+        let llm = Arc::new(FakeLlmProvider::available());
+        let router = router_with(llm.clone());
+        assert!(body_of(&router, "GET", SETUP).await.trim().is_empty());
+        assert!(body_of(&router, "GET", SETUP).await.trim().is_empty());
+        // Authorization is gone at a later launch: the dialog comes back.
+        llm.set_status(LanguageModelStatus::LicenseRequired);
+        assert!(
+            body_of(&router, "GET", SETUP)
+                .await
+                .contains("Ative a IA local")
+        );
     }
 
     #[test]

@@ -407,6 +407,7 @@ pub fn describe(status: &LanguageModelStatus) -> String {
     match status {
         LanguageModelStatus::Available => "O modelo de linguagem não respondeu.".into(),
         LanguageModelStatus::LicenseRequired => "Os termos do Apple Foundation Models ainda não foram aceitos neste Mac. No Terminal, execute: sudo fm license".into(),
+        LanguageModelStatus::NotInstalled => "O NLMX não encontrou o fm neste Mac. Verifique se a sua versão do macOS e os componentes do Apple Foundation Models estão disponíveis.".into(),
         LanguageModelStatus::Incompatible { reason } => reason.clone(),
         LanguageModelStatus::Unavailable { kind, reason } => match kind {
             UnavailableKind::AppleIntelligenceDisabled => "O Apple Intelligence está desativado. Ative-o em Ajustes do Sistema › Apple Intelligence e Siri.".into(),

@@ -211,3 +211,55 @@ fn downloads_are_confirmed_only_by_the_download_command() {
         "{found:?}"
     );
 }
+
+#[test]
+fn nothing_runs_the_license_command_or_asks_for_a_password() {
+    // The user accepts the Apple Foundation Models license in Terminal; the app only re-checks.
+    // No production code may spawn `fm license`, use sudo/osascript, or script the Terminal.
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
+    let mut stack: Vec<std::path::PathBuf> = ["crates", "apps"]
+        .iter()
+        .map(|d| std::path::Path::new(root).join(d))
+        .collect();
+    let mut offenders = Vec::new();
+    while let Some(path) = stack.pop() {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        if path.is_dir() {
+            if !matches!(name, "tests" | "target" | "node_modules" | "vendor") {
+                stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+            }
+            continue;
+        }
+        if !matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("rs" | "js" | "html")
+        ) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let production = text.split("#[cfg(test)]").next().unwrap_or_default();
+        for needle in [
+            r#".arg("license")"#,
+            r#"args(["license""#,
+            r#"Command::new("sudo")"#,
+            r#"Command::new("osascript")"#,
+            "do shell script",
+            "with administrator privileges",
+        ] {
+            if production.contains(needle) {
+                offenders.push(format!(
+                    "{}: {needle}",
+                    path.strip_prefix(root).unwrap().display()
+                ));
+            }
+        }
+        // The dialog's copy button only copies; it must not trigger a native command.
+        if path.ends_with("components/fm_setup_body.html") && production.contains("data-command") {
+            offenders.push("fm_setup_body.html: data-command".into());
+        }
+    }
+    assert!(offenders.is_empty(), "{offenders:?}");
+}

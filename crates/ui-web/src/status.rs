@@ -33,6 +33,11 @@ impl From<&LanguageModelStatus> for LanguageModelView {
                 label: "Licença pendente",
                 detail: "Aceite os termos de uso uma vez neste Mac executando no Terminal: sudo fm license".into(),
             },
+            LanguageModelStatus::NotInstalled => Self {
+                kind: "danger",
+                label: "Não instalado",
+                detail: "O NLMX não encontrou o fm neste Mac.".into(),
+            },
             LanguageModelStatus::Incompatible { reason } => Self {
                 kind: "danger",
                 label: "Incompatível",

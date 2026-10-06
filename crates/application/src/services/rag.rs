@@ -107,6 +107,9 @@ impl std::fmt::Display for RagError {
             Self::Retrieval(e) => e.fmt(f),
             Self::ModelUnavailable { status, .. } => match status {
                 LanguageModelStatus::LicenseRequired => LlmError::LicenseRequired.fmt(f),
+                LanguageModelStatus::NotInstalled => {
+                    f.write_str("O Apple Foundation Models não está instalado neste Mac.")
+                }
                 LanguageModelStatus::Incompatible { reason }
                 | LanguageModelStatus::Unavailable { reason, .. } => {
                     LlmError::Unavailable(reason.clone()).fmt(f)

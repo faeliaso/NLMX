@@ -331,7 +331,7 @@ pub fn build(
     };
 
     let models = Arc::new(LocalModelProvider::in_data_dir(data_dir));
-    let language_model = Arc::new(FoundationModelsProvider::system(data_dir.join("run")));
+    let language_model = Arc::new(system_fm(data_dir));
     let chat = Chat {
         service: match (&retriever, &db) {
             (Ok(r), Some(db)) => Ok(Arc::new(ChatService {
@@ -522,4 +522,17 @@ mod tests {
         let page = settings_page(router).await;
         assert!(page.contains("Banco de dados indisponível"));
     }
+}
+
+/// The system `fm`. Debug builds accept `NLMX_FM_BINARY=<script>` to simulate its states
+/// (e.g. a script that exits 69 shows the license dialog).
+fn system_fm(data_dir: &Path) -> FoundationModelsProvider {
+    #[cfg(debug_assertions)]
+    if let Ok(binary) = std::env::var("NLMX_FM_BINARY") {
+        return FoundationModelsProvider::new(nlmx_llm_fm::FoundationModelsConfig::new(
+            binary,
+            data_dir.join("run"),
+        ));
+    }
+    FoundationModelsProvider::system(data_dir.join("run"))
 }

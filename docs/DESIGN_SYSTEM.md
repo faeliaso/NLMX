@@ -48,7 +48,7 @@ Interactive gallery (debug builds only): **Configurações › Sobre › Design 
 | Card / list | `.card` + `.card-header` / `.card-body` / `.card-footer`; `.card-interactive`; `.list` + `.list-row`. |
 | Badge | `{% call ds::badge(text, kind, dot) %}` — kind: neutral, accent, success, warning, danger, info. |
 | Menu | Trigger `popovertarget="ID" aria-haspopup="menu"` + `<div class="menu" id="ID" popover role="menu">` with `ds::menu_item`. Arrows ↑↓, Home/End, Esc. |
-| Dialog | `{% call ds::dialog(id, title, description, destructive) %}…buttons…{% endcall %}`; open with `data-dialog-open="ID"`, close with `data-dialog-close`. Focus is trapped and returned to the trigger. Icon and title centered (`.dialog-confirm`); description and buttons are not. |
+| Dialog | `{% call ds::dialog(id, title, description, destructive) %}…buttons…{% endcall %}`; open with `data-dialog-open="ID"`, close with `data-dialog-close`. Focus is trapped and returned to the trigger. A dialog fetched by the server (e.g. "Ative a IA local", `components/fm_setup*.html`, ADR 0019) is opened by `app.js` with `showModal()`, swaps only its inner `#fm-setup-body`, and moves focus to `[data-fm-focus]` after each swap. Icon and title centered (`.dialog-confirm`); description and buttons are not. |
 | Progress | `ds::progress(value, label, kind)`, `ds::progress_indeterminate(label)`, `ds::spinner(label, size)`. |
 | Skeleton | `.skeleton` + `-line` / `-title` / `-block` / `-circle`; `ds::skeleton_card()`. Container with `aria-busy="true"` and `sr-only` text. |
 
