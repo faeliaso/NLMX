@@ -79,7 +79,7 @@ pub async fn documents(State(state): State<AppState>, headers: HeaderMap) -> Res
 }
 
 /// `POST /documents/{id}/delete`: removes the document (confirmed in a dialog) and shows the
-/// library again, with the outcome above it.
+/// library again, announcing the outcome as a toast.
 pub async fn remove_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -88,18 +88,54 @@ pub async fn remove_document(
     let notice = match &state.remover {
         Err(reason) => Notice {
             kind: "danger",
-            title: "Não foi possível remover o documento".into(),
-            message: reason.clone(),
+            message: format!("Não foi possível remover o documento: {reason}"),
         },
         Ok(remover) => match remover.remove(id).await {
             Ok(_) => Notice {
                 kind: "success",
-                title: "Documento removido".into(),
-                message: "Ele e tudo o que derivava dele foram apagados deste Mac.".into(),
+                message:
+                    "Documento removido. Ele e tudo o que derivava dele foram apagados deste Mac."
+                        .into(),
             },
             Err(err) => Notice {
                 kind: "danger",
-                title: "Não foi possível remover o documento".into(),
+                message: format!("Não foi possível remover o documento: {err}"),
+            },
+        },
+    };
+    let view = DocumentsView {
+        library: library(&state).await,
+        notice: Some(notice),
+    };
+    page(&headers, Some(Section::Documents), render(view))
+}
+
+#[derive(serde::Deserialize)]
+pub struct NoteForm {
+    #[serde(default)]
+    text: String,
+}
+
+/// `POST /documents/notes`: the text pasted in the "Adicionar nota" dialog goes to the import
+/// queue like any other source (it shows in the library as `queued` and is indexed in the
+/// background). The outcome of the submission is announced as a toast.
+pub async fn add_note(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Form(form): axum::Form<NoteForm>,
+) -> Response {
+    let notice = match &state.notes {
+        None => Notice {
+            kind: "danger",
+            message: "Não foi possível adicionar a nota: a importação não está disponível.".into(),
+        },
+        Some(notes) => match notes.submit(&form.text) {
+            Ok(()) => Notice {
+                kind: "info",
+                message: "Nota adicionada. Ela é indexada em segundo plano.".into(),
+            },
+            Err(err) => Notice {
+                kind: "danger",
                 message: err.to_string(),
             },
         },

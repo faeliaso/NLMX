@@ -1,6 +1,6 @@
 [package]
 name = "nlmx-workspace-tests"
-description = "Workspace-level tests: architecture rules and, later, end-to-end tests."
+description = "Workspace-level tests: architecture rules, model activation and release acceptance."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,10 +9,6 @@ publish.workspace = true
 
 [lib]
 path = "lib.rs"
-
-[[bench]]
-name = "bench"
-harness = false
 
 [dev-dependencies]
 cargo_metadata.workspace = true
@@ -28,6 +24,10 @@ nlmx-embed-llama.workspace = true
 nlmx-models-catalog.workspace = true
 nlmx-llm-fm.workspace = true
 nlmx-telemetry.workspace = true
+nlmx-parser-text.workspace = true
+nlmx-parser-epub.workspace = true
+nlmx-parser-office.workspace = true
+nlmx-normalizer-text.workspace = true
 nlmx-ui-web.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

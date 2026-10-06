@@ -12,5 +12,8 @@ nlmx-domain.workspace = true
 nlmx-application.workspace = true
 sha2.workspace = true
 
+[dev-dependencies]
+nlmx-testing.workspace = true
+
 [lints]
 workspace = true

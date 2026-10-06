@@ -3,14 +3,27 @@
 //! Ports are object-safe so the composition root can inject `Arc<dyn Port>`; async operations
 //! return [`BoxFuture`].
 
-use std::{fmt, future::Future, path::Path, pin::Pin};
+use std::{
+    fmt,
+    future::Future,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+};
 
 use nlmx_domain::{
     document::{
         DocumentError, DocumentHandle, DocumentMetadata, PageImage, PageInfo, RenderOptions,
         RenderedPage, TextSpan,
     },
+    document_type::DocumentType,
     generation::{Generation, GenerationRequest, LanguageModelStatus, LlmCapabilities, LlmError},
+    parsed::{
+        ChunkContext, ChunkMetadata as ParsedChunkMetadata, DocumentChunk,
+        DocumentMetadata as ParsedMetadata, ParseError, ParsedDocument, SectionKind,
+        SectionOutline,
+    },
+    source::SourceLocation,
 };
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -120,11 +133,100 @@ pub trait DocumentEngine: Send + Sync {
     ) -> BoxFuture<'_, Result<RenderedPage, DocumentError>>;
 }
 
+// ── Parsing ──────────────────────────────────────────────────────────────────
+
+/// A file to parse and, when known, its format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentSource {
+    pub path: PathBuf,
+    /// The declared format; when `None` it is read from the file extension.
+    pub document_type: Option<DocumentType>,
+    /// The text itself, for a source that has no file (a note): the path is then never read.
+    pub text: Option<Arc<str>>,
+}
+
+impl DocumentSource {
+    /// A file whose format is the one of its extension (`None` if it has no known one).
+    pub fn from_path(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let document_type = DocumentType::from_path(&path);
+        Self {
+            path,
+            document_type,
+            text: None,
+        }
+    }
+
+    /// A file of a known format, whatever its extension.
+    pub fn of_type(path: impl Into<PathBuf>, document_type: DocumentType) -> Self {
+        Self {
+            path: path.into(),
+            document_type: Some(document_type),
+            text: None,
+        }
+    }
+
+    /// A note: the pasted text, with no file behind it.
+    pub fn note(text: impl Into<Arc<str>>) -> Self {
+        Self {
+            path: PathBuf::new(),
+            document_type: Some(DocumentType::Note),
+            text: Some(text.into()),
+        }
+    }
+}
+
+/// Reads one format into the common [`ParsedDocument`]: metadata, structure and locations.
+/// A parser knows nothing about chunking, embeddings or the RAG. Implementations must not
+/// log the document's content, name or path.
+pub trait DocumentParser: Send + Sync {
+    fn document_type(&self) -> DocumentType;
+    /// Version of the parser's output; bump it when the same file would parse differently.
+    fn version(&self) -> u32;
+    fn supports_type(&self, document_type: DocumentType) -> bool {
+        document_type == self.document_type()
+    }
+    /// Whether the media type (e.g. `text/csv; charset=utf-8`) is one this parser reads.
+    fn supports_mime(&self, mime: &str) -> bool {
+        DocumentType::from_mime(mime).is_some_and(|kind| self.supports_type(kind))
+    }
+    fn parse<'a>(
+        &'a self,
+        source: &'a DocumentSource,
+    ) -> BoxFuture<'a, Result<ParsedDocument, ParseError>>;
+}
+
+// ── Notes ────────────────────────────────────────────────────────────────────
+
+/// Why a note was not accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteSubmitError {
+    /// Empty, only whitespace, or too long.
+    Invalid(nlmx_domain::note::NoteError),
+    /// Importing is not available (no worker or no library).
+    Unavailable,
+}
+
+impl fmt::Display for NoteSubmitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Invalid(error) => error.fmt(f),
+            Self::Unavailable => f.write_str("Não foi possível adicionar a nota agora."),
+        }
+    }
+}
+
+/// Hands a pasted note to the import queue: it is validated at once and registered, indexed
+/// and reported like any other source. The interface never touches the pipeline itself.
+pub trait NoteSubmitter: Send + Sync {
+    fn submit(&self, text: &str) -> Result<(), NoteSubmitError>;
+}
+
 // ── Ingestion ────────────────────────────────────────────────────────────────
 
 use nlmx_domain::ingestion::{
-    ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, PageLayout,
-    RemovalImpact, StructuredDocument,
+    ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary, IngestProgress,
+    PageLayout, RemovalImpact, SourceDetails, StructuredDocument,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +238,9 @@ pub struct FileDigest {
 
 /// The on-disk document library.
 pub trait FileStore: Send + Sync {
+    /// The digest of a note's text. It never equals the digest of a file with the same bytes,
+    /// because a note and a file are different documents.
+    fn digest_text(&self, text: &str) -> FileDigest;
     fn digest<'a>(&'a self, path: &'a Path) -> BoxFuture<'a, Result<FileDigest, StorageError>>;
     /// Copies `path` into the library under its hash and returns the library path. Idempotent.
     fn store<'a>(
@@ -148,6 +253,20 @@ pub trait FileStore: Send + Sync {
     /// Deletes library files (and leftover temporary copies) whose hash is not in `keep`;
     /// returns how many were deleted.
     fn prune(&self, keep: Vec<String>) -> BoxFuture<'_, Result<u32, StorageError>>;
+}
+
+/// Receives the progress of the indexing pipeline (the Tauri adapter forwards it to the
+/// interface). Reports are best effort and must never block or fail the pipeline.
+pub trait ProgressSink: Send + Sync {
+    fn report(&self, progress: IngestProgress);
+}
+
+/// A sink that drops every report.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoProgress;
+
+impl ProgressSink for NoProgress {
+    fn report(&self, _progress: IngestProgress) {}
 }
 
 /// Turns page layouts into normalized blocks with headings and sections. Pure and deterministic.
@@ -174,6 +293,31 @@ pub trait Chunker: Send + Sync {
     ) -> Vec<ChunkDraft>;
 }
 
+/// Cleans the text of a parsed document, whatever its format: Unicode form, stray control and
+/// zero-width characters, spacing. Pure and idempotent. It never changes the structure (blocks
+/// keep their kind) or any location, only the text of blocks and titles; a block left empty
+/// is dropped.
+pub trait DocumentNormalizer: Send + Sync {
+    /// Bumped whenever the output for the same input changes.
+    fn version(&self) -> u32;
+    fn normalize(&self, document: ParsedDocument) -> ParsedDocument;
+}
+
+/// Splits a (normalized) parsed document into chunks that keep the section path and the
+/// source location of what they hold. Pure and deterministic; no parser details and no
+/// embeddings here.
+pub trait DocumentChunker: Send + Sync {
+    /// Bumped whenever the output for the same input changes (stored as `chunker_version`).
+    fn version(&self) -> u32;
+    fn chunk(
+        &self,
+        document: &ParsedDocument,
+        context: &ChunkContext,
+        policy: &ChunkPolicy,
+        tokens: &dyn TokenCounter,
+    ) -> Vec<DocumentChunk>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewDocument {
     pub sha256: String,
@@ -181,6 +325,10 @@ pub struct NewDocument {
     pub original_path: String,
     pub library_path: String,
     pub file_size: u64,
+    /// The format of the file; its media type is derived from it.
+    pub document_type: DocumentType,
+    /// The text of a note (`DocumentType::Note`); `None` for every document that has a file.
+    pub note_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,6 +346,17 @@ pub struct DocumentRecord {
     pub library_path: String,
     pub status: DocumentStatus,
     pub file_size: u64,
+    pub document_type: DocumentType,
+    pub mime_type: String,
+    /// The text of a note; `None` for a document that has a file.
+    pub note_text: Option<String>,
+}
+
+impl DocumentRecord {
+    /// Whether the interface can open the document (only a PDF can).
+    pub fn previewable(&self) -> bool {
+        self.document_type.previewable()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -225,11 +384,55 @@ pub struct Extraction {
     pub status: DocumentStatus,
 }
 
+/// Everything the content pipeline produced for one document of any format, saved atomically
+/// (see `DocumentRepository::save_processed`). Chunks must be of the document's format.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredExtraction {
+    pub title: String,
+    pub metadata: ParsedMetadata,
+    /// Pages of a paged format (empty otherwise).
+    pub pages: Vec<PageRecord>,
+    pub outline: Vec<SectionOutline>,
+    pub chunks: Vec<DocumentChunk>,
+    pub extractor_version: u32,
+    pub normalizer_version: u32,
+    pub chunker_version: u32,
+    /// Status after saving: `Embedding` (waiting for embeddings) or `NeedsOcr`.
+    pub status: DocumentStatus,
+}
+
+/// A stored section of a document's structure.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionRecord {
+    pub id: i64,
+    /// The enclosing section, if any.
+    pub parent_id: Option<i64>,
+    pub kind: SectionKind,
+    pub title: Option<String>,
+    pub level: u8,
+    pub ordinal: u32,
+    /// Enclosing headings including the section's own, outermost first.
+    pub path: Vec<String>,
+    pub location: SourceLocation,
+}
+
 pub trait DocumentRepository: Send + Sync {
     fn find_by_sha256<'a>(
         &'a self,
         sha256: &'a str,
     ) -> BoxFuture<'a, Result<Option<DocumentId>, StorageError>>;
+    /// The most recently imported document whose original file was at `path`.
+    fn find_by_original_path<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Option<DocumentId>, StorageError>>;
+    /// Points an existing document at a new version of its file (new hash, size, library copy,
+    /// format) and queues it again. Its chunks stay until the next `save_processed` replaces them.
+    fn replace_source(
+        &self,
+        id: DocumentId,
+        source: NewDocument,
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
     /// Inserts a queued document and its ingest job; reports an existing document with the same hash.
     fn insert(&self, document: NewDocument) -> BoxFuture<'_, Result<InsertOutcome, StorageError>>;
     fn get(&self, id: DocumentId) -> BoxFuture<'_, Result<Option<DocumentRecord>, StorageError>>;
@@ -245,7 +448,28 @@ pub trait DocumentRepository: Send + Sync {
         id: DocumentId,
         extraction: Extraction,
     ) -> BoxFuture<'_, Result<(), StorageError>>;
+    /// Like `save_extraction`, for a document of any format: also the metadata, the structure
+    /// and each chunk's location (a PDF keeps its page and boxes where the viewer reads them).
+    /// Fails, saving nothing, if a chunk is of another format than the document.
+    fn save_processed(
+        &self,
+        id: DocumentId,
+        extraction: StoredExtraction,
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
+    /// The stored chunks in order, with their location whatever the format. `ChunkDraft`-era
+    /// PDF chunks read as `SourceLocation::Pdf`.
+    fn chunks_of(&self, id: DocumentId) -> BoxFuture<'_, Result<Vec<DocumentChunk>, StorageError>>;
+    /// The stored structure in reading order (empty for documents saved before sections existed).
+    fn sections_of(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Vec<SectionRecord>, StorageError>>;
     fn list(&self) -> BoxFuture<'_, Result<Vec<DocumentSummary>, StorageError>>;
+    /// What the interface shows about one source (`None` if it does not exist).
+    fn source_details(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<SourceDetails>, StorageError>>;
     /// Documents whose ingestion was interrupted (see `DocumentStatus::is_unfinished`).
     fn unfinished(&self) -> BoxFuture<'_, Result<Vec<DocumentId>, StorageError>>;
     /// Page sizes saved by the last extraction, in page order (empty before extraction).
@@ -438,15 +662,22 @@ pub struct ChunkView {
     pub chunk_id: ChunkId,
     pub document_id: nlmx_domain::ingestion::DocumentId,
     pub document_title: String,
+    /// The name of the file as it was imported.
+    pub document_name: String,
+    pub document_type: DocumentType,
     /// Position of the chunk in its document (consecutive ordinals are neighbours).
     pub ordinal: u32,
     pub content_hash: String,
+    /// Pages of a PDF chunk. Meaningless for any other format: read `location`.
     pub page_start: u32,
     pub page_end: u32,
     pub section: Option<String>,
     pub text: String,
-    /// Where the chunk is on its pages (top-left origin, PDF points).
+    /// Where the chunk is on its pages (top-left origin, PDF points); PDF only.
     pub bboxes: Vec<nlmx_domain::ingestion::PageBox>,
+    /// Where the chunk comes from, whatever the format. The source of truth for provenance.
+    pub location: SourceLocation,
+    pub metadata: ParsedChunkMetadata,
 }
 
 pub trait ChunkReader: Send + Sync {

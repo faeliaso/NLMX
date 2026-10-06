@@ -3,6 +3,14 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
+mod parsing;
+mod pipeline;
+mod store;
+
+pub use parsing::*;
+pub use pipeline::*;
+pub use store::*;
+
 use nlmx_application::ports::{
     BoxFuture, CancelFlag, DocumentEngine, LlmProvider, SettingsRepository, StorageDiagnostics,
     StorageError, StorageInfo,
@@ -205,6 +213,7 @@ pub struct FakePage {
 pub struct FakeDocumentEngine {
     documents: Mutex<HashMap<std::path::PathBuf, (DocumentMetadata, Vec<FakePage>)>>,
     open: Mutex<HashMap<u64, std::path::PathBuf>>,
+    open_errors: Mutex<HashMap<std::path::PathBuf, DocumentError>>,
     next: std::sync::atomic::AtomicU64,
 }
 
@@ -219,6 +228,21 @@ impl FakeDocumentEngine {
             .lock()
             .unwrap()
             .insert(path.into(), (metadata, pages));
+        self
+    }
+
+    /// Documents opened and not yet closed.
+    pub fn open_documents(&self) -> usize {
+        self.open.lock().unwrap().len()
+    }
+
+    /// `open` of this path fails with `error` (e.g. a corrupt or password-protected file).
+    pub fn with_open_error(
+        self,
+        path: impl Into<std::path::PathBuf>,
+        error: DocumentError,
+    ) -> Self {
+        self.open_errors.lock().unwrap().insert(path.into(), error);
         self
     }
 
@@ -269,6 +293,9 @@ impl DocumentEngine for FakeDocumentEngine {
         path: &'a std::path::Path,
     ) -> BoxFuture<'a, Result<DocumentHandle, DocumentError>> {
         Box::pin(async move {
+            if let Some(error) = self.open_errors.lock().unwrap().get(path) {
+                return Err(error.clone());
+            }
             if !self.documents.lock().unwrap().contains_key(path) {
                 return Err(DocumentError::NotFound);
             }
@@ -384,12 +411,13 @@ impl DocumentEngine for FakeDocumentEngine {
 
 use nlmx_application::ports::{
     Chunker, DocumentRecord, DocumentRepository, Extraction, FileDigest, FileStore, InsertOutcome,
-    NewDocument, RemovedDocument, StructureAnalyzer, TokenCounter,
+    NewDocument, RemovedDocument, SectionRecord, StoredExtraction, StructureAnalyzer, TokenCounter,
 };
 use nlmx_domain::ingestion::{
     Block, BlockKind, ChunkDraft, ChunkPolicy, DocumentId, DocumentStatus, DocumentSummary,
-    PageBox, PageLayout, RemovalImpact, StructuredDocument,
+    PageBox, PageLayout, RemovalImpact, SourceDetails, StructuredDocument,
 };
+use nlmx_domain::parsed::{DocumentChunk, SectionKind};
 
 /// Files held in memory; the "hash" is derived from the content so equal bytes ⇒ equal hash.
 #[derive(Default)]
@@ -437,6 +465,13 @@ impl FakeFileStore {
 }
 
 impl FileStore for FakeFileStore {
+    fn digest_text(&self, text: &str) -> FileDigest {
+        FileDigest {
+            sha256: Self::hash(format!("nlmx-note\0{text}").as_bytes()),
+            size: text.len() as u64,
+        }
+    }
+
     fn digest<'a>(
         &'a self,
         path: &'a std::path::Path,
@@ -489,6 +524,8 @@ pub struct FakeDocumentRow {
     pub status: DocumentStatus,
     pub error: Option<String>,
     pub extraction: Option<Extraction>,
+    /// What `save_processed` stored (any format); replaces `extraction` and the other way round.
+    pub processed: Option<StoredExtraction>,
     /// Every status the document went through, in order.
     pub history: Vec<DocumentStatus>,
     /// Removed rows keep their slot so ids are never reused by the fake.
@@ -536,6 +573,40 @@ impl DocumentRepository for FakeDocumentRepository {
         })
     }
 
+    fn find_by_original_path<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Option<DocumentId>, StorageError>> {
+        Box::pin(async move {
+            Ok(self
+                .rows
+                .lock()
+                .unwrap()
+                .iter()
+                .rposition(|r| !r.removed && r.new.original_path == path)
+                .map(|i| i as DocumentId + 1))
+        })
+    }
+
+    fn replace_source(
+        &self,
+        id: DocumentId,
+        source: NewDocument,
+    ) -> BoxFuture<'_, Result<(), StorageError>> {
+        Box::pin(async move {
+            let mut rows = self.rows.lock().unwrap();
+            let row = rows
+                .get_mut(id as usize - 1)
+                .filter(|r| !r.removed)
+                .ok_or_else(|| StorageError::new("documento inexistente"))?;
+            row.new = source;
+            row.status = DocumentStatus::Queued;
+            row.error = None;
+            row.history.push(DocumentStatus::Queued);
+            Ok(())
+        })
+    }
+
     fn insert(&self, document: NewDocument) -> BoxFuture<'_, Result<InsertOutcome, StorageError>> {
         Box::pin(async move {
             let mut rows = self.rows.lock().unwrap();
@@ -550,6 +621,7 @@ impl DocumentRepository for FakeDocumentRepository {
                 status: DocumentStatus::Queued,
                 error: None,
                 extraction: None,
+                processed: None,
                 history: vec![DocumentStatus::Queued],
                 removed: false,
             });
@@ -572,6 +644,9 @@ impl DocumentRepository for FakeDocumentRepository {
                     library_path: r.new.library_path.clone(),
                     status: r.status,
                     file_size: r.new.file_size,
+                    document_type: r.new.document_type,
+                    mime_type: r.new.document_type.mime_types()[0].to_string(),
+                    note_text: r.new.note_text.clone(),
                 }))
         })
     }
@@ -609,8 +684,138 @@ impl DocumentRepository for FakeDocumentRepository {
             row.status = extraction.status;
             row.error = None;
             row.history.push(extraction.status);
+            row.processed = None;
             row.extraction = Some(extraction);
             Ok(())
+        })
+    }
+
+    fn save_processed(
+        &self,
+        id: DocumentId,
+        extraction: StoredExtraction,
+    ) -> BoxFuture<'_, Result<(), StorageError>> {
+        Box::pin(async move {
+            let mut rows = self.rows.lock().unwrap();
+            let row = rows
+                .get_mut(id as usize - 1)
+                .filter(|r| !r.removed)
+                .ok_or_else(|| StorageError::new("documento inexistente"))?;
+            let kind = row.new.document_type;
+            if !extraction.pages.is_empty() && !kind.is_paged() {
+                return Err(StorageError::new(
+                    "um documento sem páginas não tem páginas",
+                ));
+            }
+            if extraction
+                .chunks
+                .iter()
+                .any(|c| c.location.document_type() != kind || c.metadata.document_type != kind)
+            {
+                return Err(StorageError::new(
+                    "um trecho de outro formato não cabe no documento",
+                ));
+            }
+            row.status = extraction.status;
+            row.error = None;
+            row.history.push(extraction.status);
+            row.extraction = None;
+            row.processed = Some(extraction);
+            Ok(())
+        })
+    }
+
+    fn chunks_of(&self, id: DocumentId) -> BoxFuture<'_, Result<Vec<DocumentChunk>, StorageError>> {
+        Box::pin(async move {
+            let rows = self.rows.lock().unwrap();
+            let Some(processed) = rows
+                .get(id as usize - 1)
+                .filter(|r| !r.removed)
+                .and_then(|r| r.processed.as_ref())
+            else {
+                return Ok(Vec::new());
+            };
+            Ok(processed
+                .chunks
+                .iter()
+                .map(|c| DocumentChunk {
+                    chunk_id: Some(id * 100_000 + i64::from(c.index) + 1),
+                    ..c.clone()
+                })
+                .collect())
+        })
+    }
+
+    fn sections_of(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Vec<SectionRecord>, StorageError>> {
+        Box::pin(async move {
+            let rows = self.rows.lock().unwrap();
+            let Some(processed) = rows
+                .get(id as usize - 1)
+                .filter(|r| !r.removed)
+                .and_then(|r| r.processed.as_ref())
+            else {
+                return Ok(Vec::new());
+            };
+            let mut records: Vec<SectionRecord> = Vec::new();
+            for (ordinal, section) in processed.outline.iter().enumerate() {
+                let parent_path: &[String] = match section.kind {
+                    SectionKind::Heading => section.path.split_last().map_or(&[], |(_, r)| r),
+                    SectionKind::Body => &section.path,
+                };
+                let parent_id = (!parent_path.is_empty())
+                    .then(|| {
+                        records
+                            .iter()
+                            .rev()
+                            .find(|r| r.path == parent_path)
+                            .map(|r| r.id)
+                    })
+                    .flatten();
+                records.push(SectionRecord {
+                    id: ordinal as i64 + 1,
+                    parent_id,
+                    kind: section.kind,
+                    title: section.title.clone(),
+                    level: section.level,
+                    ordinal: ordinal as u32,
+                    path: section.path.clone(),
+                    location: section.location.clone(),
+                });
+            }
+            Ok(records)
+        })
+    }
+
+    fn source_details(
+        &self,
+        id: DocumentId,
+    ) -> BoxFuture<'_, Result<Option<SourceDetails>, StorageError>> {
+        Box::pin(async move {
+            let summary = self.list().await?.into_iter().find(|d| d.id == id);
+            let size = self
+                .rows
+                .lock()
+                .unwrap()
+                .get(id as usize - 1)
+                .map_or(0, |r| r.new.file_size);
+            Ok(summary.map(|d| SourceDetails {
+                id: d.id,
+                title: d.title,
+                file_name: d.original_filename,
+                document_type: d.document_type,
+                status: d.status,
+                error: d.error,
+                chunks: d.chunk_count,
+                file_size: size,
+                page_count: d.page_count,
+                sheets: None,
+                imported_at: d.imported_at,
+                indexed_at: None,
+                conversations: 0,
+            }))
         })
     }
 
@@ -629,10 +834,20 @@ impl DocumentRepository for FakeDocumentRepository {
                         .extraction
                         .as_ref()
                         .map(|e| e.title.clone())
+                        .or_else(|| r.processed.as_ref().map(|e| e.title.clone()))
                         .unwrap_or_else(|| r.new.original_filename.clone()),
                     original_filename: r.new.original_filename.clone(),
-                    page_count: r.extraction.as_ref().map(|e| e.page_count),
-                    chunk_count: r.extraction.as_ref().map_or(0, |e| e.chunks.len() as u32),
+                    document_type: r.new.document_type,
+                    page_count: r.extraction.as_ref().map(|e| e.page_count).or_else(|| {
+                        r.processed
+                            .as_ref()
+                            .filter(|_| r.new.document_type.is_paged())
+                            .map(|e| e.pages.len() as u32)
+                    }),
+                    chunk_count: r.extraction.as_ref().map_or_else(
+                        || r.processed.as_ref().map_or(0, |e| e.chunks.len() as u32),
+                        |e| e.chunks.len() as u32,
+                    ),
                     status: r.status,
                     error: r.error.clone(),
                     imported_at: "2026-01-01T00:00:00.000Z".into(),
@@ -666,8 +881,11 @@ impl DocumentRepository for FakeDocumentRepository {
                 .unwrap()
                 .get(id as usize - 1)
                 .filter(|r| !r.removed)
-                .and_then(|r| r.extraction.as_ref())
-                .map(|e| e.pages.clone())
+                .map(|r| match (&r.extraction, &r.processed) {
+                    (Some(e), _) => e.pages.clone(),
+                    (None, Some(p)) => p.pages.clone(),
+                    _ => Vec::new(),
+                })
                 .unwrap_or_default())
         })
     }
@@ -679,8 +897,11 @@ impl DocumentRepository for FakeDocumentRepository {
             let chunks = rows
                 .get(id as usize - 1)
                 .filter(|r| !r.removed)
-                .and_then(|r| r.extraction.as_ref())
-                .map_or(0, |e| e.chunks.len() as u32);
+                .map_or(0, |r| match (&r.extraction, &r.processed) {
+                    (Some(e), _) => e.chunks.len() as u32,
+                    (None, Some(p)) => p.chunks.len() as u32,
+                    _ => 0,
+                });
             Ok(RemovalImpact {
                 chunks,
                 ..RemovalImpact::default()
@@ -737,6 +958,7 @@ impl nlmx_application::ports::IndexingReader for FakeDocumentRepository {
                 .filter(|(_, r)| !r.removed)
                 .map(|(i, r)| nlmx_domain::indexing::IndexJob {
                     document_id: i as DocumentId + 1,
+                    document_type: r.new.document_type,
                     title: r
                         .extraction
                         .as_ref()
@@ -1349,6 +1571,24 @@ use nlmx_application::ports::{Candidates, ChunkReader, ChunkView, LexicalIndex};
 use nlmx_domain::retrieval::{LexicalCandidate, LexicalQuery, RetrievalFilter};
 
 /// Chunks in memory with a naive lexical score (term occurrences, accent-sensitive).
+use nlmx_domain::{
+    document_type::DocumentType,
+    source::{SourceLocation, SourceReference},
+};
+
+fn fake_chunk_metadata(
+    document_type: DocumentType,
+    document_id: DocumentId,
+) -> nlmx_domain::parsed::ChunkMetadata {
+    nlmx_domain::parsed::ChunkMetadata {
+        document_type,
+        document_title: Some(format!("Documento {document_id}")),
+        file_name: None,
+        language: None,
+        columns: Vec::new(),
+    }
+}
+
 #[derive(Default)]
 pub struct FakeCorpus {
     chunks: Vec<ChunkView>,
@@ -1361,6 +1601,8 @@ impl FakeCorpus {
             chunk_id,
             document_id,
             document_title: format!("Documento {document_id}"),
+            document_name: format!("documento-{document_id}.pdf"),
+            document_type: DocumentType::Pdf,
             ordinal: chunk_id as u32,
             content_hash: format!("hash-{chunk_id}"),
             page_start: page,
@@ -1368,6 +1610,41 @@ impl FakeCorpus {
             section: None,
             text: text.into(),
             bboxes: vec![],
+            location: SourceLocation::Pdf {
+                page_start: page,
+                page_end: page,
+                boxes: vec![],
+            },
+            metadata: fake_chunk_metadata(DocumentType::Pdf, document_id),
+        });
+        self
+    }
+
+    /// A chunk of a document that is not a PDF, at `location` (its format is the location's).
+    pub fn located(
+        mut self,
+        chunk_id: i64,
+        document_id: DocumentId,
+        document_name: &str,
+        location: SourceLocation,
+        text: &str,
+    ) -> Self {
+        let document_type = location.document_type();
+        self.chunks.push(ChunkView {
+            chunk_id,
+            document_id,
+            document_title: format!("Documento {document_id}"),
+            document_name: document_name.to_string(),
+            document_type,
+            ordinal: chunk_id as u32,
+            content_hash: format!("hash-{chunk_id}"),
+            page_start: 1,
+            page_end: 1,
+            section: None,
+            text: text.into(),
+            bboxes: vec![],
+            location,
+            metadata: fake_chunk_metadata(document_type, document_id),
         });
         self
     }
@@ -1934,6 +2211,27 @@ pub async fn conversation_repository_contract(
         .await
         .unwrap();
     repo.set_title(all.id, "Qual a carência?").await.unwrap();
+    let boxes = vec![PageBox {
+        page: 2,
+        bbox: nlmx_domain::document::BoundingBox {
+            left: 72.0,
+            top: 100.0,
+            right: 300.0,
+            bottom: 120.0,
+        },
+    }];
+    let reference = |page_start, page_end| {
+        let mut r = SourceReference::pdf(
+            document,
+            "Relatório",
+            None,
+            page_start,
+            page_end,
+            boxes.clone(),
+        );
+        r.section_path = vec!["3. Prazos".into()];
+        r
+    };
     let source = MessageSource {
         n: 1,
         cited: true,
@@ -1943,23 +2241,18 @@ pub async fn conversation_repository_contract(
         page_start: 2,
         page_end: 3,
         section: Some("3. Prazos".into()),
-        label: "Relatório, pp. 2–3 · 3. Prazos".into(),
+        label: "relatorio.pdf · pp. 2–3".into(),
         quote: "A carência termina após 180 dias.".into(),
-        bboxes: vec![PageBox {
-            page: 2,
-            bbox: nlmx_domain::document::BoundingBox {
-                left: 72.0,
-                top: 100.0,
-                right: 300.0,
-                bottom: 120.0,
-            },
-        }],
+        bboxes: boxes.clone(),
+        reference: reference(2, 3),
+        document_name: "relatorio.pdf".into(),
     };
     let unused = MessageSource {
         n: 2,
         cited: false,
         page_start: 5,
         page_end: 5,
+        reference: reference(5, 5),
         ..source.clone()
     };
     let refs = [nlmx_domain::chat::MessagePageRef {
@@ -2074,6 +2367,8 @@ pub async fn document_removal_contract(repo: &dyn DocumentRepository) {
         original_path: format!("/tmp/{sha}.pdf"),
         library_path: format!("/library/{sha}.pdf"),
         file_size: 10,
+        document_type: nlmx_domain::document_type::DocumentType::Pdf,
+        note_text: None,
     };
     let InsertOutcome::Inserted(a) = repo.insert(new('a')).await.unwrap() else {
         panic!("inserted")
@@ -2143,6 +2438,8 @@ where
         original_path: format!("/tmp/{sha}.pdf"),
         library_path: format!("/library/{sha}.pdf"),
         file_size: 10,
+        document_type: nlmx_domain::document_type::DocumentType::Pdf,
+        note_text: None,
     };
     let InsertOutcome::Inserted(a) = repo.insert(new('a')).await.unwrap() else {
         panic!("inserted")
@@ -2253,5 +2550,34 @@ mod conversation_contract {
             &FakeConversations::default(),
             1,
         ));
+    }
+}
+
+/// A progress sink that keeps every report, for tests.
+#[derive(Default)]
+pub struct FakeProgressSink {
+    reports: Mutex<Vec<nlmx_domain::ingestion::IngestProgress>>,
+}
+
+impl FakeProgressSink {
+    pub fn reports(&self) -> Vec<nlmx_domain::ingestion::IngestProgress> {
+        self.reports.lock().unwrap().clone()
+    }
+
+    /// The phases reported for a document, consecutive repeats collapsed.
+    pub fn phases(&self, id: nlmx_domain::ingestion::DocumentId) -> Vec<&'static str> {
+        let mut phases: Vec<&'static str> = Vec::new();
+        for r in self.reports().into_iter().filter(|r| r.document_id == id) {
+            if phases.last() != Some(&r.phase) {
+                phases.push(r.phase);
+            }
+        }
+        phases
+    }
+}
+
+impl nlmx_application::ports::ProgressSink for FakeProgressSink {
+    fn report(&self, progress: nlmx_domain::ingestion::IngestProgress) {
+        self.reports.lock().unwrap().push(progress);
     }
 }

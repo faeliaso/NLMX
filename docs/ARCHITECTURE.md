@@ -53,6 +53,8 @@ tests/                    testes de workspace: arquitetura, E2E, qualidade do RA
 | Port | Para quê | Adapter |
 |---|---|---|
 | `DocumentEngine` | abrir PDF, metadados, spans de texto com bbox, imagens, renderizar página | `pdf-pdfium` |
+| `DocumentParser` | ler um formato (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) em `ParsedDocument`: metadados, seções, blocos tipados e localização; registro por formato em `ParserRegistry` (ainda não ligado à ingestão, ADR 0011) | `PdfDocumentParser` (em `application`, sobre `DocumentEngine` + `StructureAnalyzer`), `parser-text` (Markdown, TXT, CSV), `parser-epub`, `parser-office` (DOCX e XLSX, ADR 0017) |
+| `DocumentNormalizer` · `DocumentChunker` | limpar o texto de um `ParsedDocument` e cortá-lo em `DocumentChunk`s que mantêm caminho de seção e `SourceLocation`; compostos com o parser por `ContentPipeline` (parse → normalize → chunk, sem embeddings; ADR 0012; ligado à ingestão pelo ADR 0014) | `normalizer-text`, `chunker-structural` (`MultiFormatChunker`) |
 | `FileStore` | hash e cópia do PDF para a biblioteca | `fs-library` |
 | `StructureAnalyzer` · `Chunker` · `TokenCounter` | layout → seções/blocos → chunks | `structure-heuristic`, `chunker-structural` |
 | `DocumentRepository` | documentos, páginas, `save_extraction` atômico, pendentes | `store-sqlite` |
@@ -83,6 +85,18 @@ seletor ─► import_documents (Tauri) ─► DocumentIngestion::import(path)
 - Nada é gravado antes do `save_extraction`, então repetir é idempotente; no boot, `resume()` reprocessa documentos parados e `embed_pending()` gera os vetores que faltam.
 - Sem modelo de embeddings ativo, o documento fica em `embedding` (job `waiting_model`) e a busca é só lexical.
 - Mudança na saída do analisador ou do chunker ⇒ incrementar `structure_heuristic::VERSION` / `chunker_structural::VERSION`.
+
+### Notas (ADR 0018)
+
+```
+"Adicionar nota" (dialog) ─► POST /documents/notes ─► NoteSubmitter (NoteInbox) ─► ImportQueue::push_note
+  clean_note_text (vazio/só espaços ⇒ recusa) ─► DocumentIngestion::enqueue_note
+  ─► digest_text (duplicata) ─► documents (format 'note', note_text, sem arquivo) ─► queued
+  ─► ingest(id): NoteDocumentParser(DocumentSource::note(texto)) ─► normalizer ─► MultiFormatChunker
+  ─► save_processed (SourceLocation::Note) ─► EmbedDocuments ─► VectorStore ─► RAG
+```
+
+É o mesmo pipeline e a mesma fila dos arquivos; só a origem do texto muda (banco em vez de `<sha>.<ext>`). Reindexar e retomar leem `note_text`.
 
 ### Indexação (tela)
 
@@ -199,6 +213,8 @@ Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref=
 | 0008 | `message_page_refs` |
 | 0009 | opção `secure-delete` do `document_chunks_fts` (ADR 0008) |
 | 0010 | `conversations.mode` (livre/documentos) e `messages.grounding` (ADR 0009) |
+| 0011 | `documents.format`/`mime_type`/`metadata`/`normalizer_version`/`previewable` (gerada), `document_sections`, `chunk_provenance` — só aditiva (ADR 0013) |
+| 0012 | `citations.document_type`/`document_name`/`locator` — proveniência da fonte de qualquer formato (ADR 0015) |
 
 Vetores: uma tabela vec0 `chunk_vectors_<embedding_model_id>` por espaço vetorial (modelo + revisão + dimensão), criada em runtime por `create_index`; rowid = id do chunk (ADR 0005).
 

@@ -4,16 +4,11 @@
 
 | Alvo | O que roda | Precisa de |
 |---|---|---|
-| `make test` | tudo que não usa modelo real (padrão) | `make bootstrap` (PDFium) |
+| `make test` | todos os testes (padrão) | `make bootstrap` (PDFium) |
 | `make test-unit` | testes de unidade dentro de cada crate (`--lib`) | — |
 | `make test-integration` | testes de integração dos crates (`crates/*/tests`: SQLite, PDFium, fakes de processo) + doc-tests | PDFium |
-| `make test-e2e` | `tests/tests/*_e2e.rs`: fluxos completos sobre os adaptadores reais | PDFium |
-| `make test-llama` | `llama-server` real + Qwen3 (embeddings, KNN, comparação híbrida) | `scripts/fetch-embedding-model.sh` |
-| `make test-fm` | Apple Foundation Models real (RAG e chat) | macOS 27 + `sudo fm license` |
-| `make test-real` | `test-llama` + `test-fm` + qualidade do RAG e canário de privacidade com modelos reais | os dois acima |
-| `make bench` | medições numa biblioteca de referência (relatório em `target/bench/`) | PDFium; usa os modelos reais se existirem (`NLMX_BENCH_FAKE=1` força os fakes) |
 
-Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
+Só há testes unitários e de integração, mais `tests/tests/` (regras de arquitetura, ativação de modelo) e `release_acceptance` (só por `make acceptance`, `#[ignore]`). `make test` roda tudo isso; não há suítes E2E, com modelo real, de performance nem benchmark.
 
 ## O que cada categoria cobre
 
@@ -22,11 +17,10 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
   - aplicação: ContextBuilder, CitationEngine;
   - adaptadores: parser SSE, transformações de layout/rotação do PDFium;
   - telemetria: registro, redação, rotação;
-  - UI: Markdown seguro.
 - **Integration**: cada adaptador contra a coisa real ou um fake de processo, por exemplo:
   - SQLite: migrações reversíveis, cascatas, contrato do `ConversationRepository`;
   - PDFium (`crates/adapters/pdf-pdfium/tests`);
-  - `fake-llama-server`, `fake-fm`;
+  - `fake-llama-server`;
   - servidor HTTP local para downloads.
 
   Os **contratos dos ports** (`nlmx_testing::*_contract`) rodam contra o fake e contra o adaptador real.
@@ -36,12 +30,7 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
 
   Os testes verificam metadados, spans com coordenadas, imagens, renderização, erros e rotação (caixas dentro da página exibida, texto achado em páginas giradas).
 - **Vector Search**: KNN do sqlite-vec com filtros e reindexação, e **recall@10 ≥ 0,99** contra cosseno exato em 2 000 vetores com semente fixa (`store-sqlite`).
-- **RAG**: unidade (contexto, citações, intenções, follow-up) e o **conjunto-ouro** `tests/golden/rag.json` (`tests/tests/rag_quality.rs`). Mede:
-  - hit@1, hit@5 e MRR do retrieval;
-  - acerto do "não encontrado";
-  - taxa de citações válidas.
-
-  Há limites mínimos no modo determinístico e no modo real.
+- **RAG**: unidade (contexto, citações, intenções, follow-up).
 - **IPC**: a lógica dos comandos Tauri (`run_answer`, `run_cancel`) com fakes cobre:
   - `token…done`;
   - geração duplicada (`running`);
@@ -61,13 +50,6 @@ Os testes com modelo real são `#[ignore]` e só rodam por esses alvos.
   - um download por modelo.
 
   Download **só com confirmação do usuário**: um doc-test `compile_fail` (não se cria `ConfirmedDownload` sem `confirm()`) e um teste de arquitetura (o único chamador de `.confirm()` é o comando `download_model`).
-- **E2E**:
-  - `app_e2e` cobre o app inteiro, menos a casca nativa: importação (com uma falha), Documentos, Chat (turno, geração, citação clicável, `[página N]`), viewer (posição, destaque, busca, camada de texto, imagem) e métricas coletadas;
-  - os demais `*_e2e` cobrem ingestão, retriever, RAG e chat.
-- **Privacidade** (`privacy_canary`): um marcador no texto, no título e no nome do arquivo de um PDF, e também na pergunta e na resposta, nunca aparece:
-  - nos logs (capturados em TRACE pela camada JSON do app);
-  - nas métricas;
-  - na versão real, também nos logs do `llama-server` e do `fm serve`.
 
 ## Medições
 

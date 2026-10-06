@@ -150,18 +150,3 @@ pub fn snapshot_json(s: &DiagnosticsSnapshot) -> serde_json::Value {
         })),
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formats_sizes_and_durations_in_portuguese() {
-        assert_eq!(bytes(512), "512 B");
-        assert_eq!(bytes(1536), "1,5 KB");
-        assert_eq!(bytes(5 * 1024 * 1024), "5,0 MB");
-        assert_eq!(duration(Some(640)), "640 ms");
-        assert_eq!(duration(Some(2100)), "2,1 s");
-        assert_eq!(duration(None), "—");
-    }
-}

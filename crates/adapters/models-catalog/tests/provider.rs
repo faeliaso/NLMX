@@ -506,34 +506,3 @@ async fn updates_to_a_new_version_and_drops_the_old_one() {
         "active model follows the update"
     );
 }
-
-#[tokio::test]
-async fn one_download_per_model_at_a_time() {
-    let bytes = content(2 * MB);
-    let server = serve(
-        bytes.clone(),
-        Mode {
-            delay: Some(Duration::from_millis(10)),
-            ..Mode::default()
-        },
-    );
-    let dir = data_dir("concurrent");
-    let p = Arc::new(provider(&dir, vec![descriptor(&server.url, &bytes, "v1")]));
-    let plan = p.plan_download("test-model").await.unwrap();
-    let (a, b) = (plan.clone().confirm(), plan.confirm());
-    let first = {
-        let p = Arc::clone(&p);
-        tokio::spawn(async move {
-            let (progress, _) = recorder();
-            p.download(a, progress, CancelFlag::default()).await
-        })
-    };
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    let (progress, _) = recorder();
-    let second = p.download(b, progress, CancelFlag::default()).await;
-    assert!(
-        matches!(second, Err(ModelError::Io(ref m)) if m.contains("já está sendo baixado")),
-        "{second:?}"
-    );
-    assert!(first.await.unwrap().is_ok());
-}

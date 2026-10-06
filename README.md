@@ -98,11 +98,7 @@ NLMX_EMBEDDING_CONFIG=$PWD/models/embedding.json make dev
 | `make dev` | Roda o app em modo debug (`cargo tauri dev`) |
 | `make build` | Compila o workspace |
 | `make test` | Todos os testes que não precisam de modelo real |
-| `make test-unit` · `test-integration` · `test-e2e` | Subconjuntos do `make test` |
-| `make test-llama` | Testes com `llama-server` e modelo de embeddings reais |
-| `make test-fm` | Testes de RAG com Apple Foundation Models real |
-| `make test-real` | Todas as suítes com modelos reais, incluindo a qualidade do RAG e o canário de privacidade |
-| `make bench` | Medições numa biblioteca de referência, com relatório em `target/bench/` |
+| `make test-unit` · `test-integration` | Subconjuntos do `make test` |
 | `make lint` · `make fmt` | `cargo fmt --check` + `clippy -D warnings` · formatação |
 | `make bundle` | Gera `dist/NLMX.dmg` (assinatura ad-hoc) e verifica o bundle |
 | `make release` | Gera o DMG assinado com Developer ID e notarizado |
@@ -131,7 +127,7 @@ crates/
   adapters/            implementações: pdf-pdfium, store-sqlite, embed-llama, llm-fm, models-catalog, …
   ui-web/              router axum e renderização das páginas
   testing/             fakes em memória e suítes de contrato dos ports
-tests/                 testes de arquitetura, end-to-end, golden set do RAG e benchmarks
+tests/                 testes de arquitetura, ativação de modelo e aceitação de release
 scripts/               bootstrap, bundle, verificação, aceitação e ícones
 docs/                  produto, arquitetura, design system, testes, release e ADRs
 ```

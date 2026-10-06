@@ -428,3 +428,27 @@ async fn an_answer_not_in_the_documents_can_be_answered_without_them() {
         );
     }
 }
+
+#[tokio::test]
+async fn explain_after_leaving_a_document_for_the_library_keeps_that_document() {
+    let llm = Arc::new(FakeLlmProvider::available().answering("A carência é de 180 dias [1]."));
+    let chat = chat(llm.clone());
+    let c = chat.start(ConversationScope::Document(1)).await.unwrap();
+    let first = answer(&chat, c.id, "Qual a carência para internações?").await;
+    assert!(first.sources.iter().any(|s| s.cited && s.document_id == 1));
+
+    chat.set_scope(c.id, ConversationScope::Library)
+        .await
+        .unwrap();
+    let m = answer(&chat, c.id, "Explique este documento.").await;
+    assert_eq!(m.status, MessageStatus::Answered);
+    assert!(!m.sources.is_empty() && m.sources.iter().all(|s| s.document_id == 1));
+
+    // A library conversation that never cited a document still has to be told which one.
+    let fresh = chat.start(ConversationScope::Library).await.unwrap();
+    let m = answer(&chat, fresh.id, "Explique este documento.").await;
+    assert_eq!(
+        (m.status, m.content.as_str()),
+        (MessageStatus::NotFound, CHOOSE_DOCUMENT_ANSWER)
+    );
+}

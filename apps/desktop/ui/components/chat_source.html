@@ -1,11 +1,13 @@
 {% import "components/ds.html" as ds %}
+{#- Every source opens the side panel: a PDF in the viewer, any other format in its information
+    (there is no preview for those). -#}
 <li>
-  <button type="button" class="source-item" hx-get="{{ s.url }}" hx-target="#viewer" title="Abrir a fonte {{ s.n }} no PDF">
+  <button type="button" class="source-item" hx-get="{{ s.url }}" hx-target="#viewer" title="{% if s.previewable %}Abrir a fonte {{ s.n }} no PDF{% else %}Ver informações da fonte {{ s.n }}{% endif %}">
     <span class="citation" aria-hidden="true">{{ s.n }}</span>
     <span class="source-item-body">
-      <span class="source-item-title"><span class="truncate">{{ s.title }}</span><span class="tabular">{{ s.pages }}</span>{% if !s.section.is_empty() %}<span class="truncate source-item-section">· {{ s.section }}</span>{% endif %}</span>
+      <span class="source-item-title" title="{{ s.title }} · {{ s.location }}">{% call ds::icon(s.icon) %}{% endcall %}<span class="truncate">{{ s.title }}</span><span class="tabular">· {{ s.location }}</span>{% if !s.section.is_empty() %}<span class="truncate source-item-section">· {{ s.section }}</span>{% endif %}<span class="source-item-format">{{ s.format }}</span></span>
       <span class="source-item-quote">{{ s.preview }}</span>
     </span>
-    <span class="source-item-open">{% call ds::icon("document") %}{% endcall %}Abrir no PDF</span>
+    <span class="source-item-open">{% if s.previewable %}{% call ds::icon("document") %}{% endcall %}Abrir no PDF{% else %}{% call ds::icon("info") %}{% endcall %}Ver fonte{% endif %}</span>
   </button>
 </li>

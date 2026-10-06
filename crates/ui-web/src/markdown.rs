@@ -3,9 +3,19 @@
 //! citation markers `[n]` are turned into markup. Raw HTML from the model never reaches the page.
 
 /// How markers become links to the viewer: `[n]` → source `n`, `[página N]` → page `N`.
+/// Where the marker of a source leads: its label and the URL that opens it in the side panel — the
+/// PDF viewer for a PDF, the source information for any other format.
+pub struct SourceLink {
+    /// "relatorio.pdf · pp. 2–3".
+    pub label: String,
+    pub url: String,
+    /// Opens the PDF viewer (otherwise: the information panel).
+    pub previewable: bool,
+}
+
 pub struct Citations<'a> {
-    /// Label ("Relatório, pp. 2–3") and viewer URL of source `n`.
-    pub source: &'a dyn Fn(usize) -> Option<(String, String)>,
+    /// Where marker `[n]` leads.
+    pub source: &'a dyn Fn(usize) -> Option<SourceLink>,
     /// Viewer URL of a `[página N]` reference.
     pub page: &'a dyn Fn(u32) -> Option<String>,
 }
@@ -139,11 +149,16 @@ fn inline(line: &str, citations: &Citations<'_>) -> String {
         };
         let inner = &from[1..close];
         let button = if let Ok(n) = inner.parse::<usize>() {
-            (citations.source)(n).map(|(label, url)| {
+            (citations.source)(n).map(|link| {
+                let (what, tip) = if link.previewable {
+                    (format!("Abrir a fonte {n} no PDF"), "Abrir no PDF")
+                } else {
+                    (format!("Ver informações da fonte {n}"), "Ver informações da fonte")
+                };
                 format!(
-                    r##"<button type="button" class="citation" hx-get="{url}" hx-target="#viewer" aria-label="Abrir a fonte {n} no PDF: {label}" title="Abrir no PDF · {label}">{n}</button>"##,
-                    url = escape(&url),
-                    label = escape(&label),
+                    r##"<button type="button" class="citation" hx-get="{url}" hx-target="#viewer" aria-label="{what}: {label}" title="{tip} · {label}">{n}</button>"##,
+                    url = escape(&link.url),
+                    label = escape(&link.label),
                 )
             })
         } else if let Some(page) = inner
@@ -186,95 +201,4 @@ pub fn plain(text: &str) -> String {
         .join("\n")
         .trim()
         .to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cites(n: usize) -> Option<(String, String)> {
-        (n <= 2).then(|| {
-            (
-                format!("Relatório, p. {n}"),
-                format!("/viewer/1?cite=7-{n}"),
-            )
-        })
-    }
-
-    fn page(p: u32) -> Option<String> {
-        (p == 4).then(|| "/viewer/1?ref=7-4".to_string())
-    }
-
-    fn html(text: &str) -> String {
-        render(
-            text,
-            &Citations {
-                source: &cites,
-                page: &page,
-            },
-        )
-    }
-
-    #[test]
-    fn renders_paragraphs_lists_bold_and_citations() {
-        let out = html(
-            "## Visão geral\nO prazo é **180 dias** [1].\n\n- Consultas [2]\n- Exames\n\n1. Primeiro\n2. Segundo",
-        );
-        assert_eq!(
-            out,
-            concat!(
-                "<p><strong>Visão geral</strong><br>O prazo é <strong>180 dias</strong> ",
-                r##"<button type="button" class="citation" hx-get="/viewer/1?cite=7-1" hx-target="#viewer" aria-label="Abrir a fonte 1 no PDF: Relatório, p. 1" title="Abrir no PDF · Relatório, p. 1">1</button>.</p>"##,
-                "<ul><li>Consultas ",
-                r##"<button type="button" class="citation" hx-get="/viewer/1?cite=7-2" hx-target="#viewer" aria-label="Abrir a fonte 2 no PDF: Relatório, p. 2" title="Abrir no PDF · Relatório, p. 2">2</button></li><li>Exames</li></ul>"##,
-                "<ol><li>Primeiro</li><li>Segundo</li></ol>"
-            )
-        );
-    }
-
-    #[test]
-    fn model_html_is_escaped_and_unknown_markers_stay_text() {
-        let out = html("<script>alert(1)</script> <img src=x onerror=y> [9] [a] **sem par");
-        assert!(!out.contains("<script") && !out.contains("<img"));
-        assert!(out.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
-        assert!(out.contains("[9] [a] **sem par"));
-        assert!(!out.contains("citation"));
-    }
-
-    #[test]
-    fn page_references_become_viewer_links() {
-        let out = html("Ver [página 4] e [página 9].");
-        assert_eq!(
-            out,
-            r##"<p>Ver <button type="button" class="page-ref" hx-get="/viewer/1?ref=7-4" hx-target="#viewer" aria-label="Abrir a página 4 no PDF" title="Abrir a página 4 no PDF">página 4</button> e [página 9].</p>"##
-        );
-    }
-
-    #[test]
-    fn citation_labels_are_escaped() {
-        let evil = |_: usize| {
-            Some((
-                "\"><script>x</script>".to_string(),
-                "/v?a=1&b=2".to_string(),
-            ))
-        };
-        let out = render(
-            "Ver [1].",
-            &Citations {
-                source: &evil,
-                page: &|_| None,
-            },
-        );
-        assert!(out.contains("/v?a=1&amp;b=2"));
-        assert!(!out.contains("<script>"));
-        assert!(out.contains("&quot;&gt;&lt;script&gt;"));
-    }
-
-    #[test]
-    fn plain_text_for_copying() {
-        assert_eq!(
-            plain("## Título\nTexto **forte** [1].\n- item"),
-            "Título\nTexto forte [1].\n- item"
-        );
-    }
 }

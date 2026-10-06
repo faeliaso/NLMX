@@ -51,6 +51,9 @@ async fn viewer() -> (ViewDocument, i64) {
     ));
     let documents = Arc::new(FakeDocumentRepository::default());
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: engine.clone(),
         files: Arc::new(files),
         documents: documents.clone(),

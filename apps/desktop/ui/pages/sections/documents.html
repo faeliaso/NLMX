@@ -1,15 +1,31 @@
 {% import "components/ds.html" as ds %}
 {% import "components/page.html" as page %}
 <div class="page">
-  {% call page::header("Documentos", "PDFs da sua biblioteca local. Nada sai deste Mac.") %}
+  {% call page::header("Documentos", "Documentos da sua biblioteca local. Nada sai deste Mac.") %}
     {%- if let Library::Documents(_) = library %}
-    <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar PDFs</button>
+    <button type="button" class="btn btn-primary" data-command="import_documents">{% call ds::icon("upload") %}{% endcall %}Importar documentos</button>
+    <button type="button" class="btn btn-secondary" data-dialog-open="add-note">{% call ds::icon("plus") %}{% endcall %}Adicionar nota</button>
     {%- endif %}
   {% endcall %}
   <div class="page-body" id="document-list" hx-get="/fragments/documents" hx-trigger="documents-changed from:body, indexing-changed from:body">
     {%- if let Some(n) = notice %}
-    {% call ds::alert(n.kind, n.title, n.message) %}{% endcall %}
+    <p hidden data-toast-on-load="{{ n.kind }}" data-toast-message="{{ n.message }}"></p>
     {%- endif %}
     {% include "components/document_list.html" %}
   </div>
+  {%- if let Library::Documents(_) = library %}
+  <dialog class="dialog" id="add-note" aria-labelledby="add-note-title" aria-describedby="add-note-description">
+    <form data-note-form hx-post="/documents/notes" hx-target="#content">
+      <div class="dialog-body">
+        <h2 class="dialog-title" id="add-note-title">Cole o texto copiado</h2>
+        <p class="dialog-description" id="add-note-description">Cole o texto copiado abaixo para enviá-lo como uma fonte.</p>
+        <textarea class="textarea" name="text" rows="12" placeholder="Cole ou escreva o texto da nota aqui" aria-label="Texto da nota" data-note-text></textarea>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-secondary" data-dialog-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary" data-note-submit disabled>Inserir</button>
+      </div>
+    </form>
+  </dialog>
+  {%- endif %}
 </div>

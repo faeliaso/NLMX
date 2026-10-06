@@ -2,8 +2,8 @@
 <div class="chat-page" data-chat-page data-conversation="{{ conversation_id }}" data-scope="{% if free %}free{% else %}documents{% endif %}"{% if !viewer_html.is_empty() %} data-panel-open{% endif %}>
   <header class="page-header chat-header" data-tauri-drag-region>
     <div class="page-heading" data-tauri-drag-region>
-      <h1 class="page-title chat-title" tabindex="-1" data-page-title>{{ title }}</h1>
-      <p class="page-description">{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}</p>
+      <h1 class="page-title chat-title" tabindex="-1" data-page-title title="{{ title }}">{{ title }}</h1>
+      <p class="page-description" title="{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}">{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}</p>
     </div>
     <div class="page-actions chat-actions">
       <form class="chat-scope" hx-post="/chat/{{ conversation_id }}/scope" hx-trigger="change" hx-target="#content">
@@ -14,7 +14,7 @@
           <optgroup label="Documentos">
             <option value="all"{% if library %} selected{% endif %}>Todos os documentos</option>
             {%- for d in documents %}
-            <option value="{{ d.id }}"{% if d.selected %} selected{% endif %}>{{ d.title }}</option>
+            <option value="{{ d.id }}"{% if d.selected %} selected{% endif %}>{{ d.title }} · {{ d.format }}</option>
             {%- endfor %}
           </optgroup>
           {%- endif %}
@@ -54,7 +54,7 @@
           </div>
           {% endcall %}
           {%- elif documents.is_empty() %}
-          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac. Para perguntar sobre seus PDFs, com citações, importe-os em Documentos.") %}
+          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac. Para perguntar sobre seus documentos, com citações, importe-os em Documentos.") %}
             <a class="btn btn-secondary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{% call ds::icon("document") %}{% endcall %}Ir para Documentos</a>
           {% endcall %}
           {%- else %}

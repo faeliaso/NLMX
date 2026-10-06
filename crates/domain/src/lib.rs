@@ -4,13 +4,17 @@
 
 pub mod chat;
 pub mod document;
+pub mod document_type;
 pub mod embedding;
 pub mod generation;
 pub mod indexing;
 pub mod ingestion;
 pub mod models;
+pub mod note;
+pub mod parsed;
 pub mod rag_intent;
 pub mod retrieval;
+pub mod source;
 pub mod telemetry;
 pub mod vectors;
 pub mod viewer;

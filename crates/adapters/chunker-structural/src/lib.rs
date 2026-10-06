@@ -1,15 +1,38 @@
-//! `Chunker`: blocks → section-aware chunks with a token target and overlap, keeping the
-//! source pages and bounding boxes. Pure Rust, deterministic.
+//! Chunking: blocks → section-aware chunks with a token target and overlap, keeping the
+//! source location (pages and boxes, lines, offsets, rows, chapters). Pure Rust,
+//! deterministic.
+//!
+//! One algorithm (`core`) serves every format. [`StructuralChunker`] is the PDF pipeline's
+//! [`Chunker`] (`StructuredDocument` → `ChunkDraft`); [`MultiFormatChunker`] is the
+//! [`DocumentChunker`] over a `ParsedDocument` of any format; [`RecordChunker`] chunks the rows
+//! of a table-like file.
 
+mod core;
+#[cfg(test)]
+mod equivalence;
+#[cfg(test)]
+mod legacy;
+#[cfg(test)]
+mod multiformat_tests;
+mod records;
 mod split;
 
-use nlmx_application::ports::{Chunker, TokenCounter};
-use nlmx_domain::ingestion::{
-    Block, BlockKind, ChunkDraft, ChunkPolicy, PageBox, StructuredDocument,
+use nlmx_application::ports::{Chunker, DocumentChunker, TokenCounter};
+use nlmx_domain::{
+    document_type::DocumentType,
+    ingestion::{Block, BlockKind, ChunkDraft, ChunkPolicy, PageBox, StructuredDocument},
+    parsed::{
+        ChunkContext, ContentBlock, ContentKind, DatasetColumn, DatasetMetadata, DocumentChunk,
+        ParsedDocument,
+    },
+    source::SourceLocation,
 };
 use sha2::{Digest, Sha256};
 
-/// Bump when the output for the same input changes (stored as `documents.chunker_version`).
+pub use records::{RecordChunker, RecordChunks};
+
+/// Bump when the PDF `Chunker`'s output for the same input changes (stored as
+/// `documents.chunker_version`).
 pub const VERSION: u32 = 1;
 
 /// Approximate tokens for multilingual subword tokenizers: the larger of ~4/3 tokens per word and
@@ -28,17 +51,6 @@ impl TokenCounter for HeuristicTokenCounter {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct StructuralChunker;
 
-/// A piece of a block (the whole block, or a sentence/word run of a large one).
-#[derive(Debug, Clone)]
-struct Unit {
-    block: usize,
-    text: String,
-    tokens: u32,
-    page_start: u32,
-    page_end: u32,
-    boxes: Vec<PageBox>,
-}
-
 impl Chunker for StructuralChunker {
     fn version(&self) -> u32 {
         VERSION
@@ -50,206 +62,209 @@ impl Chunker for StructuralChunker {
         policy: &ChunkPolicy,
         tokens: &dyn TokenCounter,
     ) -> Vec<ChunkDraft> {
-        let mut chunks = Vec::new();
-        for (section_path, blocks) in sections(&document.blocks) {
-            let units = blocks
-                .iter()
-                .flat_map(|(index, block)| units_of(*index, block, policy, tokens))
-                .collect::<Vec<_>>();
-            chunk_section(&units, &section_path, policy, tokens, &mut chunks);
-        }
-        for (index, chunk) in chunks.iter_mut().enumerate() {
-            chunk.index = index as u32;
-        }
-        chunks
+        let blocks: Vec<ContentBlock> = document.blocks.iter().map(content_block).collect();
+        let items: Vec<core::Item<'_>> = document
+            .blocks
+            .iter()
+            .zip(&blocks)
+            .map(|(block, content)| (block.section_path.as_slice(), content))
+            .collect();
+        core::chunk(&items, true, policy, tokens)
+            .into_iter()
+            .enumerate()
+            .map(|(index, chunk)| draft(index as u32, chunk))
+            .collect()
     }
 }
 
-/// A section path and its blocks (with their index in the document).
-type Section<'a> = (Vec<String>, Vec<(usize, &'a Block)>);
-
-/// Consecutive non-heading blocks sharing a section path. Headings only define the path.
-fn sections(blocks: &[Block]) -> Vec<Section<'_>> {
-    let mut sections: Vec<Section<'_>> = Vec::new();
-    for (index, block) in blocks.iter().enumerate() {
-        if matches!(block.kind, BlockKind::Heading { .. }) || block.text.trim().is_empty() {
-            continue;
-        }
-        match sections.last_mut() {
-            Some((path, members)) if *path == block.section_path => members.push((index, block)),
-            _ => sections.push((block.section_path.clone(), vec![(index, block)])),
-        }
+/// A block of the PDF structure analysis as the core reads it. Its pages are the ones of its
+/// boxes, or the page it starts on when it has none.
+fn content_block(block: &Block) -> ContentBlock {
+    let page_start = block
+        .boxes
+        .iter()
+        .map(|b| b.page)
+        .min()
+        .unwrap_or(block.page);
+    let page_end = block
+        .boxes
+        .iter()
+        .map(|b| b.page)
+        .max()
+        .unwrap_or(block.page);
+    ContentBlock {
+        kind: match block.kind {
+            BlockKind::Heading { level } => ContentKind::Heading { level },
+            BlockKind::Paragraph => ContentKind::Paragraph,
+            BlockKind::ListItem => ContentKind::ListItem {
+                ordered: false,
+                depth: 0,
+            },
+        },
+        text: block.text.clone(),
+        location: SourceLocation::Pdf {
+            page_start,
+            page_end,
+            boxes: block.boxes.clone(),
+        },
     }
-    sections
 }
 
-fn units_of(
-    index: usize,
-    block: &Block,
-    policy: &ChunkPolicy,
-    tokens: &dyn TokenCounter,
-) -> Vec<Unit> {
-    let (page_start, page_end) = page_range(&block.boxes, block.page);
-    let unit = |text: String| Unit {
-        block: index,
-        tokens: tokens.count(&text),
-        text,
+fn draft(index: u32, chunk: core::CoreChunk) -> ChunkDraft {
+    let (page_start, page_end, boxes): (u32, u32, Vec<PageBox>) = match chunk.location {
+        SourceLocation::Pdf {
+            page_start,
+            page_end,
+            boxes,
+        } => (page_start, page_end, boxes),
+        _ => (1, 1, Vec::new()),
+    };
+    ChunkDraft {
+        index,
+        token_count: chunk.token_count,
         page_start,
         page_end,
-        boxes: block.boxes.clone(),
-    };
-    if tokens.count(&block.text) <= policy.max_tokens {
-        return vec![unit(block.text.clone())];
-    }
-    split::sentences(&block.text)
-        .into_iter()
-        .flat_map(|sentence| {
-            if tokens.count(&sentence) <= policy.max_tokens {
-                vec![sentence]
-            } else {
-                split::words(&sentence, policy.target_tokens, tokens)
-            }
-        })
-        .map(unit)
-        .collect()
-}
-
-fn page_range(boxes: &[PageBox], fallback: u32) -> (u32, u32) {
-    let start = boxes.iter().map(|b| b.page).min().unwrap_or(fallback);
-    let end = boxes.iter().map(|b| b.page).max().unwrap_or(fallback);
-    (start, end)
-}
-
-fn chunk_section(
-    units: &[Unit],
-    section_path: &[String],
-    policy: &ChunkPolicy,
-    tokens: &dyn TokenCounter,
-    out: &mut Vec<ChunkDraft>,
-) {
-    let section_start = out.len();
-    let mut current: Vec<Unit> = Vec::new();
-    // Units in `current` that are new content (not carried over as overlap).
-    let mut fresh = 0usize;
-
-    for unit in units {
-        let current_tokens: u32 = current.iter().map(|u| u.tokens).sum();
-        if fresh > 0 && current_tokens + unit.tokens > policy.target_tokens {
-            let chunk = build(&current, section_path, tokens);
-            let overlap = overlap_unit(
-                &chunk.text,
-                current.last().expect("non-empty"),
-                policy,
-                tokens,
-            );
-            out.push(chunk);
-            current = overlap.into_iter().collect();
-            fresh = 0;
-        }
-        current.push(unit.clone());
-        fresh += 1;
-    }
-    if fresh == 0 {
-        return;
-    }
-
-    // A small remainder joins the previous chunk of the same section when it fits.
-    let new_part = &current[current.len() - fresh..];
-    let new_tokens: u32 = new_part.iter().map(|u| u.tokens).sum();
-    if new_tokens < policy.min_tokens && out.len() > section_start {
-        let previous = out.last_mut().expect("section has a chunk");
-        if previous.token_count + new_tokens <= policy.max_tokens {
-            let mut merged = units_of_chunk(previous);
-            merged.extend(new_part.iter().cloned());
-            *previous = build(&merged, section_path, tokens);
-            return;
-        }
-    }
-    out.push(build(&current, section_path, tokens));
-}
-
-/// Re-expresses an existing chunk as a single unit so a remainder can be appended to it.
-fn units_of_chunk(chunk: &ChunkDraft) -> Vec<Unit> {
-    vec![Unit {
-        block: usize::MAX,
-        text: chunk.text.clone(),
-        tokens: chunk.token_count,
-        page_start: chunk.page_start,
-        page_end: chunk.page_end,
-        boxes: chunk.boxes.clone(),
-    }]
-}
-
-/// The trailing sentences (or words) of `text` that fit in `overlap_tokens`.
-fn overlap_unit(
-    text: &str,
-    last: &Unit,
-    policy: &ChunkPolicy,
-    tokens: &dyn TokenCounter,
-) -> Option<Unit> {
-    if policy.overlap_tokens == 0 {
-        return None;
-    }
-    let sentences = split::sentences(text.rsplit("\n\n").next().unwrap_or(text));
-    let mut tail: Vec<&str> = Vec::new();
-    let mut used = 0;
-    for sentence in sentences.iter().rev() {
-        let n = tokens.count(sentence);
-        if used + n > policy.overlap_tokens {
-            break;
-        }
-        used += n;
-        tail.push(sentence);
-    }
-    let overlap = if tail.is_empty() {
-        split::last_words(text, policy.overlap_tokens, tokens)
-    } else {
-        tail.reverse();
-        tail.join(" ")
-    };
-    (!overlap.is_empty()).then(|| Unit {
-        block: last.block,
-        tokens: tokens.count(&overlap),
-        text: overlap,
-        page_start: last.page_end,
-        page_end: last.page_end,
-        boxes: last
-            .boxes
-            .iter()
-            .filter(|b| b.page == last.page_end)
-            .copied()
-            .collect(),
-    })
-}
-
-fn build(units: &[Unit], section_path: &[String], tokens: &dyn TokenCounter) -> ChunkDraft {
-    let mut text = String::new();
-    let mut boxes: Vec<PageBox> = Vec::new();
-    for (i, unit) in units.iter().enumerate() {
-        if i > 0 {
-            // Pieces of the same block flow as one paragraph; different blocks stay separate.
-            text.push_str(if units[i - 1].block == unit.block {
-                " "
-            } else {
-                "\n\n"
-            });
-        }
-        text.push_str(&unit.text);
-        for b in &unit.boxes {
-            if !boxes.contains(b) {
-                boxes.push(*b);
-            }
-        }
-    }
-    ChunkDraft {
-        index: 0,
-        token_count: tokens.count(&text),
-        page_start: units.iter().map(|u| u.page_start).min().unwrap_or(1),
-        page_end: units.iter().map(|u| u.page_end).max().unwrap_or(1),
-        section_path: section_path.to_vec(),
+        section_path: chunk.section_path,
         boxes,
-        content_hash: sha256_hex(&text),
-        text,
+        content_hash: sha256_hex(&chunk.text),
+        text: chunk.text,
+    }
+}
+
+/// The [`DocumentChunker`] for every format: table-like files go through [`RecordChunker`],
+/// the rest through the shared core. Chunks carry the document id and metadata of the context,
+/// the section path (headings or chapters) and the merged source location of their blocks.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MultiFormatChunker;
+
+impl MultiFormatChunker {
+    /// Bump when the output for the same input changes.
+    pub const VERSION: u32 = 1;
+}
+
+impl DocumentChunker for MultiFormatChunker {
+    fn version(&self) -> u32 {
+        Self::VERSION
+    }
+
+    fn chunk(
+        &self,
+        document: &ParsedDocument,
+        context: &ChunkContext,
+        policy: &ChunkPolicy,
+        tokens: &dyn TokenCounter,
+    ) -> Vec<DocumentChunk> {
+        let kind = document.document_type();
+        if kind == DocumentType::Csv {
+            let dataset = document
+                .metadata()
+                .dataset
+                .clone()
+                .unwrap_or_else(|| dataset_of(document));
+            return RecordChunker
+                .chunk(
+                    context,
+                    &dataset,
+                    document.blocks().cloned(),
+                    policy,
+                    tokens,
+                )
+                .collect();
+        }
+        if kind == DocumentType::Xlsx {
+            return chunk_workbook(document, context, policy, tokens);
+        }
+        let items: Vec<core::Item<'_>> = document
+            .sections()
+            .iter()
+            .flat_map(|section| {
+                section
+                    .blocks
+                    .iter()
+                    .map(move |block| (section.path.as_slice(), block))
+            })
+            .collect();
+        core::chunk(&items, kind.is_paged(), policy, tokens)
+            .into_iter()
+            .enumerate()
+            .map(|(index, chunk)| DocumentChunk {
+                document_id: context.document_id,
+                chunk_id: None,
+                index: index as u32,
+                token_count: Some(chunk.token_count),
+                section_path: chunk.section_path,
+                location: chunk.location,
+                metadata: context.metadata(kind, Vec::new()),
+                content_hash: sha256_hex(&chunk.text),
+                text: chunk.text,
+            })
+            .collect()
+    }
+}
+
+/// The columns of the first record, for a table-like document without dataset metadata.
+/// A workbook is chunked sheet by sheet (each has its own columns), numbering the chunks
+/// consecutively. A sheet whose blocks carry no sheet location is skipped.
+fn chunk_workbook(
+    document: &ParsedDocument,
+    context: &ChunkContext,
+    policy: &ChunkPolicy,
+    tokens: &dyn TokenCounter,
+) -> Vec<DocumentChunk> {
+    let mut chunks: Vec<DocumentChunk> = Vec::new();
+    for section in document.sections() {
+        let Some((sheet_index, sheet_name)) = section.blocks.iter().find_map(|block| match &block
+            .location
+        {
+            SourceLocation::Xlsx {
+                sheet_index,
+                sheet_name,
+                ..
+            } => Some((*sheet_index, sheet_name.clone())),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let dataset = dataset_from_blocks(section.blocks.iter());
+        let first_index = u32::try_from(chunks.len()).unwrap_or(u32::MAX);
+        chunks.extend(RecordChunker.chunk_sheet(
+            context,
+            sheet_index,
+            &sheet_name,
+            first_index,
+            &dataset,
+            section.blocks.iter().cloned(),
+            policy,
+            tokens,
+        ));
+    }
+    chunks
+}
+
+fn dataset_of(document: &ParsedDocument) -> DatasetMetadata {
+    dataset_from_blocks(document.blocks())
+}
+
+fn dataset_from_blocks<'a>(mut blocks: impl Iterator<Item = &'a ContentBlock>) -> DatasetMetadata {
+    let columns = blocks
+        .find_map(|block| match &block.kind {
+            ContentKind::Record { fields } => Some(
+                fields
+                    .iter()
+                    .map(|f| DatasetColumn {
+                        name: f.name.clone(),
+                        kind: nlmx_domain::parsed::ColumnKind::Text,
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default();
+    DatasetMetadata {
+        columns,
+        delimiter: ',',
+        has_header: false,
+        row_count: None,
     }
 }
 

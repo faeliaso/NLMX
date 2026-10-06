@@ -25,6 +25,22 @@
     updateBusy();
   });
 
+  // ── Server-requested toasts: <p hidden data-toast-on-load="KIND" data-toast-message="…"> ──
+  // A response that wants to announce an outcome (e.g. a document removed) carries this marker;
+  // it becomes a toast and is removed so it never shows twice. (HTMX 4 has no HX-Trigger header.)
+  function showMarkedToasts(scope) {
+    const markers = scope.matches?.("[data-toast-on-load]") ? [scope] : [];
+    markers.push(...(scope.querySelectorAll?.("[data-toast-on-load]") ?? []));
+    for (const marker of markers) {
+      window.DS?.toast(marker.dataset.toastOnLoad || "info", marker.dataset.toastMessage || "");
+      marker.remove();
+    }
+  }
+  new MutationObserver((mutations) => {
+    for (const m of mutations) m.addedNodes.forEach((node) => node.nodeType === 1 && showMarkedToasts(node));
+  }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener("DOMContentLoaded", () => showMarkedToasts(document.body));
+
   // ── Errors ──────────────────────────────────────────────────────────────────
   // HTTP errors arrive as rendered error fragments (HTMX 4 swaps 4xx/5xx). Network or
   // protocol failures have no response to swap, so they surface as a toast.
@@ -79,6 +95,22 @@
     document.body.dispatchEvent(new CustomEvent("indexing-changed", { bubbles: true }));
   });
 
+  // ── Imports run in the background: the library list follows them ──
+  // The app emits "documents-changed" whenever a document is registered or changes stage (many
+  // times while embedding); the list reloads at most once per short window.
+  let documentsTimer = null;
+  window.__TAURI__?.event?.listen("documents-changed", () => {
+    if (documentsTimer) return;
+    documentsTimer = setTimeout(() => {
+      documentsTimer = null;
+      document.body.dispatchEvent(new CustomEvent("documents-changed", { bubbles: true }));
+    }, 300);
+  });
+  // One summary per batch of imported files; failures stay until dismissed.
+  window.__TAURI__?.event?.listen("import-finished", ({ payload }) => {
+    if (payload?.message) window.DS?.toast(payload.kind || "info", payload.message);
+  });
+
   // ── Model downloads: progress bar driven by "model-download-progress" events ──
   const megabytes = (bytes) => `${(bytes / 1e6).toFixed(0)} MB`;
   function showDownload(id) {
@@ -114,6 +146,36 @@
   }
   document.addEventListener("input", (event) => {
     if (event.target.matches?.("textarea[data-autogrow]")) autogrow(event.target);
+  });
+
+  // ── Add note: "Inserir" only with text, one submission, an empty field on each open ──
+  const noteForm = (node) => node.closest?.("[data-note-form]");
+  function syncNote(form) {
+    const submit = form.querySelector("[data-note-submit]");
+    const text = form.querySelector("[data-note-text]");
+    submit.disabled = form.hasAttribute("data-busy") || !text.value.trim();
+  }
+  document.addEventListener("input", (event) => {
+    const form = noteForm(event.target);
+    if (form) syncNote(form);
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.('[data-dialog-open="add-note"]')) return;
+    const form = document.querySelector("[data-note-form]");
+    if (!form) return;
+    form.reset();
+    form.removeAttribute("data-busy");
+    form.querySelector("[data-note-submit]").removeAttribute("aria-busy");
+    syncNote(form);
+  });
+  // htmx reads the field when it handles the submit on the form itself; this runs after it.
+  document.addEventListener("submit", (event) => {
+    const form = noteForm(event.target);
+    if (!form) return;
+    form.setAttribute("data-busy", "");
+    form.querySelector("[data-note-submit]").setAttribute("aria-busy", "true");
+    syncNote(form);
+    form.closest("dialog")?.close();
   });
 
   // One answer at a time: while one is being generated the composer is locked and its

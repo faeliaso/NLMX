@@ -103,6 +103,7 @@ mod tests {
             diagnostics: None,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
+            notes: None,
         })
     }
 

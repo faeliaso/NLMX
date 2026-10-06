@@ -72,10 +72,11 @@
     border-bottom: 1px solid var(--color-border);
   }
   .page-heading { flex: 1; min-width: 0; }
-  .page-title { font-size: var(--text-title-2); font-weight: 600; letter-spacing: -0.005em; }
+  /* One line each: a narrow window ends the text in an ellipsis (the full text is the title attribute). */
+  .page-title { font-size: var(--text-title-2); font-weight: 600; letter-spacing: -0.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .page-title:focus { outline: none; }
-  .page-description { color: var(--color-fg-muted); font-size: var(--text-footnote); }
-  .page-actions { display: flex; gap: 0.5rem; }
+  .page-description { color: var(--color-fg-muted); font-size: var(--text-footnote); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-actions { display: flex; flex: none; gap: 0.5rem; }
   .page-body {
     flex: 1;
     width: 100%;

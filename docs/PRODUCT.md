@@ -1,6 +1,6 @@
 # NLMX — Produto
 
-Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITECTURE.md`](ARCHITECTURE.md). Estado da última release: [`releases/0.1.0.md`](releases/0.1.0.md).
+Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Visão
 
@@ -28,9 +28,9 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | ID | Requisito | Status |
 |---|---|---|
 | **Biblioteca** | | |
-| RF01 | Importar PDFs via seletor, drag & drop ou pasta (recursiva) | ◐ só seletor (vários arquivos) |
+| RF01 | Importar documentos (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) via seletor, drag & drop ou pasta (recursiva), e adicionar **notas** (texto colado, sem arquivo; ADR 0018) | ◐ só seletor e notas (vários arquivos, vários formatos; ADR 0014) |
 | RF02 | Detectar duplicatas por SHA-256 do conteúdo | ✓ |
-| RF03 | Copiar o PDF para a biblioteca interna (`<data>/library/<sha>.pdf`) | ✓ |
+| RF03 | Copiar o arquivo para a biblioteca interna (`<data>/library/<sha>.<ext>`) | ✓ |
 | RF04 | Listar documentos com título, páginas, tamanho, data e status | ✓ |
 | RF05 | Remover documento e todos os dados derivados | ✓ com o histórico do Chat que o usou e sem rastro no arquivo do banco (ADR 0008) |
 | RF06 | Reindexar (ex.: troca do modelo de embeddings) | ✓ automático ao trocar o modelo; manual em Indexação ("Reindexar tudo", "Tentar novamente") |
@@ -50,8 +50,8 @@ Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITE
 | RF17 | Busca semântica, lexical e híbrida | ✓ fusão ponderada (ADR 0007) |
 | RF18 | Escopo: biblioteca, documento ou coleção | ◐ conversa livre, todos os documentos ou um documento (ADR 0009); coleções só no backend |
 | RF19 | Resposta via Apple FM com streaming | ✓ |
-| RF20 | Citações `[n]` vinculadas a documento, página e trecho | ✓ (também `[página N]`) |
-| RF21 | Clicar na citação abre o PDF na página com o trecho destacado | ✓ |
+| RF20 | Citações `[n]` vinculadas a documento, localização (página, seção, intervalo, linhas, capítulo) e trecho, de qualquer formato | ✓ (também `[página N]` em PDF; ADR 0015) |
+| RF21 | Clicar na citação abre o PDF na página com o trecho destacado; nos outros formatos seleciona a fonte e mostra suas informações (sem viewer) | ✓ (ADR 0016) |
 | RF22 | "Não encontrei" quando a relevância é baixa, sem chamar o modelo | ✓ no modo documento, com a opção "Responder sem os documentos" |
 | RF23 | Conversas salvas, com perguntas de acompanhamento | ✓ |
 | RF24 | Transparência: mostrar os trechos enviados ao modelo | ✓ lista de fontes na resposta |
@@ -95,7 +95,7 @@ Também feito, fora da lista original: intenções "Explique este documento." e 
 
 1. **Distribuição pública:** certificado Developer ID e `make release` (assinatura, notarização), depois `make acceptance` e teste num Mac limpo.
 2. **Lacunas de requisitos:** drag & drop e pasta (RF01), importação manual de GGUF (RF27), coleções na UI (RF18), pausa/cancelamento da ingestão (RF15).
-3. **Desempenho dos embeddings:** reduzir contexto/lote do `llama-server` (~1,9 GB e 8,4 embeddings/s hoje). Medir com `make bench`. O cache de prompts do servidor, que chegava a ~10 GB, está desligado, e o processo é encerrado depois de 45 s ocioso (ADR 0006).
+3. **Desempenho dos embeddings:** reduzir contexto/lote do `llama-server` (~1,9 GB e 8,4 embeddings/s hoje).. O cache de prompts do servidor, que chegava a ~10 GB, está desligado, e o processo é encerrado depois de 45 s ocioso (ADR 0006).
 4. **OCR** de escaneados (ex.: `fm respond --tool ocr`), preservando página e coordenadas.
 5. **Qualidade:** títulos numerados repetidos removidos como cabeçalho; documentos padronizados que só mudam números.
 6. **Primeiro uso guiado:** checklist na primeira abertura (licença do `fm`, Apple Intelligence, modelo).

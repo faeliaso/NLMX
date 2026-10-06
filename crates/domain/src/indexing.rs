@@ -8,6 +8,7 @@ use crate::ingestion::{DocumentId, DocumentStatus};
 pub struct IndexJob {
     pub document_id: DocumentId,
     pub title: String,
+    pub document_type: crate::document_type::DocumentType,
     pub status: DocumentStatus,
     pub error: Option<String>,
     pub chunks: u32,
@@ -73,6 +74,7 @@ mod tests {
         IndexJob {
             document_id: id,
             title: format!("doc {id}"),
+            document_type: crate::document_type::DocumentType::Pdf,
             status,
             error: None,
             chunks,

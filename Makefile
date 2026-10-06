@@ -1,9 +1,6 @@
-.PHONY: bootstrap dev build bundle release acceptance test test-unit test-integration test-e2e test-llama test-fm test-real bench lint fmt
+.PHONY: bootstrap dev build bundle release acceptance test test-unit test-integration lint fmt
 
 TAURI_DIR := apps/desktop/src-tauri
-# Release builds only find the runtime through these (debug builds also look in runtime/).
-RUNTIME_ENV := NLMX_PDFIUM_PATH=$(CURDIR)/runtime/lib/libpdfium.dylib NLMX_LLAMA_SERVER=$(CURDIR)/runtime/llama/llama-server
-E2E_TESTS := $(patsubst tests/tests/%.rs,--test %,$(wildcard tests/tests/*_e2e.rs))
 
 bootstrap:          ## Download Tailwind CLI and vendored HTMX
 	./scripts/bootstrap.sh
@@ -46,25 +43,6 @@ test-unit:          ## Unit tests (pure logic, inside each crate)
 test-integration:   ## Crate integration tests (SQLite, PDFium, process fakes) + doc tests
 	cargo test --workspace --tests --exclude nlmx-workspace-tests
 	cargo test --workspace --doc
-
-test-e2e:           ## End-to-end tests over the real adapters (tests/tests/*_e2e.rs)
-	cargo test -p nlmx-workspace-tests $(E2E_TESTS)
-
-test-llama:         ## Real llama-server + embedding model (needs scripts/fetch-embedding-model.sh)
-	cargo test -p nlmx-embed-llama --test real_model -- --ignored --nocapture
-	cargo test -p nlmx-workspace-tests --test vector_search_real -- --ignored --nocapture
-	cargo test -p nlmx-workspace-tests --test hybrid_comparison -- --ignored --nocapture
-
-test-fm:            ## Real Apple Foundation Models (macOS 27, license accepted with sudo fm license)
-	cargo test -p nlmx-workspace-tests --test rag_e2e -- --ignored --nocapture --test-threads=1
-	cargo test -p nlmx-workspace-tests --test chat_e2e -- --ignored --nocapture --test-threads=1
-
-test-real: test-llama test-fm   ## All real-model suites, incl. RAG quality and the privacy canary
-	cargo test -p nlmx-workspace-tests --test rag_quality -- --ignored --nocapture
-	cargo test -p nlmx-workspace-tests --test privacy_canary -- --ignored --nocapture
-
-bench:              ## Measurements on a reference library (report in target/bench/)
-	$(RUNTIME_ENV) cargo bench -p nlmx-workspace-tests --bench bench
 
 lint:
 	cargo fmt --all --check

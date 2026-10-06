@@ -24,6 +24,8 @@ async fn indexing(source: Arc<FixedEmbeddingSource>) -> (Indexing, Arc<FakeDocum
                 original_path: String::new(),
                 library_path: String::new(),
                 file_size: 1,
+                document_type: nlmx_domain::document_type::DocumentType::Pdf,
+                note_text: None,
             })
             .await
             .unwrap();
@@ -35,6 +37,7 @@ async fn indexing(source: Arc<FixedEmbeddingSource>) -> (Indexing, Arc<FakeDocum
     documents.force_status(2, DocumentStatus::Embedding);
     documents.force_status(3, DocumentStatus::Indexed);
     let embedder = Arc::new(EmbedDocuments {
+        progress: None,
         embeddings: source.clone(),
         vectors: Arc::new(FakeVectorStore::default().with_chunk(1, 2)),
         chunks: Arc::new(FakeCorpus::default().chunk(1, 2, 1, "carência de 180 dias")),

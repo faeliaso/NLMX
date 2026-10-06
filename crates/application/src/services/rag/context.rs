@@ -3,9 +3,11 @@
 //! delimited blocks — never into the instructions.
 
 use nlmx_domain::{
+    document_type::DocumentType,
     generation::GenerationRequest,
     ingestion::{DocumentId, PageBox},
     retrieval::{contains_content, same_content},
+    source::RetrievedSource,
     vectors::ChunkId,
 };
 
@@ -68,10 +70,12 @@ pub struct Source {
     pub page_start: u32,
     pub page_end: u32,
     pub section: Option<String>,
-    /// e.g. "Relatório, pp. 2–3 · 3. Prazos".
+    /// e.g. "relatorio.pdf · pp. 2–3", "guia.md · Instalação › Requisitos".
     pub label: String,
     pub bboxes: Vec<PageBox>,
     pub score: f32,
+    /// Where the passage comes from, whatever the format.
+    pub provenance: RetrievedSource,
     /// The text given to the model (possibly shortened).
     pub content: String,
     pub truncated: bool,
@@ -227,6 +231,7 @@ impl ContextBuilder {
                 label: p.source.label.clone(),
                 bboxes: p.metadata.bboxes.clone(),
                 score: p.score,
+                provenance: p.provenance.clone(),
                 content,
                 truncated,
             })
@@ -267,14 +272,29 @@ fn pages(start: u32, end: u32) -> String {
     }
 }
 
-fn header(n: usize, title: &str, start: u32, end: u32, section: Option<&str>) -> String {
-    let mut h = format!(
-        "<trecho n=\"{n}\" documento=\"{}\" paginas=\"{}\"",
-        attribute(title),
-        pages(start, end)
-    );
-    if let Some(section) = section.filter(|s| !s.is_empty()) {
-        h.push_str(&format!(" secao=\"{}\"", attribute(section)));
+/// The opening tag of a numbered passage. A PDF says its pages (`paginas`, and its section);
+/// any other format says its type and where in the file the text is (`tipo`, `localizacao`):
+/// the model can only cite what it is told.
+fn header(
+    n: usize,
+    title: &str,
+    provenance: &RetrievedSource,
+    start: u32,
+    end: u32,
+    section: Option<&str>,
+) -> String {
+    let mut h = format!("<trecho n=\"{n}\" documento=\"{}\"", attribute(title));
+    if provenance.document_type() == DocumentType::Pdf {
+        h.push_str(&format!(" paginas=\"{}\"", pages(start, end)));
+        if let Some(section) = section.filter(|s| !s.is_empty()) {
+            h.push_str(&format!(" secao=\"{}\"", attribute(section)));
+        }
+    } else {
+        h.push_str(&format!(
+            " tipo=\"{}\" localizacao=\"{}\"",
+            provenance.document_type().as_str(),
+            attribute(&provenance.location().label())
+        ));
     }
     h.push('>');
     h
@@ -286,6 +306,7 @@ fn block(n: usize, p: &Passage, content: &str) -> String {
         header(
             n,
             &p.source.document_title,
+            &p.provenance,
             p.source.page_start,
             p.source.page_end,
             p.source.section.as_deref()
@@ -299,6 +320,7 @@ fn source_block(s: &Source) -> String {
         header(
             s.n,
             &s.title,
+            &s.provenance,
             s.page_start,
             s.page_end,
             s.section.as_deref()

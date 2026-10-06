@@ -20,9 +20,10 @@ Galeria interativa (somente builds debug): **Configurações › Sobre › Desig
 
 1. **Sem cores cruas fora de `tokens.css`.** O `@theme` remove as paletas padrão do Tailwind (`--color-*: initial`); só existem utilities dos tokens (`bg-surface`, `text-fg-muted`, `border-border`…).
 2. **Não use `dark:`.** Cada cor é `light-dark(CLARO, ESCURO)` e acompanha `color-scheme`, que segue o sistema ou `<html data-theme="light|dark">`.
-3. **Contraste é testado.** `crates/ui-web/tests/contrast.rs` lê `tokens.css` e exige ≥ 4.5:1 para texto e ≥ 3:1 para contornos de controles nos dois temas. Novo par texto/fundo → adicione em `PAIRS`.
+3. **Contraste é conferido à mão.** O `ui-web` não tem mais testes automáticos (nem o de contraste, nem o que barrava cores cruas): ao mudar `tokens.css`, confira ≥ 4.5:1 para texto e ≥ 3:1 para contornos de controles nos dois temas.
 4. **Cor nunca é o único sinal:** badges e alerts sempre têm texto; erros têm ícone + mensagem.
 5. **Foco visível sempre** (`:focus-visible`, anel `--color-focus`); alvos ≥ 24px; animações respeitam `prefers-reduced-motion`.
+6. **Cabeçalho de página em uma linha.** Título e descrição (`.page-title`, `.page-description`) terminam em reticências quando a janela estreita, e o texto completo vai no atributo `title`; use o macro `page::header` em vez de montar o cabeçalho à mão.
 
 ## Tokens
 
@@ -56,6 +57,7 @@ Galeria interativa (somente builds debug): **Configurações › Sobre › Desig
 | Estado | Padrão |
 |---|---|
 | Loading | Skeleton no lugar do conteúdo; spinner em ações; barra global no topo do conteúdo durante navegação |
+| Fonte (qualquer formato) | Ícone do formato (`format-pdf/markdown/text/csv/epub/docx/xlsx (mesma família: contorno de página + glifo)`, vindo de `ui-web::formats`, nunca um `match` na view) + nome + formato + status + localização/meta. Só PDF tem preview (viewer); o clique em qualquer fonte ou referência `[n]` abre o painel lateral: viewer (PDF) ou **Informações da fonte** (`/sources/{id}`, os demais). Um `[n]` é sempre um botão (`aria-label` diz "Abrir a fonte n no PDF" ou "Ver informações da fonte n"). |
 | Empty | `ds::empty_state(ícone, título, descrição)` com a ação principal no corpo |
 | Error | `ds::alert("danger", …)` (`role="alert"`) com ação de recuperação; falhas sem resposta viram toast de erro |
-| Success | `ds::alert("success", …)` ou `DS.toast("success", msg)` (`role="status"`, some em 5 s) |
+| Success | `ds::alert("success", …)` ou `DS.toast("success", msg)` (`role="status"`, some em 5 s). Uma resposta do servidor pede o toast com um marcador `<p hidden data-toast-on-load="KIND" data-toast-message="…"></p>` (o `app.js` o transforma em toast e o remove) |

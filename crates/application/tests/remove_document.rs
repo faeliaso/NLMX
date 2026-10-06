@@ -53,6 +53,9 @@ async fn setup() -> Setup {
     ));
     let documents = Arc::new(FakeDocumentRepository::default());
     let ingestion = DocumentIngestion {
+        pipeline: None,
+        progress: None,
+        viewer: None,
         engine: engine.clone(),
         files: files.clone(),
         documents: documents.clone(),

@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -32,6 +32,10 @@ nlmx-llm-fm = { path = "crates/adapters/llm-fm" }
 nlmx-models-catalog = { path = "crates/adapters/models-catalog" }
 nlmx-fs-library = { path = "crates/adapters/fs-library" }
 nlmx-telemetry = { path = "crates/adapters/telemetry" }
+nlmx-parser-text = { path = "crates/adapters/parser-text" }
+nlmx-parser-epub = { path = "crates/adapters/parser-epub" }
+nlmx-parser-office = { path = "crates/adapters/parser-office" }
+nlmx-normalizer-text = { path = "crates/adapters/normalizer-text" }
 
 # External
 tauri = { version = "2.12", features = [] }
@@ -56,6 +60,13 @@ pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfi
 sha2 = "0.11"
 fs4 = { version = "1.1", features = ["sync"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+csv = "1.4"
+encoding_rs = "0.8"
+encoding_rs_io = "0.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.38"
+unicode-normalization = "0.1"
 
 [workspace.lints.rust]
 # `deny`, not `forbid`: the sqlite-vec FFI registration in store-sqlite/src/vector.rs is the one allowed exception.
@@ -63,6 +74,18 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.debugging]
+inherits = "dev"
+opt-level = 0
+debug = true
 
 [profile.release]
 codegen-units = 1

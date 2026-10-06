@@ -26,7 +26,7 @@ make lint   # cargo fmt --check + clippy -D warnings
 make test   # todos os testes sem modelo real
 ```
 
-Se a mudança afeta RAG, embeddings ou a geração, rode também `make test-real`. As suítes estão descritas em [`docs/TESTING.md`](docs/TESTING.md).
+Só há testes unitários e de integração (`make test`). As suítes estão descritas em [`docs/TESTING.md`](docs/TESTING.md).
 
 ## Regras do código
 
@@ -43,7 +43,7 @@ Se a mudança afeta RAG, embeddings ou a geração, rode também `make test-real
 - Documentos e perguntas nunca saem do dispositivo. Não adicione acesso à rede além do download de modelos iniciado pelo usuário.
 - **Nunca registre em log** texto de documentos, trechos, perguntas, respostas, prompts, títulos, nomes de arquivo ou caminhos do usuário. Identifique documentos pelo id.
 - Medições passam por `telemetry::record(Measurement)`. Para medir algo novo, adicione uma variante em vez de registrar números avulsos.
-- O teste `privacy_canary` precisa continuar passando.
+- Não há mais teste automático de privacidade: revise à mão qualquer mudança em logs e métricas.
 
 ### Banco de dados
 

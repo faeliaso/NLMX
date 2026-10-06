@@ -1,0 +1,59 @@
+//! How a document format looks in the interface: the one place that maps a `DocumentType` to its
+//! icon and label. Every list, the chat sources and the source panel use it, so a format is
+//! never described twice.
+
+use nlmx_domain::document_type::DocumentType;
+
+/// The icon (an entry of `ds::icon`), the short label ("DOCX") and what the format is called in
+/// full ("Documento do Microsoft Word") for the source panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatView {
+    pub icon: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+pub fn format_view(kind: DocumentType) -> FormatView {
+    match kind {
+        DocumentType::Pdf => FormatView {
+            icon: "format-pdf",
+            label: "PDF",
+            description: "Documento PDF",
+        },
+        DocumentType::Markdown => FormatView {
+            icon: "format-markdown",
+            label: "Markdown",
+            description: "Documento Markdown",
+        },
+        DocumentType::Text => FormatView {
+            icon: "format-text",
+            label: "TXT",
+            description: "Arquivo de texto",
+        },
+        DocumentType::Csv => FormatView {
+            icon: "format-csv",
+            label: "CSV",
+            description: "Tabela CSV/TSV (valores separados)",
+        },
+        DocumentType::Epub => FormatView {
+            icon: "format-epub",
+            label: "EPUB",
+            description: "Livro digital EPUB",
+        },
+        DocumentType::Docx => FormatView {
+            icon: "format-docx",
+            label: "DOCX",
+            description: "Documento do Microsoft Word",
+        },
+        DocumentType::Xlsx => FormatView {
+            icon: "format-xlsx",
+            label: "XLSX",
+            description: "Planilha do Microsoft Excel",
+        },
+        DocumentType::Note => FormatView {
+            icon: "format-note",
+            label: "Nota",
+            description: "Texto colado como fonte",
+        },
+    }
+}

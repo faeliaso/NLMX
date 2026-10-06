@@ -177,6 +177,8 @@ mod tests {
                 original_path: "/elsewhere/a.pdf".into(),
                 library_path: library,
                 file_size: 1,
+                document_type: nlmx_domain::document_type::DocumentType::Pdf,
+                note_text: None,
             })
             .await
             .unwrap();

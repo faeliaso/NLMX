@@ -10,10 +10,12 @@ use std::{
 use nlmx_application::{
     ports::{
         BoxFuture, CancelFlag, DocumentEngine, EmbeddingProvider, EmbeddingSource, ModelProvider,
-        StorageDiagnostics, StorageError, StorageInfo,
+        ProgressSink, StorageDiagnostics, StorageError, StorageInfo,
     },
     services::{
         free_chat::FreeChat,
+        parsing::{ParserRegistry, PdfDocumentParser},
+        pipeline::ContentPipeline,
         rag::{RagEngine, RagOptions},
         retrieval::HybridRetriever,
         retriever::Retriever,
@@ -23,12 +25,21 @@ use nlmx_application::{
         IndexingActivity, RemoveDocument, ViewDocument,
     },
 };
-use nlmx_chunker_structural::{HeuristicTokenCounter, StructuralChunker};
-use nlmx_domain::{ingestion::ChunkPolicy, models::ModelState};
+use nlmx_chunker_structural::{HeuristicTokenCounter, MultiFormatChunker};
+use nlmx_domain::{
+    ingestion::{ChunkPolicy, DocumentId, IngestProgress},
+    models::ModelState,
+};
 use nlmx_embed_llama::{EmbeddingConfig, LlamaCppEmbeddingProvider, LlamaCppRuntime};
 use nlmx_fs_library::{FsLibrary, LIBRARY_DIR};
 use nlmx_llm_fm::FoundationModelsProvider;
 use nlmx_models_catalog::LocalModelProvider;
+use nlmx_normalizer_text::TextNormalizer;
+use nlmx_parser_epub::EpubDocumentParser;
+use nlmx_parser_office::{DocxDocumentParser, XlsxDocumentParser};
+use nlmx_parser_text::{
+    CsvDocumentParser, MarkdownDocumentParser, NoteDocumentParser, TextDocumentParser,
+};
 use nlmx_pdf_pdfium::{PDFIUM_BUILD, PdfiumDocumentEngine};
 use nlmx_store_sqlite::{DATABASE_FILE, Database};
 use nlmx_structure_heuristic::HeuristicStructureAnalyzer;
@@ -39,6 +50,50 @@ pub struct UiRouter(pub axum::Router);
 
 /// The ingestion use case for Tauri commands; `Err` carries why it is unavailable.
 pub struct Ingestion(pub Result<Arc<DocumentIngestion>, String>);
+
+/// The progress of the documents being indexed (see [`ProgressRelay`]).
+pub struct IngestProgressState(pub Arc<ProgressRelay>);
+
+/// Forwards the pipeline's progress to the interface and remembers what is still running, so a
+/// screen opened midway can show it. The emitter is attached once the app handle exists.
+type ProgressEmitter = Box<dyn Fn(&IngestProgress) + Send + Sync>;
+
+#[derive(Default)]
+pub struct ProgressRelay {
+    emit: std::sync::OnceLock<ProgressEmitter>,
+    active: Mutex<HashMap<DocumentId, IngestProgress>>,
+}
+
+impl ProgressRelay {
+    pub fn attach(&self, emit: impl Fn(&IngestProgress) + Send + Sync + 'static) {
+        let _ = self.emit.set(Box::new(emit));
+    }
+
+    /// The documents being processed right now, by id.
+    pub fn snapshot(&self) -> Vec<IngestProgress> {
+        let mut active: Vec<_> = self.active.lock().unwrap().values().cloned().collect();
+        active.sort_by_key(|p| p.document_id);
+        active
+    }
+}
+
+impl ProgressSink for ProgressRelay {
+    fn report(&self, progress: IngestProgress) {
+        let finished = matches!(progress.phase, "indexed" | "failed" | "waiting")
+            || progress.status == "needs_ocr";
+        {
+            let mut active = self.active.lock().unwrap();
+            if finished {
+                active.remove(&progress.document_id);
+            } else {
+                active.insert(progress.document_id, progress.clone());
+            }
+        }
+        if let Some(emit) = self.emit.get() {
+            emit(&progress);
+        }
+    }
+}
 
 /// The current embedding model. Replaced when a model is downloaded, activated or removed;
 /// its llama-server starts on first use and is stopped when the model is replaced.
@@ -113,6 +168,7 @@ pub struct Chat {
 pub struct Services {
     pub ui: UiRouter,
     pub ingestion: Ingestion,
+    pub progress: Arc<ProgressRelay>,
     pub embeddings: Arc<EmbeddingSlot>,
     pub embedder: Embedder,
     pub indexing: IndexingState,
@@ -121,6 +177,8 @@ pub struct Services {
     pub diagnostics: DiagnosticsState,
     /// Also cleans the library of orphan files at startup.
     pub remover: Result<Arc<RemoveDocument>, String>,
+    /// Where the UI hands pasted notes to the import queue (connected once the queue starts).
+    pub notes: Arc<crate::importer::NoteInbox>,
 }
 
 /// Builds the app from its data directory (`~/Library/Application Support/<identifier>`).
@@ -178,10 +236,12 @@ pub fn build(
         }
     };
 
+    let progress = Arc::new(ProgressRelay::default());
     let embeddings = EmbeddingSlot::load(data_dir);
     let db = database.as_ref().ok().map(|db| Arc::new(db.clone()));
     let embedder = db.as_ref().map(|db| {
         Arc::new(EmbedDocuments {
+            progress: Some(progress.clone() as Arc<dyn ProgressSink>),
             embeddings: embeddings.clone(),
             vectors: db.clone(),
             chunks: db.clone(),
@@ -217,16 +277,42 @@ pub fn build(
         None => Err("Banco de dados indisponível".to_string()),
     };
     let ingestion = match (database, engine) {
-        (Ok(db), Ok(engine)) => Ok(Arc::new(DocumentIngestion {
-            engine,
-            files: library,
-            documents: Arc::new(db),
-            analyzer: Arc::new(HeuristicStructureAnalyzer),
-            chunker: Arc::new(StructuralChunker),
-            tokens: Arc::new(HeuristicTokenCounter),
-            policy: ChunkPolicy::default(),
-            embedder: embedder.clone(),
-        })),
+        (Ok(db), Ok(engine)) => {
+            // One parser per format: the registry picks it by the file's type, nothing else
+            // in the pipeline knows the formats.
+            let parsers = ParserRegistry::new()
+                .with(Arc::new(PdfDocumentParser::new(
+                    engine.clone(),
+                    Arc::new(HeuristicStructureAnalyzer),
+                )))
+                .with(Arc::new(MarkdownDocumentParser))
+                .with(Arc::new(TextDocumentParser))
+                .with(Arc::new(CsvDocumentParser))
+                .with(Arc::new(EpubDocumentParser::default()))
+                .with(Arc::new(DocxDocumentParser::default()))
+                .with(Arc::new(XlsxDocumentParser::default()))
+                .with(Arc::new(NoteDocumentParser::new()));
+            let tokens = Arc::new(HeuristicTokenCounter);
+            Ok(Arc::new(DocumentIngestion {
+                pipeline: Some(Arc::new(ContentPipeline {
+                    parsers,
+                    normalizer: Arc::new(TextNormalizer),
+                    chunker: Arc::new(MultiFormatChunker),
+                    tokens: tokens.clone(),
+                    policy: ChunkPolicy::default(),
+                })),
+                progress: Some(progress.clone() as Arc<dyn ProgressSink>),
+                viewer: viewer.as_ref().ok().cloned(),
+                engine,
+                files: library,
+                documents: Arc::new(db),
+                analyzer: Arc::new(HeuristicStructureAnalyzer),
+                chunker: Arc::new(nlmx_chunker_structural::StructuralChunker),
+                tokens,
+                policy: ChunkPolicy::default(),
+                embedder: embedder.clone(),
+            }))
+        }
         (Err(err), _) => Err(format!("Banco de dados indisponível: {err}")),
         (_, Err(err)) => Err(format!("Motor de PDF indisponível: {err}")),
     };
@@ -264,6 +350,7 @@ pub fn build(
         running: Mutex::new(HashMap::new()),
         llm: language_model.clone(),
     };
+    let notes = Arc::new(crate::importer::NoteInbox::default());
     let ui = UiRouter(nlmx_ui_web::router(AppState {
         system_status: Arc::new(GetSystemStatus::new(
             language_model,
@@ -278,10 +365,12 @@ pub fn build(
         diagnostics: diagnostics.clone(),
         models: Some(models.clone() as Arc<dyn ModelProvider>),
         indexing: indexing.clone(),
+        notes: Some(notes.clone()),
     }));
     Services {
         ui,
         ingestion: Ingestion(ingestion),
+        progress,
         embeddings,
         embedder: Embedder(embedder),
         indexing: IndexingState { indexing, activity },
@@ -292,6 +381,7 @@ pub fn build(
         chat,
         diagnostics: DiagnosticsState(diagnostics),
         remover,
+        notes,
     }
 }
 

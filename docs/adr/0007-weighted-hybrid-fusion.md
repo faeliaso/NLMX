@@ -15,4 +15,4 @@ O plano era fundir BM25 e KNN por Reciprocal Rank Fusion. RRF usa só a posiçã
 
 ## Consequências
 - O score semântico mantém significado absoluto; `min_relevance` do RAG é um limiar estável.
-- Pesos precisam de calibração; `tests/tests/hybrid_comparison.rs` compara os mecanismos (embedder conceitual sempre, modelo real em `make test-llama`).
+- Pesos precisam de calibração; a comparação entre os mecanismos foi um teste de integração removido; recalibre medindo de novo.

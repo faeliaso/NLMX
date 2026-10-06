@@ -336,7 +336,7 @@
   function syncPane(pane) {
     const page = pane.closest("[data-chat-page]");
     if (!page) return;
-    const content = pane.querySelector("[data-viewer], .viewer-error");
+    const content = pane.querySelector("[data-viewer], [data-source-info], .viewer-error");
     if (!content) {
       page.removeAttribute("data-panel-open");
       page.removeAttribute("data-viewer-expanded");

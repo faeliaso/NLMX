@@ -4,10 +4,10 @@
 <ul class="list" aria-label="{{ label }}">
   {%- for r in rows %}
   <li class="list-row">
-    {% call ds::icon("document") %}{% endcall %}
+    {% call ds::icon(r.icon) %}{% endcall %}
     <div class="list-row-title">
       <p class="selectable truncate" title="{{ r.title }}">{{ r.title }}</p>
-      {%- if !r.meta.is_empty() %}<p class="list-row-meta tabular">{{ r.meta }}</p>{% endif %}
+      <p class="list-row-meta tabular">{{ r.format }}{% if !r.meta.is_empty() %} · {{ r.meta }}{% endif %}</p>
       {%- if !r.detail.is_empty() %}<p class="{% if r.kind == "danger" %}field-error{% else %}list-row-meta{% endif %} selectable">{{ r.detail }}</p>{% endif %}
     </div>
     {% call ds::badge(r.label, r.kind, true) %}{% endcall %}
@@ -34,7 +34,6 @@
   <section aria-labelledby="index-heading">
     <div class="section-heading-row">
       <h2 class="section-heading" id="index-heading">Índice de busca</h2>
-      {%- if m.running %}<span class="list-row-meta">{% call ds::spinner("Indexação em andamento", "sm") %}{% endcall %} Indexação em andamento</span>{% endif %}
     </div>
     {%- match m.model %}
     {%- when None %}
@@ -57,9 +56,6 @@
       <div class="list-row"><span class="list-row-title">{{ s.label }}</span><span class="list-row-meta tabular">{{ s.value }}</span></div>
       {%- endfor %}
     </div>
-    {%- if let Some(c) = m.coverage %}
-    <div style="margin-top: 0.75rem">{% call ds::progress(c, "Trechos com vetores no modelo ativo") %}{% endcall %}</div>
-    {%- endif %}
     {%- if m.embed_pending || m.retry_failed || m.reindex %}
     <div class="flex flex-wrap gap-2" style="margin-top: 0.75rem">
       {%- if m.embed_pending %}
@@ -78,13 +74,6 @@
     </div>
     {%- endif %}
   </section>
-
-  {%- if !m.in_progress.is_empty() %}
-  <section aria-labelledby="progress-heading">
-    <h2 class="section-heading" id="progress-heading">Em andamento</h2>
-    {% call jobs(m.in_progress.as_slice(), "Em andamento", m.running) %}{% endcall %}
-  </section>
-  {%- endif %}
 
   {%- if !m.attention.is_empty() %}
   <section aria-labelledby="attention-heading">

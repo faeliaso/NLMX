@@ -1,7 +1,9 @@
 //! Conversations: questions, answers and the sources each answer was given.
 
 use crate::{
+    document_type::DocumentType,
     ingestion::{DocumentId, PageBox},
+    source::SourceReference,
     vectors::ChunkId,
 };
 
@@ -103,7 +105,24 @@ pub struct MessageSource {
     pub section: Option<String>,
     pub label: String,
     pub quote: String,
+    /// Boxes of a PDF passage; empty for any other format.
     pub bboxes: Vec<PageBox>,
+    /// Where the passage comes from, whatever the format (its type is the location's). Presenting
+    /// it (opening the PDF viewer, showing the label) is up to the interface.
+    pub reference: SourceReference,
+    /// The file's name as it was imported.
+    pub document_name: String,
+}
+
+impl MessageSource {
+    pub fn document_type(&self) -> DocumentType {
+        self.reference.document_type()
+    }
+
+    /// Only a PDF can be opened in the viewer.
+    pub fn previewable(&self) -> bool {
+        self.reference.previewable()
+    }
 }
 
 /// A `[página N]` reference in an answer: opens the document at that page.

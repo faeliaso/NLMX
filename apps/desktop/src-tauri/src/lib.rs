@@ -2,6 +2,7 @@
 //! answered in-process by the `ui-web` router (no TCP server, ADR 0003).
 
 mod commands;
+mod importer;
 mod legacy_data;
 mod protocol;
 pub mod self_check;
@@ -20,6 +21,7 @@ pub fn run() {
             commands::open_download_page,
             commands::report_client_error,
             commands::import_documents,
+            commands::ingest_progress,
             commands::retry_document,
             commands::retry_failed,
             commands::embed_pending_now,
@@ -84,6 +86,29 @@ pub fn run() {
                 async move { wiring::report_models(models.as_ref()).await },
             );
 
+            {
+                use tauri::Emitter;
+                let emitter = app.handle().clone();
+                services.progress.attach(move |progress| {
+                    let _ = emitter.emit("ingest-progress", progress);
+                    // A document moved to another stage: the library list refreshes (the
+                    // interface debounces this).
+                    let _ = emitter.emit("documents-changed", ());
+                });
+            }
+            // Picking files only queues them: this worker imports them one at a time.
+            let queue = services.ingestion.0.clone().ok().map(|ingestion| {
+                std::sync::Arc::new(importer::ImportQueue::start(
+                    ingestion,
+                    services.indexing.activity.clone(),
+                    std::sync::Arc::new(importer::TauriNotifier(app.handle().clone())),
+                ))
+            });
+            if let Some(queue) = &queue {
+                services.notes.connect(queue.clone());
+            }
+            app.manage(importer::ImportQueueState(queue));
+            app.manage(wiring::IngestProgressState(services.progress.clone()));
             app.manage(services.ui);
             app.manage(services.ingestion);
             app.manage(services.embeddings);

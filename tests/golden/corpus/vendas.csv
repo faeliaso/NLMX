@@ -1,0 +1,39 @@
+regiao;produto;unidades;fornecedor;observacao
+Norte;Cafe Torrado;100;Distribuidora A;rotina
+Sul;Chá Verde;107;Distribuidora B;rotina
+Leste;Açúcar Demerara;114;Distribuidora C;rotina
+Oeste;Farinha de Trigo;121;Distribuidora D;rotina
+Centro;Leite em Pó;128;Distribuidora E;rotina
+Norte;Biscoito Integral;135;Distribuidora A;rotina
+Sul;Cafe Torrado;142;Distribuidora B;rotina
+Leste;Chá Verde;149;Distribuidora C;rotina
+Oeste;Açúcar Demerara;156;Distribuidora D;rotina
+Centro;Farinha de Trigo;163;Distribuidora E;rotina
+Norte;Leite em Pó;170;Distribuidora A;rotina
+Sul;Tapioca Dourada;4512;Aurora;campanha de março com carência zero
+Sul;Biscoito Integral;177;Distribuidora B;rotina
+Leste;Cafe Torrado;184;Distribuidora C;rotina
+Oeste;Chá Verde;191;Distribuidora D;rotina
+Centro;Açúcar Demerara;198;Distribuidora E;rotina
+Norte;Farinha de Trigo;205;Distribuidora A;rotina
+Sul;Leite em Pó;212;Distribuidora B;rotina
+Leste;Biscoito Integral;219;Distribuidora C;rotina
+Oeste;Cafe Torrado;226;Distribuidora D;rotina
+Centro;Chá Verde;233;Distribuidora E;rotina
+Norte;Açúcar Demerara;240;Distribuidora A;rotina
+Sul;Farinha de Trigo;247;Distribuidora B;rotina
+Leste;Leite em Pó;254;Distribuidora C;rotina
+Oeste;Biscoito Integral;261;Distribuidora D;rotina
+Centro;Cafe Torrado;268;Distribuidora E;rotina
+Leste;Granola Artesanal;903;Aurora;lote piloto sem carência
+Norte;Chá Verde;275;Distribuidora A;rotina
+Sul;Açúcar Demerara;282;Distribuidora B;rotina
+Leste;Farinha de Trigo;289;Distribuidora C;rotina
+Oeste;Leite em Pó;296;Distribuidora D;rotina
+Centro;Biscoito Integral;303;Distribuidora E;rotina
+Norte;Cafe Torrado;310;Distribuidora A;rotina
+Sul;Chá Verde;317;Distribuidora B;rotina
+Leste;Açúcar Demerara;324;Distribuidora C;rotina
+Oeste;Farinha de Trigo;331;Distribuidora D;rotina
+Centro;Leite em Pó;338;Distribuidora E;rotina
+Norte;Biscoito Integral;345;Distribuidora A;rotina

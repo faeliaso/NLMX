@@ -67,6 +67,76 @@ impl fmt::Display for DocumentStatus {
     }
 }
 
+/// Where a document is in the indexing pipeline, as shown to the user. Finer than
+/// [`DocumentStatus`]: it also covers the saving step and the embedding batches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngestPhase {
+    /// Reading and parsing the file.
+    Parsing,
+    /// Cleaning the text and analysing the structure.
+    Structuring,
+    Chunking,
+    /// Saving chunks and structure.
+    Saving,
+    Embedding,
+    /// Chunks are stored; the embeddings wait for a model (or a retry).
+    Waiting,
+    Indexed,
+    Failed,
+}
+
+impl IngestPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Parsing => "parsing",
+            Self::Structuring => "structuring",
+            Self::Chunking => "chunking",
+            Self::Saving => "saving",
+            Self::Embedding => "embedding",
+            Self::Waiting => "waiting",
+            Self::Indexed => "indexed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// A progress report of the pipeline for one document. `file_name` is for the interface only:
+/// it must never be logged (use `document_id` there).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct IngestProgress {
+    pub document_id: DocumentId,
+    pub file_name: String,
+    pub format: crate::document_type::DocumentType,
+    pub phase: &'static str,
+    /// Overall progress of this document, 0.0 to 1.0.
+    pub fraction: f32,
+    /// Known once the document is chunked.
+    pub chunks: Option<u32>,
+    pub status: &'static str,
+}
+
+impl IngestProgress {
+    pub fn new(
+        document_id: DocumentId,
+        file_name: impl Into<String>,
+        format: crate::document_type::DocumentType,
+        phase: IngestPhase,
+        fraction: f32,
+        chunks: Option<u32>,
+        status: DocumentStatus,
+    ) -> Self {
+        Self {
+            document_id,
+            file_name: file_name.into(),
+            format,
+            phase: phase.as_str(),
+            fraction: fraction.clamp(0.0, 1.0),
+            chunks,
+            status: status.as_str(),
+        }
+    }
+}
+
 /// One page as read from the document engine.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageLayout {
@@ -79,7 +149,7 @@ pub struct PageLayout {
 }
 
 /// A bounding box on a specific page.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PageBox {
     pub page: u32,
     pub bbox: BoundingBox,
@@ -190,11 +260,35 @@ pub struct DocumentSummary {
     pub id: DocumentId,
     pub title: String,
     pub original_filename: String,
+    pub document_type: crate::document_type::DocumentType,
     pub page_count: Option<u32>,
     pub chunk_count: u32,
     pub status: DocumentStatus,
     pub error: Option<String>,
     pub imported_at: String,
+}
+
+/// What the interface shows about a source (a document of any format): the facts of its
+/// indexing and use, not its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceDetails {
+    pub id: DocumentId,
+    pub title: String,
+    pub file_name: String,
+    pub document_type: crate::document_type::DocumentType,
+    pub status: DocumentStatus,
+    pub error: Option<String>,
+    pub chunks: u32,
+    pub file_size: u64,
+    /// Pages of a paged format (PDF).
+    pub page_count: Option<u32>,
+    /// Worksheets that were indexed, for a workbook (hidden and empty sheets are not counted).
+    pub sheets: Option<u32>,
+    pub imported_at: String,
+    /// When it last reached `indexed` (`None` before).
+    pub indexed_at: Option<String>,
+    /// Conversations that cited it.
+    pub conversations: u32,
 }
 
 /// What removing a document takes with it besides the document itself: its chunks (with their

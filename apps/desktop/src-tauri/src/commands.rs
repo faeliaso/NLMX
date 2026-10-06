@@ -101,12 +101,21 @@ pub struct CommandOutcome {
     refresh: Option<&'static str>,
 }
 
-/// Picks PDFs with the native dialog and runs each through the ingestion pipeline.
+/// The documents being indexed right now, for a screen opened while they run.
+#[tauri::command]
+pub fn ingest_progress(
+    state: tauri::State<'_, crate::wiring::IngestProgressState>,
+) -> Vec<nlmx_domain::ingestion::IngestProgress> {
+    state.0.snapshot()
+}
+
+/// Picks documents (any supported format) with the native dialog and queues them. It answers as
+/// soon as the files are chosen: they are imported one at a time in the background (see
+/// `importer`), appear in the library as they are registered and a summary arrives when done.
 #[tauri::command]
 pub async fn import_documents<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<CommandOutcome, CommandError> {
-    use nlmx_domain::ingestion::ImportOutcome;
     use tauri_plugin_dialog::DialogExt;
 
     let ingestion = app
@@ -117,74 +126,60 @@ pub async fn import_documents<R: Runtime>(
 
     // The dialog callback runs on the main thread; hand the selection to this async command.
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
+    // The formats come from the parsers that are registered, never from a fixed list here.
+    let kinds = ingestion.supported_types();
+    let extensions: Vec<&str> = kinds
+        .iter()
+        .flat_map(|kind| kind.extensions().iter().copied())
+        .collect();
+    let mut dialog = app
+        .dialog()
         .file()
-        .set_title("Importar PDFs")
-        .add_filter("PDF", &["pdf", "PDF"])
-        .pick_files(move |picked| {
-            let _ = tx.send(picked);
-        });
+        .set_title("Importar documentos")
+        .add_filter("Documentos", &extensions);
+    for kind in &kinds {
+        dialog = dialog.add_filter(kind.display_name(), kind.extensions());
+    }
+    dialog.pick_files(move |picked| {
+        let _ = tx.send(picked);
+    });
+    // Cancelling the dialog is not worth a message.
     let Some(picked) = rx.await.ok().flatten() else {
         return Ok(CommandOutcome {
             kind: "info",
-            message: "Nenhum arquivo selecionado.".into(),
+            message: String::new(),
             refresh: None,
         });
     };
 
-    // Shown as running in Indexação; other imports may overlap, its exclusive actions may not.
-    let running = app.state::<crate::wiring::IndexingState>().activity.begin();
-    let (mut imported, mut duplicates, mut failures) = (0, 0, Vec::new());
-    for file in picked {
-        let Ok(path) = file.into_path() else {
-            failures.push("caminho de arquivo inválido".to_string());
-            continue;
-        };
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        match ingestion.import(&path).await {
-            ImportOutcome::Imported { .. } => imported += 1,
-            ImportOutcome::Duplicate { .. } => duplicates += 1,
-            ImportOutcome::Failed { reason, .. } => {
-                // The reason is shown to the user; logs get it without paths (redaction layer).
-                tracing::warn!(%reason, "import failed");
-                failures.push(format!("{name}: {reason}"));
-            }
-        }
-    }
-
-    drop(running);
-    app.state::<crate::wiring::DiagnosticsState>()
-        .sample_later();
-    let plural =
-        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-    let mut parts = Vec::new();
-    if imported > 0 {
-        parts.push(plural(imported, "importado", "importados"));
-    }
-    if duplicates > 0 {
-        parts.push(plural(
-            duplicates,
-            "já estava na biblioteca",
-            "já estavam na biblioteca",
+    let paths: Vec<std::path::PathBuf> = picked
+        .into_iter()
+        .filter_map(|file| file.into_path().ok())
+        .collect();
+    if paths.is_empty() {
+        return Err(CommandError::new(
+            "invalid",
+            "Não foi possível ler o caminho dos arquivos escolhidos.",
         ));
     }
-    if !failures.is_empty() {
-        parts.push(plural(failures.len(), "com falha", "com falha"));
-    }
-    let mut message = parts.join(" · ");
-    if let Some(first) = failures.first() {
-        message.push_str(&format!(" — {first}"));
+    let count = paths.len();
+    let queued = app
+        .state::<crate::importer::ImportQueueState>()
+        .0
+        .as_ref()
+        .is_some_and(|queue| queue.push(paths));
+    if !queued {
+        return Err(CommandError::new(
+            "unavailable",
+            "A fila de importação não está disponível.",
+        ));
     }
     Ok(CommandOutcome {
-        kind: if failures.is_empty() {
-            "success"
-        } else {
-            "danger"
+        kind: "info",
+        message: match count {
+            1 => "Importando 1 arquivo…".to_string(),
+            n => format!("Importando {n} arquivos…"),
         },
-        message,
         refresh: Some("documents-changed"),
     })
 }

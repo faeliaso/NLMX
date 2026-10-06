@@ -18,7 +18,8 @@ fn jobs(conn: &Connection) -> rusqlite::Result<Vec<IndexJob>> {
         "SELECT d.id, coalesce(d.title, d.original_filename), d.status, d.error,
                 (SELECT count(*) FROM document_chunks c WHERE c.document_id = d.id),
                 coalesce(j.attempts, 0), j.started_at, j.finished_at,
-                CAST(round((julianday(j.finished_at) - julianday(j.started_at)) * 86400000) AS INTEGER)
+                CAST(round((julianday(j.finished_at) - julianday(j.started_at)) * 86400000) AS INTEGER),
+                d.format
          FROM documents d
          LEFT JOIN embedding_jobs j ON j.id = (
              SELECT max(id) FROM embedding_jobs WHERE document_id = d.id AND kind = 'ingest')
@@ -29,6 +30,7 @@ fn jobs(conn: &Connection) -> rusqlite::Result<Vec<IndexJob>> {
         Ok(IndexJob {
             document_id: r.get(0)?,
             title: r.get(1)?,
+            document_type: crate::documents::parse_type(r.get(9)?)?,
             status: DocumentStatus::parse(&status).ok_or_else(|| {
                 rusqlite::Error::FromSqlConversionFailure(
                     2,

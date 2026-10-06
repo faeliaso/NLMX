@@ -25,7 +25,8 @@ use serde::Deserialize;
 use crate::{
     AppState,
     error::UiError,
-    markdown::{self, Citations},
+    formats::format_view,
+    markdown::{self, Citations, SourceLink},
     shell::{Section, page},
     status::LanguageModelView,
 };
@@ -38,6 +39,8 @@ const QUOTE_PREVIEW_CHARS: usize = 220;
 pub struct DocumentOption {
     pub id: DocumentId,
     pub title: String,
+    /// "PDF", "Markdown"…: a native `<select>` option has no icon, so the format is text.
+    pub format: &'static str,
     pub selected: bool,
 }
 
@@ -48,11 +51,20 @@ pub struct RecentView {
 }
 
 pub struct SourceView {
-    /// Opens the source in the viewer.
+    /// Opens the source in the side panel: the PDF viewer for a PDF, the source information
+    /// for any other format (there is no preview for those).
     pub url: String,
+    /// Only a PDF has a preview.
+    pub previewable: bool,
     pub n: u32,
+    /// The file's name (the document's title for answers saved before names were kept).
     pub title: String,
-    pub pages: String,
+    /// "PDF", "Markdown", "TXT", "CSV" or "EPUB".
+    pub format: &'static str,
+    /// The format's icon (see `formats`).
+    pub icon: &'static str,
+    /// Where in the document: "p. 12", "Embeddings › Normalização", "linhas 120–145", "cap. 7".
+    pub location: String,
     pub section: String,
     pub preview: String,
 }
@@ -117,19 +129,17 @@ struct AnswerFragment {
     answer: AnswerView,
 }
 
-fn pages(start: u32, end: u32) -> String {
-    if start == end {
-        format!("p. {start}")
-    } else {
-        format!("pp. {start}–{end}")
-    }
-}
-
+/// Where a source opens: a PDF at its page in the viewer, any other format in its information
+/// panel (with the citation, to show where in the file the answer came from).
 fn source_url(message_id: i64, s: &MessageSource) -> String {
-    format!(
-        "/viewer/{}?page={}&cite={message_id}-{}",
-        s.document_id, s.page_start, s.n
-    )
+    if s.previewable() {
+        format!(
+            "/viewer/{}?page={}&cite={message_id}-{}",
+            s.document_id, s.page_start, s.n
+        )
+    } else {
+        format!("/sources/{}?cite={message_id}-{}", s.document_id, s.n)
+    }
 }
 
 fn source_view(message_id: i64, s: &MessageSource) -> SourceView {
@@ -139,10 +149,22 @@ fn source_view(message_id: i64, s: &MessageSource) -> SourceView {
     }
     SourceView {
         url: source_url(message_id, s),
+        previewable: s.previewable(),
         n: s.n,
-        title: s.document_title.clone(),
-        pages: pages(s.page_start, s.page_end),
-        section: s.section.clone().unwrap_or_default(),
+        title: if s.document_name.is_empty() {
+            s.document_title.clone()
+        } else {
+            s.document_name.clone()
+        },
+        format: format_view(s.document_type()).label,
+        icon: format_view(s.document_type()).icon,
+        location: s.reference.location.label(),
+        // A heading path is already in the location of a Markdown or EPUB source.
+        section: if s.previewable() {
+            s.section.clone().unwrap_or_default()
+        } else {
+            String::new()
+        },
         preview,
     }
 }
@@ -161,7 +183,11 @@ pub fn answer_view(message: &Message) -> AnswerView {
             .sources
             .iter()
             .find(|s| s.n as usize == n && s.cited)
-            .map(|s| (s.label.clone(), source_url(message.id, s)))
+            .map(|s| SourceLink {
+                label: s.label.clone(),
+                url: source_url(message.id, s),
+                previewable: s.previewable(),
+            })
     };
     let page = |p: u32| {
         message
@@ -260,12 +286,34 @@ fn error_fragment(e: UiError) -> Response {
 pub struct ChatQuery {
     /// Opens this document in the viewer.
     view: Option<DocumentId>,
+    /// Opens the information of this source (any format) in the side panel.
+    source: Option<DocumentId>,
+}
+
+/// What the side panel shows when the page opens.
+#[derive(Clone, Copy)]
+enum Panel {
+    None,
+    /// The PDF viewer (`?view=`).
+    Viewer(DocumentId),
+    /// The information of a source of any format (`?source=`).
+    Source(DocumentId),
+}
+
+impl From<ChatQuery> for Panel {
+    fn from(query: ChatQuery) -> Self {
+        match (query.view, query.source) {
+            (Some(document), _) => Self::Viewer(document),
+            (None, Some(document)) => Self::Source(document),
+            (None, None) => Self::None,
+        }
+    }
 }
 
 async fn render_page(
     state: &AppState,
     conversation: Conversation,
-    view: Option<DocumentId>,
+    panel: Panel,
 ) -> Result<String, UiError> {
     let chat = chat_service(state)?;
     let documents: Vec<DocumentOption> = match &state.ingestion {
@@ -279,6 +327,7 @@ async fn render_page(
                 selected: conversation.scope == ConversationScope::Document(d.id),
                 id: d.id,
                 title: d.title,
+                format: format_view(d.document_type).label,
             })
             .collect(),
         Err(_) => Vec::new(),
@@ -326,12 +375,16 @@ async fn render_page(
         turns: turns(&messages),
         suggestions: SUGGESTIONS,
         model_notice,
-        viewer_html: match view {
-            Some(document) => {
+        viewer_html: match panel {
+            Panel::Viewer(document) => {
                 crate::viewer::render(state, document, &crate::viewer::ViewerQuery::default())
                     .await?
             }
-            None => String::new(),
+            Panel::Source(document) => {
+                crate::sources::render(state, document, &crate::sources::SourceQuery::default())
+                    .await?
+            }
+            Panel::None => String::new(),
         },
     }
     .render()?)
@@ -345,7 +398,7 @@ pub async fn current(
 ) -> Response {
     let content = async {
         let conversation = chat_service(&state)?.current().await.map_err(ui_error)?;
-        render_page(&state, conversation, query.view).await
+        render_page(&state, conversation, query.into()).await
     }
     .await;
     page(&headers, Some(Section::Chat), content)
@@ -363,7 +416,7 @@ pub async fn conversation(
             .conversation(id)
             .await
             .map_err(ui_error)?;
-        render_page(&state, conversation, query.view).await
+        render_page(&state, conversation, query.into()).await
     }
     .await;
     page(&headers, Some(Section::Chat), content)
@@ -397,7 +450,7 @@ pub async fn new(
             .start(parse_scope(form.scope.as_deref()))
             .await
             .map_err(ui_error)?;
-        render_page(&state, conversation, None).await
+        render_page(&state, conversation, Panel::None).await
     }
     .await;
     page(&headers, Some(Section::Chat), content)
@@ -415,7 +468,12 @@ pub async fn scope(
         chat.set_scope(id, parse_scope(form.scope.as_deref()))
             .await
             .map_err(ui_error)?;
-        render_page(&state, chat.conversation(id).await.map_err(ui_error)?, None).await
+        render_page(
+            &state,
+            chat.conversation(id).await.map_err(ui_error)?,
+            Panel::None,
+        )
+        .await
     }
     .await;
     page(&headers, Some(Section::Chat), content)
@@ -430,7 +488,7 @@ pub async fn delete(
     let content = async {
         let chat = chat_service(&state)?;
         chat.delete(id).await.map_err(ui_error)?;
-        render_page(&state, chat.current().await.map_err(ui_error)?, None).await
+        render_page(&state, chat.current().await.map_err(ui_error)?, Panel::None).await
     }
     .await;
     page(&headers, Some(Section::Chat), content)

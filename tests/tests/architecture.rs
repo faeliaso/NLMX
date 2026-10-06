@@ -56,7 +56,7 @@ fn workspace() -> Workspace {
 
 #[test]
 fn adapters_are_discovered() {
-    assert_eq!(workspace().adapters.len(), 9, "expected 9 adapter crates");
+    assert_eq!(workspace().adapters.len(), 13, "expected 13 adapter crates");
 }
 
 #[test]
@@ -152,6 +152,26 @@ fn the_rag_core_knows_nothing_about_apple_foundation_models() {
                 path.display()
             );
         }
+    }
+}
+
+#[test]
+fn the_content_pipeline_stops_before_embeddings() {
+    // parse → normalize → chunk. Embeddings are the next stage, fed by stored chunks; the
+    // pipeline and the ports of its stages must not know about them.
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../crates/application/src/services/pipeline.rs"
+    ))
+    .unwrap();
+    for needle in ["Embedding", "embedding", "EmbedDocuments", "VectorStore"] {
+        // The module doc names the stage that follows; code must not use it.
+        let code: String = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!code.contains(needle), "pipeline.rs uses {needle:?}");
     }
 }
 

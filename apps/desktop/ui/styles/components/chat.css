@@ -1,7 +1,6 @@
 /* Chat: answers, citations, sources and the source panel (page with highlights). */
 @layer components {
   .chat-header .page-actions { align-items: center; }
-  .chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-scope .select { max-width: 16rem; }
   .chat-recent { max-width: 20rem; }
   .chat-recent .menu-item.is-current { font-weight: 600; }
@@ -127,7 +126,7 @@
   .source-item:hover { background: var(--color-surface-hover); }
   .source-item:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus); }
   .source-item .citation { flex: none; margin-top: 0.125rem; }
-  .source-item-body { display: grid; flex: 1; gap: 0.125rem; min-width: 0; }
+  .source-item-body { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; gap: 0.125rem; min-width: 0; }
   .source-item-open {
     display: inline-flex;
     flex: none;
@@ -143,9 +142,13 @@
   }
   .source-item-open > svg { width: 0.875rem; height: 0.875rem; }
   .source-item:hover .source-item-open { background: var(--color-accent-soft); }
-  .source-item-title { display: flex; gap: 0.375rem; min-width: 0; font-size: var(--text-footnote); font-weight: 600; }
-  .source-item-title .tabular { flex: none; color: var(--color-fg-muted); font-weight: 400; }
-  .source-item-section { color: var(--color-fg-muted); font-weight: 400; }
+  .source-item-title { display: flex; align-items: center; gap: 0.375rem; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--text-footnote); font-weight: 600; }
+  /* Narrow cards: the name keeps its room, the location shortens first (both end in an ellipsis). */
+  .source-item-title > .truncate { flex: 0 1 auto; min-width: 0; }
+  .source-item-format { flex: none; margin-left: auto; padding: 0 0.375rem; border-radius: var(--radius-full); background: var(--color-skeleton); color: var(--color-fg-muted); font-size: var(--text-caption); font-weight: 500; }
+  .source-item-title > svg { flex: none; width: 0.875rem; height: 0.875rem; color: var(--color-fg-muted); }
+  .source-item-title .tabular { flex: 0 2 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-muted); font-weight: 400; }
+  .source-item-section { flex: 0 3 auto; min-width: 0; color: var(--color-fg-muted); font-weight: 400; }
   .source-item-quote {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -166,4 +169,37 @@
   .composer[data-locked] .composer-action { background: var(--color-danger-fill); color: var(--color-danger-fill-fg); }
   .composer[data-locked] .composer-action:hover { filter: brightness(1.08); }
   .composer[data-locked] .composer-action:active { filter: brightness(0.92); }
+}
+
+@layer components {
+  /* Source information: the side panel for a source of any format (only a PDF has a preview). */
+  .source-info { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+  .source-info-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .source-info-icon { display: inline-flex; flex: none; color: var(--color-fg-muted); }
+  .source-info-icon > svg { width: 1.25rem; height: 1.25rem; }
+  .source-info-body { display: grid; align-content: start; gap: 0.875rem; padding: 0.875rem; overflow-y: auto; }
+  .source-info-kind { font-size: var(--text-footnote); color: var(--color-fg-muted); }
+  .source-info-badges { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+  .source-info-cited { display: grid; gap: 0.375rem; }
+  .source-info-cited-label { font-size: var(--text-footnote); font-weight: 600; color: var(--color-fg-muted); }
+  .source-info-quote {
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--color-accent);
+    background: var(--color-surface);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-footnote);
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+  .source-info-list { display: grid; gap: 0.5rem; }
+  .source-info-list > div { display: flex; justify-content: space-between; gap: 1rem; font-size: var(--text-footnote); }
+  .source-info-list dt { color: var(--color-fg-muted); flex: none; }
+  .source-info-list dd { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+  .source-info-open { justify-self: start; }
 }
