@@ -2442,6 +2442,7 @@ dependencies = [
  "http",
  "nlmx-application",
  "nlmx-domain",
+ "pulldown-cmark",
  "serde",
  "serde_json",
 ]

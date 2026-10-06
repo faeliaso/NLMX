@@ -5,11 +5,15 @@
   <div class="answer-text answer-stream selectable" data-answer-stream></div>
   {%- else %}
   {%- if answer.status == "failed" %}
-  {% call ds::alert("danger", "Não foi possível responder", answer.error) %}{% endcall %}
+  {% call ds::alert("danger", "Não foi possível gerar a resposta", answer.error) %}{% endcall %}
   {%- elif answer.status == "refused" %}
   {% call ds::alert("warning", "O modelo não respondeu a esta pergunta", "As proteções do Apple Foundation Models recusaram o pedido. Veja abaixo os trechos encontrados ou reformule a pergunta.") %}{% endcall %}
   {%- else %}
+  {%- if answer.html.is_empty() %}
+  <p class="answer-text answer-muted">O modelo devolveu uma resposta vazia.</p>
+  {%- else %}
   <div class="answer-text selectable{% if answer.status == "not_found" %} answer-muted{% endif %}">{{ answer.html|safe }}</div>
+  {%- endif %}
   {%- if answer.status == "cancelled" || answer.free %}
   <p class="answer-flag">
     {%- if answer.free %}<span class="answer-free-flag" title="Resposta do modelo, sem consultar os documentos">{% call ds::badge("Sem documentos", "neutral") %}{% endcall %}</span>{% endif %}
@@ -44,7 +48,7 @@
     {%- if answer.status != "failed" %}
     <button type="button" class="btn btn-ghost btn-sm" data-copy-answer>{% call ds::icon("copy") %}{% endcall %}Copiar</button>
     {%- endif %}
-    <button type="button" class="btn btn-ghost btn-sm" hx-post="/chat/messages/{{ answer.id }}/regenerate" hx-target="#answer-{{ answer.id }}" hx-swap="outerHTML">{% call ds::icon("refresh") %}{% endcall %}{% if answer.status == "failed" %}Tentar de novo{% else %}Regenerar{% endif %}</button>
+    <button type="button" class="btn btn-ghost btn-sm" hx-post="/chat/messages/{{ answer.id }}/regenerate" hx-target="#answer-{{ answer.id }}" hx-swap="outerHTML">{% call ds::icon("refresh") %}{% endcall %}{% if answer.status == "failed" %}Tentar novamente{% else %}Regenerar{% endif %}</button>
   </div>
   <template data-copy-text>{{ answer.copy_text }}</template>
   {%- endif %}

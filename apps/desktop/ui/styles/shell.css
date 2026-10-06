@@ -139,7 +139,8 @@
     padding: var(--space-section) var(--space-page);
   }
   .chat-empty { margin: auto 0; }
-  .chat-turn { display: grid; gap: 0.75rem; min-width: 0; overflow-wrap: anywhere; }
+  /* Long conversations: turns off screen skip layout and paint. */
+  .chat-turn { display: grid; gap: 0.75rem; min-width: 0; overflow-wrap: anywhere; content-visibility: auto; contain-intrinsic-size: auto 12rem; }
   .chat-question {
     justify-self: end;
     max-width: 80%;

@@ -361,6 +361,38 @@
     else window.DS?.toast("danger", "Não foi possível copiar.");
   });
 
+  // Code blocks (rendered by the server): "Copiar" copies the code text, never the HTML.
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest?.("[data-copy-code]");
+    if (!button) return;
+    const text = button.closest(".code-block")?.querySelector("code")?.textContent ?? "";
+    if (await copyText(text)) {
+      const label = button.textContent;
+      button.textContent = "Copiado";
+      button.setAttribute("role", "status");
+      clearTimeout(button.copyTimer);
+      button.copyTimer = setTimeout(() => {
+        button.textContent = label === "Copiado" ? "Copiar" : label;
+        button.removeAttribute("role");
+      }, 1500);
+    } else {
+      window.DS?.toast("danger", "Não foi possível copiar.");
+    }
+  });
+
+  // Links in answers never navigate the WebView: the app opens them in the browser.
+  document.addEventListener("click", async (event) => {
+    const link = event.target.closest?.("a[data-external]");
+    if (!link) return;
+    event.preventDefault();
+    if (!invoke) return;
+    try {
+      await invoke("open_external", { url: link.getAttribute("href") });
+    } catch (error) {
+      window.DS?.toast("danger", error?.message || String(error));
+    }
+  });
+
   // ── Navigation: focus the new page title after a section swap (screen readers) ─
   // (HTMX 4 fires swap events on the clicked element, so watch #content itself.)
   const content = document.getElementById("content");

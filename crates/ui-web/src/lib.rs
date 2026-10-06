@@ -11,8 +11,10 @@ mod fm_setup;
 mod formats;
 #[cfg(debug_assertions)]
 mod gallery;
+mod highlight;
 mod indexing;
 mod markdown;
+pub use markdown::is_safe_url;
 mod models;
 mod sections;
 mod shell;

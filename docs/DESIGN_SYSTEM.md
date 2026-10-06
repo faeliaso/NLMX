@@ -29,6 +29,8 @@ Interactive gallery (debug builds only): **Configurações › Sobre › Design 
 
 **Semantic colors** — surfaces (`bg`, `bg-subtle`, `surface`, `surface-raised`, `surface-hover`, `surface-pressed`), text (`fg`, `fg-muted`, `fg-subtle` only for placeholder/disabled), lines (`border` decorative, `border-strong` for controls), action (`accent` fill, `accent-text` links, `accent-soft` selection, `accent-fg` text on accent), `success|warning|danger|info` states with three variants each: base (indicators), `-fg` (accessible text), `-soft` (background).
 
+**Code syntax** — `syntax-kw` (keywords, tags), `syntax-str`, `syntax-num`, `syntax-com`, `syntax-fn`, `syntax-key` (keys, attributes); contrast ≥ 4.5:1 over `bg-subtle` in both themes. Used by the `.tok-*` classes of code blocks in answers.
+
 **Typography** (system font / SF): `caption` 11 · `footnote` 12 · `body` 13 (macOS default) · `callout` 14 · `title-3` 15 · `title-2` 17 · `title-1` 22 · `large-title` 26. Weights 400/500/600.
 
 **Spacing** — Tailwind's 4px grid (`p-4` = 16px) + aliases `--space-control-x` 10px, `--space-card` 16px, `--space-section` 32px, `--space-page` 40px.

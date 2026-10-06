@@ -63,6 +63,14 @@
   --color-paper: light-dark(#FFFFFF, #FFFFFF);       /* PDF page background (pages are white in both themes) */
   --color-skeleton-shine: light-dark(#F6F6F8, #48484A);
 
+  /* ── Code syntax (on --color-bg-subtle, ≥ 4.5:1 in both themes) ── */
+  --color-syntax-kw: light-dark(#9B2393, #FF7AB2);     /* keywords, tags */
+  --color-syntax-str: light-dark(#C41A16, #FF8170);
+  --color-syntax-num: light-dark(#1C00CF, #D9C97C);
+  --color-syntax-com: light-dark(#5F6B76, #9AA7B3);
+  --color-syntax-fn: light-dark(#2B6A70, #6FC4B0);
+  --color-syntax-key: light-dark(#0B5D8E, #7CC4FF);    /* keys, attributes */
+
   /* ── Typography ───────────────────────────────────────────── */
   --font-sans: system-ui, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;

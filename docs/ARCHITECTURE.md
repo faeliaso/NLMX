@@ -164,7 +164,7 @@ done ─► GET /chat/messages/{id} (final HTML)      cancel_answer ─► Cance
 6. **Generation** with streaming; guardrail refusal ⇒ `Refused` with the passages.
 7. **`CitationEngine`** (`rag/citations.rs`, pure): `[n]`, `[1, 3]`, `[2–3]` → document/chunk/pages/bboxes; invalid numbers removed; `[página N]` (page N) resolved to the source that covers the page. All the sources sent are kept in `citations` (`cited` marks the cited ones); page references in `message_page_refs`.
 
-Model output is rendered only by `ui-web/src/markdown.rs` (escapes everything; only paragraphs, lists, bold and citation buttons).
+Model output is rendered only by `ui-web/src/markdown.rs` (ADR 0020): `pulldown-cmark` events → allow-listed HTML (headings, lists, emphasis, quotes, code blocks with copy button and approximate syntax highlighting (`highlight.rs`), tables, safe links, citation buttons); raw HTML is escaped as text, images are dropped, links open through the `open_external` command.
 
 ## 7. PDF Viewer
 

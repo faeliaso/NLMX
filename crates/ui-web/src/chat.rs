@@ -205,7 +205,8 @@ pub fn answer_view(message: &Message) -> AnswerView {
     );
     let (cited, consulted): (Vec<&MessageSource>, Vec<&MessageSource>) =
         message.sources.iter().partition(|s| s.cited);
-    let mut copy_text = markdown::plain(&message.content);
+    // The raw Markdown, not the rendered HTML or a stripped version.
+    let mut copy_text = message.content.trim().to_string();
     if !cited.is_empty() {
         copy_text.push_str("\n\nFontes:\n");
         for s in &cited {
@@ -570,5 +571,43 @@ pub async fn answer_freely(State(state): State<AppState>, Path(id): Path<i64>) -
     match result {
         Ok(a) => fragment(a),
         Err(e) => error_fragment(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nlmx_domain::chat::{ConversationId, MessageId};
+
+    use super::*;
+
+    fn assistant(content: &str, status: MessageStatus) -> Message {
+        Message {
+            id: MessageId::from(1),
+            conversation_id: ConversationId::from(1),
+            role: Role::Assistant,
+            content: content.to_string(),
+            status,
+            grounding: Some(AnswerGrounding::Free),
+            error: None,
+            sources: Vec::new(),
+            page_refs: Vec::new(),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn copying_gives_the_markdown_not_html() {
+        let md = "**Arquitetura**\n\n- RAG\n- Embeddings\n- SQLite\n\n```kotlin\nval x = 1\n```";
+        let view = answer_view(&assistant(md, MessageStatus::Answered));
+        assert_eq!(view.copy_text, md);
+        assert!(view.html.contains("<strong>Arquitetura</strong>"));
+        assert!(!view.copy_text.contains('<'));
+    }
+
+    #[test]
+    fn an_empty_answer_renders_nothing() {
+        let view = answer_view(&assistant("", MessageStatus::Answered));
+        assert!(view.html.is_empty());
+        assert!(view.copy_text.is_empty());
     }
 }

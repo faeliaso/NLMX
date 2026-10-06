@@ -33,6 +33,7 @@ pub fn run() {
             commands::verify_model,
             commands::answer_message,
             commands::cancel_answer,
+            commands::open_external,
         ])
         .setup(|app| {
             // Composition happens here because the data directory comes from the app handle.

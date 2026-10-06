@@ -31,6 +31,18 @@
       </div>
     </section>
 
+    <section aria-labelledby="code">
+      <h2 class="section-heading" id="code">Código nas respostas</h2>
+      <div class="answer-text">
+        <figure class="code-block"><figcaption><span class="code-lang">Kotlin</span><button type="button" class="btn btn-ghost btn-sm" data-copy-code aria-label="Copiar código (Kotlin)">Copiar</button></figcaption><pre tabindex="0"><code><span class="tok-com">// Busca nos documentos</span>
+<span class="tok-kw">fun</span> <span class="tok-fn">search</span>(query: String): List&lt;Passage&gt; {
+    <span class="tok-kw">val</span> limit = <span class="tok-num">8</span>
+    <span class="tok-kw">return</span> repository.<span class="tok-fn">search</span>(query, limit) <span class="tok-com">/* BM25 + KNN */</span>
+}
+<span class="tok-key">"nome"</span>: <span class="tok-str">"NLMX"</span></code></pre></figure>
+      </div>
+    </section>
+
     <section aria-labelledby="type">
       <h2 class="section-heading" id="type">Tipografia</h2>
       <div class="card card-body ds-stack">

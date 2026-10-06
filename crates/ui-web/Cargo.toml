@@ -13,6 +13,7 @@ nlmx-domain.workspace = true
 askama.workspace = true
 axum.workspace = true
 http.workspace = true
+pulldown-cmark.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

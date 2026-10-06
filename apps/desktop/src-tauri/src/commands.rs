@@ -571,6 +571,32 @@ pub(crate) fn run_cancel(chat: &crate::wiring::Chat, message_id: i64) -> Result<
     }
 }
 
+/// Opens a link from an answer in the default browser. Only `http`, `https` and `mailto`; the
+/// address is never logged.
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), CommandError> {
+    run_open_external(&url, &|url| {
+        std::process::Command::new("/usr/bin/open")
+            .arg("--")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+    })
+}
+
+pub(crate) fn run_open_external(
+    url: &str,
+    open: &dyn Fn(&str) -> std::io::Result<()>,
+) -> Result<(), CommandError> {
+    if !nlmx_ui_web::is_safe_url(url) {
+        return Err(CommandError::new(
+            "link",
+            "Este tipo de link não pode ser aberto.",
+        ));
+    }
+    open(url.trim()).map_err(|_| CommandError::new("link", "Não foi possível abrir o link."))
+}
+
 #[cfg(test)]
 mod tests {
     //! IPC: the command logic with fakes, and a round trip through Tauri's mock runtime.
@@ -761,5 +787,30 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err["code"], "chat");
+    }
+
+    #[test]
+    fn open_external_only_opens_web_and_mail_links() {
+        let opened = Mutex::new(Vec::new());
+        let open = |url: &str| {
+            opened.lock().unwrap().push(url.to_string());
+            Ok(())
+        };
+        assert!(run_open_external("https://exemplo.com", &open).is_ok());
+        assert!(run_open_external("mailto:a@b.com", &open).is_ok());
+        for bad in [
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "data:text/html,x",
+            "x y",
+            "/tmp",
+        ] {
+            assert_eq!(
+                run_open_external(bad, &open).unwrap_err().code,
+                "link",
+                "{bad}"
+            );
+        }
+        assert_eq!(opened.lock().unwrap().len(), 2);
     }
 }
