@@ -7,6 +7,7 @@ mod chat;
 mod diagnostics;
 mod documents;
 mod error;
+mod fm_setup;
 mod formats;
 #[cfg(debug_assertions)]
 mod gallery;
@@ -86,6 +87,8 @@ pub fn router(state: AppState) -> Router {
         .route("/models", get(models::page))
         .route("/settings", get(sections::settings))
         .route("/fragments/status", get(status::fragment))
+        .route("/fragments/fm-setup", get(fm_setup::fragment))
+        .route("/fragments/fm-setup/recheck", post(fm_setup::recheck))
         .route("/fragments/documents", get(sections::documents_fragment))
         .route("/fragments/models", get(models::fragment))
         .route("/fragments/indexing", get(indexing::fragment))

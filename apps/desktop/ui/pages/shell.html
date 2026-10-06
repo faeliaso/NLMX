@@ -17,10 +17,12 @@
       <span class="statusbar-item activity-idle">{% call ds::icon("check") %}{% endcall %}Pronto</span>
       <span class="statusbar-item activity-busy" role="status">{% call ds::spinner("Carregando", "sm") %}{% endcall %}Carregando…</span>
       <span class="statusbar-spacer"></span>
-      <span id="system-status" hx-get="/fragments/status" hx-trigger="load, every 60s" hx-swap="innerHTML">
+      <span id="system-status" hx-get="/fragments/status" hx-trigger="load, every 60s, fm-setup-done from:body" hx-swap="innerHTML">
         {% call ds::spinner("Verificando status", "sm") %}{% endcall %}
       </span>
     </footer>
   </div>
 </div>
+{#- First-run / lost authorization: filled at every full load only when Apple FM is not authorized. -#}
+<div id="fm-setup" hx-get="/fragments/fm-setup" hx-trigger="load" hx-swap="innerHTML"></div>
 {% endblock %}

@@ -30,7 +30,7 @@ use tokio::{
 };
 
 pub use self::{
-    compat::{MIN_MACOS, SystemInfo},
+    compat::{Incompatibility, MIN_MACOS, SystemInfo},
     serve::{FoundationModelsConfig, MAX_SOCKET_PATH},
 };
 use self::{
@@ -47,8 +47,10 @@ pub(crate) const CANCEL_POLL: Duration = Duration::from_millis(100);
 pub struct FoundationModelsProvider {
     config: FoundationModelsConfig,
     /// Checked once: the OS, architecture and binary don't change while the app runs.
-    compatibility: Result<(), String>,
+    compatibility: Result<(), Incompatibility>,
     status: StdMutex<Option<(Instant, LanguageModelStatus)>>,
+    /// Serializes probes: concurrent re-checks share one `fm available` run.
+    probing: Mutex<()>,
     server: Mutex<Option<serve::Running>>,
     /// Set when `fm serve` failed to start; generation uses `fm respond` until it expires.
     serve_failed_at: StdMutex<Option<Instant>>,
@@ -65,12 +67,13 @@ impl FoundationModelsProvider {
     pub fn with_system(config: FoundationModelsConfig, system: &SystemInfo) -> Self {
         let compatibility = compat::check(system, &config.binary);
         if let Err(reason) = &compatibility {
-            tracing::warn!(%reason, "Apple Foundation Models incompatible");
+            tracing::warn!(reason = %reason.message(), "Apple Foundation Models incompatible");
         }
         Self {
             config,
             compatibility,
             status: StdMutex::new(None),
+            probing: Mutex::new(()),
             server: Mutex::new(None),
             serve_failed_at: StdMutex::new(None),
             generation: Semaphore::new(1),
@@ -100,19 +103,49 @@ impl FoundationModelsProvider {
     }
 
     async fn current_status(&self) -> LanguageModelStatus {
-        if let Err(reason) = &self.compatibility {
-            return LanguageModelStatus::Incompatible {
-                reason: reason.clone(),
+        if let Err(incompatibility) = &self.compatibility {
+            return match incompatibility {
+                Incompatibility::NotInstalled => LanguageModelStatus::NotInstalled,
+                Incompatibility::Unsupported(reason) => LanguageModelStatus::Incompatible {
+                    reason: reason.clone(),
+                },
             };
         }
-        if let Some((at, status)) = self.status.lock().unwrap().as_ref() {
-            if at.elapsed() < self.config.status_ttl {
-                return status.clone();
-            }
+        if let Some(status) = self.fresh_cached() {
+            return status;
+        }
+        let _probing = self.probing.lock().await;
+        // Another caller may have probed while this one waited.
+        if let Some(status) = self.fresh_cached() {
+            return status;
         }
         let status = self.probe().await;
         *self.status.lock().unwrap() = Some((Instant::now(), status.clone()));
         status
+    }
+
+    fn fresh_cached(&self) -> Option<LanguageModelStatus> {
+        let cached = self.status.lock().unwrap();
+        let (at, status) = cached.as_ref()?;
+        (at.elapsed() < self.config.status_ttl).then(|| status.clone())
+    }
+
+    /// Asks `fm` again even if the cache is fresh. Callers that arrive while a probe is
+    /// running share its answer instead of starting another.
+    async fn recheck_status(&self) -> LanguageModelStatus {
+        let started = Instant::now();
+        let waiting = self.probing.try_lock().is_err();
+        if waiting {
+            // A probe is in flight: wait for it, then use what it stored.
+            drop(self.probing.lock().await);
+            if let Some((at, status)) = self.status.lock().unwrap().as_ref() {
+                if *at >= started {
+                    return status.clone();
+                }
+            }
+        }
+        self.forget_status();
+        self.current_status().await
     }
 
     fn forget_status(&self) {
@@ -128,10 +161,10 @@ impl FoundationModelsProvider {
             Err(_) => {
                 return unavailable("O Apple Foundation Models não respondeu a tempo.");
             }
-            Ok(Err(e)) => {
-                return LanguageModelStatus::Incompatible {
-                    reason: format!("Não foi possível executar o fm: {e}"),
-                };
+            Ok(Err(error)) => {
+                // The details stay in the logs; the user only sees a generic message.
+                tracing::warn!(%error, "could not run fm available");
+                return unavailable("Não foi possível verificar o Apple Foundation Models.");
             }
             Ok(Ok(output)) => output,
         };
@@ -159,7 +192,9 @@ impl FoundationModelsProvider {
 
     /// Fails fast (without spawning `fm`) when the system can't run the model.
     fn ensure_compatible(&self) -> Result<(), LlmError> {
-        self.compatibility.clone().map_err(LlmError::Unavailable)
+        self.compatibility
+            .clone()
+            .map_err(|incompatibility| LlmError::Unavailable(incompatibility.message()))
     }
 
     async fn count(&self, request: &GenerationRequest) -> Result<u32, LlmError> {
@@ -355,6 +390,10 @@ impl LlmProvider for FoundationModelsProvider {
         Box::pin(self.current_status())
     }
 
+    fn recheck(&self) -> BoxFuture<'_, LanguageModelStatus> {
+        Box::pin(self.recheck_status())
+    }
+
     fn capabilities(&self) -> LlmCapabilities {
         LlmCapabilities {
             context_tokens: SYSTEM_CONTEXT_TOKENS,
@@ -445,12 +484,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_binary_is_incompatible_and_never_spawned() {
+    async fn missing_binary_is_not_installed_and_never_spawned() {
         let fm = provider("/nonexistent/fm".into(), &temp_dir("missing"));
-        assert!(matches!(
-            fm.status().await,
-            LanguageModelStatus::Incompatible { .. }
-        ));
+        assert_eq!(fm.status().await, LanguageModelStatus::NotInstalled);
+        assert_eq!(fm.recheck().await, LanguageModelStatus::NotInstalled);
         let request = GenerationRequest {
             system: "s".into(),
             history: Vec::new(),
@@ -501,6 +538,64 @@ mod tests {
         fm.forget_status();
         fm.status().await;
         assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2);
+    }
+
+    #[tokio::test]
+    async fn recheck_ignores_the_cache_and_sees_the_license_accepted() {
+        let dir = temp_dir("recheck");
+        let accepted = dir.join("accepted");
+        let _ = fs::remove_file(&accepted);
+        let fm = provider(
+            script(
+                &dir,
+                "fm",
+                &format!("[ -f '{}' ] || exit 69", accepted.display()),
+            ),
+            &dir,
+        );
+        assert_eq!(fm.status().await, LanguageModelStatus::LicenseRequired);
+        fs::write(&accepted, "").unwrap();
+        // Still cached…
+        assert_eq!(fm.status().await, LanguageModelStatus::LicenseRequired);
+        // …but a re-check asks `fm` again.
+        assert_eq!(fm.recheck().await, LanguageModelStatus::Available);
+        assert_eq!(fm.status().await, LanguageModelStatus::Available);
+        fs::remove_file(&accepted).unwrap();
+        assert_eq!(fm.recheck().await, LanguageModelStatus::LicenseRequired);
+    }
+
+    #[tokio::test]
+    async fn simultaneous_rechecks_run_one_probe() {
+        let dir = temp_dir("single-flight");
+        let calls = dir.join("calls");
+        let _ = fs::remove_file(&calls);
+        let fm = provider(
+            script(
+                &dir,
+                "fm",
+                &format!("echo x >> '{}'; sleep 0.5; exit 69", calls.display()),
+            ),
+            &dir,
+        );
+        let (a, b, c) = tokio::join!(fm.recheck(), fm.recheck(), fm.recheck());
+        assert_eq!(a, LanguageModelStatus::LicenseRequired);
+        assert_eq!(a, b);
+        assert_eq!(b, c);
+        assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failure_to_run_fm_does_not_leak_paths() {
+        let dir = temp_dir("spawn-fails");
+        let binary = dir.join("fm");
+        fs::write(&binary, "#!/nonexistent/interpreter\n").unwrap();
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+        match provider(binary, &dir).status().await {
+            LanguageModelStatus::Unavailable { reason, .. } => {
+                assert!(!reason.contains(dir.to_str().unwrap()), "{reason}");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[tokio::test]

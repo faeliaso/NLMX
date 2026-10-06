@@ -1,0 +1,45 @@
+@layer components {
+  /* "Ative a IA local": steps, the Terminal command and the password help. */
+  .fm-setup { width: min(32rem, calc(100vw - 2rem)); }
+  .fm-setup .dialog-icon { background: var(--color-danger-soft); color: var(--color-danger-fg); justify-self: center; }
+  .fm-setup .dialog-icon-info { background: var(--color-info-soft); color: var(--color-info-fg); }
+  .fm-setup .dialog-icon-success { background: var(--color-success-soft); color: var(--color-success-fg); }
+  .fm-setup .dialog-title { text-align: center; }
+  .fm-setup .dialog-body > [data-fm-focus]:focus-visible { outline-offset: 2px; }
+
+  .fm-steps { list-style: none; display: grid; gap: 0.75rem; margin: 0.5rem 0 0; padding: 0; }
+  .fm-steps > li { display: flex; gap: 0.75rem; align-items: flex-start; }
+  .fm-step-number {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-text);
+    font-size: var(--text-footnote);
+    font-weight: 600;
+  }
+  .fm-step-text { display: grid; gap: 0.5rem; min-width: 0; padding-top: 0.125rem; flex: 1; }
+
+  .fm-command {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-subtle);
+  }
+  .fm-command code { font-size: var(--text-callout); user-select: all; white-space: nowrap; }
+
+  .fm-help { margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 0.75rem; }
+  .fm-help > summary { cursor: pointer; color: var(--color-accent-text); }
+  .fm-help-body { display: grid; gap: 0.5rem; margin-top: 0.5rem; color: var(--color-fg-muted); }
+
+  /* "Verificando autorização…": only while the re-check request runs (HTMX adds .htmx-request). */
+  .fm-checking { display: none; align-items: center; gap: 0.5rem; margin-right: auto; color: var(--color-fg-muted); }
+  .fm-checking.htmx-request { display: inline-flex; }
+}

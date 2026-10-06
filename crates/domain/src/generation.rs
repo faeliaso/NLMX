@@ -6,7 +6,9 @@ pub enum LanguageModelStatus {
     Available,
     /// The model exists but its terms of use have not been accepted on this Mac.
     LicenseRequired,
-    /// This Mac or system can never run it as is (macOS < 27, Intel or Rosetta, `fm` missing).
+    /// The system tool `fm` is not on this Mac (or is not executable).
+    NotInstalled,
+    /// This Mac or system can never run it as is (macOS < 27, Intel or Rosetta).
     Incompatible {
         reason: String,
     },

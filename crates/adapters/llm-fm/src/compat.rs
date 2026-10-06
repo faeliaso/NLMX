@@ -39,31 +39,50 @@ pub fn major(version: &str) -> Option<u32> {
     version.split('.').next()?.trim().parse().ok()
 }
 
-/// `Err(reason)` (suitable for display) when this system can't run the model.
-pub fn check(info: &SystemInfo, binary: &Path) -> Result<(), String> {
+/// Why this system can't run the model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Incompatibility {
+    /// `fm` is missing or not executable.
+    NotInstalled,
+    /// Suitable for display.
+    Unsupported(String),
+}
+
+impl Incompatibility {
+    pub fn message(&self) -> String {
+        match self {
+            Self::NotInstalled => "Ferramenta do Apple Foundation Models não encontrada.".into(),
+            Self::Unsupported(reason) => reason.clone(),
+        }
+    }
+}
+
+/// `Err` when this system can't run the model.
+pub fn check(info: &SystemInfo, binary: &Path) -> Result<(), Incompatibility> {
     match info.os_version.as_deref().and_then(major) {
         Some(v) if v >= MIN_MACOS => {}
         Some(_) | None => {
             let found = info.os_version.as_deref().unwrap_or("desconhecida");
-            return Err(format!(
+            return Err(Incompatibility::Unsupported(format!(
                 "O Apple Foundation Models requer macOS {MIN_MACOS} ou superior (versão atual: {found})."
-            ));
+            )));
         }
     }
     if info.arch != "aarch64" {
-        return Err("O Apple Foundation Models requer um Mac com Apple Silicon.".into());
+        return Err(Incompatibility::Unsupported(
+            "O Apple Foundation Models requer um Mac com Apple Silicon.".into(),
+        ));
     }
     if info.translated {
-        return Err("O app está rodando pelo Rosetta; abra a versão para Apple Silicon.".into());
+        return Err(Incompatibility::Unsupported(
+            "O app está rodando pelo Rosetta; abra a versão para Apple Silicon.".into(),
+        ));
     }
     let executable = std::fs::metadata(binary)
         .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
         .unwrap_or(false);
     if !executable {
-        return Err(format!(
-            "Ferramenta do Apple Foundation Models não encontrada ({}).",
-            binary.display()
-        ));
+        return Err(Incompatibility::NotInstalled);
     }
     Ok(())
 }
@@ -85,32 +104,34 @@ mod tests {
         let sh = Path::new("/bin/sh");
         assert!(check(&info(Some("27.0.1"), "aarch64", false), sh).is_ok());
         assert!(check(&info(Some("28.0"), "aarch64", false), sh).is_ok());
-        let old = check(&info(Some("26.4"), "aarch64", false), sh).unwrap_err();
+        let old = check(&info(Some("26.4"), "aarch64", false), sh)
+            .unwrap_err()
+            .message();
         assert!(old.contains("macOS 27") && old.contains("26.4"), "{old}");
         assert!(check(&info(None, "aarch64", false), sh).is_err());
         assert!(
             check(&info(Some("27.0"), "x86_64", false), sh)
                 .unwrap_err()
+                .message()
                 .contains("Apple Silicon")
         );
         assert!(
             check(&info(Some("27.0"), "aarch64", true), sh)
                 .unwrap_err()
+                .message()
                 .contains("Rosetta")
         );
         assert!(
             check(
                 &info(Some("27.0"), "aarch64", false),
                 Path::new("/nonexistent/fm")
-            )
-            .is_err()
+            ) == Err(Incompatibility::NotInstalled)
         );
         assert!(
             check(
                 &info(Some("27.0"), "aarch64", false),
                 Path::new("/etc/hosts")
-            )
-            .is_err(),
+            ) == Err(Incompatibility::NotInstalled),
             "not executable"
         );
     }
