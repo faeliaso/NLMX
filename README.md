@@ -1,154 +1,270 @@
 <p align="center">
-  <img src="apps/desktop/src-tauri/icons/128x128@2x.png" width="128" alt="Ícone do NLMX">
+  <img src="apps/desktop/src-tauri/icons/128x128@2x.png" width="128" alt="NLMX icon">
 </p>
 
 <h1 align="center">NLMX</h1>
 
 <p align="center">
-  Pergunte aos seus PDFs, com tudo rodando no seu Mac.
+  <strong>Ask questions about your documents. Everything runs on your Mac.</strong><br/>
+  A local-first macOS app that turns PDFs, Word, Excel, EPUB, Markdown and more into a searchable knowledge base, with clickable citations for every answer.
+</p>
+
+<p align="center">
+  English · <a href="README.pt-BR.md">Português</a>
 </p>
 
 <div align="center">
 
-![macOS 27+](https://img.shields.io/badge/macOS-27%2B-000000?logo=apple&logoColor=white) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-555555?logo=apple&logoColor=white) ![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-B7410E?logo=rust&logoColor=white) ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white) ![Versão 0.1.0](https://img.shields.io/badge/vers%C3%A3o-0.1.0-blue) ![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green) ![100% local](https://img.shields.io/badge/100%25-local-2ea44f)
+![macOS 27+](https://img.shields.io/badge/macOS-27%2B-000000?logo=apple&logoColor=white) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-555555?logo=apple&logoColor=white) ![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-B7410E?logo=rust&logoColor=white) ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white) ![Version 0.3.1](https://img.shields.io/badge/version-0.3.1-blue) ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
 </div>
 
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#development">Development</a> •
+  <a href="docs/README.md">Documentation</a> •
+  <a href="#roadmap">Roadmap</a> •
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
 ---
 
-## Sobre o projeto
+## What is NLMX?
 
-**NLMX** é um app nativo para macOS que transforma uma coleção de PDFs numa base de conhecimento consultável em linguagem natural. Você importa os documentos, faz perguntas e recebe respostas fundamentadas, com **citações clicáveis** que levam à página e ao trecho exato do PDF.
+NLMX is a native macOS app for **private document Q&A (local RAG)**. You import your documents, ask questions in natural language, and get answers grounded in those documents. Each answer carries numbered citations (`[1]`, `[2]`, …) that open the exact source: for a PDF, the page with the cited passage highlighted.
 
-Tudo roda no próprio Mac: a extração, a indexação, a busca e a geração das respostas. Documentos, índices e perguntas nunca saem do dispositivo, e o app funciona offline depois do download do modelo de embeddings. Quando não encontra a resposta nos documentos, o app diz isso em vez de inventar uma.
+Extraction, indexing, search and answer generation all happen on the device. Documents, indexes and questions never leave your Mac, and after the one-time embedding-model download the app works offline. When the documents don't contain the answer, NLMX says so instead of inventing one.
 
-Princípios:
+It is built for people who work with many documents (standards, contracts, manuals, papers, technical docs) and cannot or do not want to send that content to the cloud.
 
-- **Local-first de verdade**: funciona offline depois do download do modelo.
-- **Zero atrito de instalação**: um `.dmg`, sem Python, Ollama, Docker ou terminal.
-- **Confiança verificável**: toda resposta mostra de onde veio.
-- **Nativo do macOS**: usa o modelo do sistema (Apple Foundation Models) em vez de embarcar um LLM gerador.
+## Why NLMX?
 
-## Funcionalidades
+### The problem
 
-- **Biblioteca de PDFs**: importação com detecção de duplicatas por SHA-256 e cópia para uma biblioteca interna.
-- **Extração e estrutura**: texto por página com bounding boxes (PDFium), remoção de cabeçalhos e rodapés repetidos, junção de palavras hifenizadas, títulos e seções.
-- **Busca híbrida**: BM25 (FTS5) combinado com busca vetorial (sqlite-vec) por fusão ponderada.
-- **Chat com citações**: respostas em streaming pelo Apple Foundation Models, com fontes `[n]` e referências `[página N]` clicáveis; as conversas ficam salvas.
-- **Visualizador de PDF** ao lado do chat, com destaque do trecho citado, seleção de texto e busca.
-- **Modelos**: download de modelos de embeddings sob confirmação explícita, com progresso, verificação de checksum, ativação e remoção.
-- **Remoção sem rastro**: remover um documento apaga todos os dados derivados dele, inclusive o histórico de chat que o usou ([ADR 0008](docs/adr/0008-remocao-de-documento.md)).
+Cloud chat-with-your-documents tools require uploading sensitive files. Self-hosted alternatives usually require Python, Docker or a local model server that you install and maintain yourself.
 
-Ainda não implementado: OCR de PDFs digitalizados. O status de cada requisito está em [`docs/PRODUCT.md`](docs/PRODUCT.md).
+### The solution
 
-## Privacidade
+- **Local-first**: the only network use is a model download that you start and confirm.
+- **One `.dmg`, no extra runtime**: no Python, Ollama, Node or Docker in the shipped app.
+- **Verifiable answers**: every document answer shows where it came from; low relevance yields "not found" without calling the model.
+- **Native**: generation uses Apple Foundation Models through the system CLI `/usr/bin/fm`, so the app does not bundle a generative LLM.
 
-- Documentos e perguntas **nunca saem do dispositivo**. O único acesso à rede é o download de um modelo, sempre iniciado pelo usuário.
-- O app não abre portas TCP. A única exceção é o `llama-server` supervisionado, que escuta só em `127.0.0.1`, numa porta efêmera e com chave por execução ([ADR 0006](docs/adr/0006-llama-server-loopback.md)).
-- Os logs nunca contêm texto de documentos, perguntas, respostas, títulos ou caminhos. Um teste canário garante isso.
+## Features
 
-## Tecnologias
+### Library
 
-| Camada | Tecnologia |
-|---|---|
-| App desktop | [Tauri 2](https://tauri.app) + Rust (edition 2024), workspace com arquitetura hexagonal ([ADR 0001](docs/adr/0001-hexagonal-cargo-workspace.md)) |
-| Interface | Templates [askama](https://github.com/askama-rs/askama), router [axum](https://github.com/tokio-rs/axum) em processo via protocolo `nlmx://` ([ADR 0003](docs/adr/0003-in-process-router-custom-protocol.md)), [HTMX 4](https://htmx.org) vendorizado e [Tailwind CSS 4](https://tailwindcss.com) compilado no build |
-| PDF | [PDFium](https://pdfium.googlesource.com/pdfium/) (build 7881) via [pdfium-render](https://github.com/ajrcarey/pdfium-render) |
-| Armazenamento e busca | [SQLite](https://sqlite.org) com FTS5 + [sqlite-vec](https://github.com/asg017/sqlite-vec), em um único banco ([ADR 0004](docs/adr/0004-single-sqlite-store-fts5-sqlite-vec.md), [0005](docs/adr/0005-embedding-space-per-model.md), [0007](docs/adr/0007-weighted-hybrid-fusion.md)) |
-| Embeddings | [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` b11349) com Qwen3-Embedding-0.6B (GGUF) |
-| Geração | Apple Foundation Models pelo CLI do sistema `/usr/bin/fm`, sem Swift ([ADR 0002](docs/adr/0002-fm-cli-serve-over-uds.md)) |
+- **Multi-format import**: PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX and XLSX, several files at once, with background indexing and progress.
+- **Notes**: paste text and index it as a source, with no file involved.
+- **Deduplication**: SHA-256 content hash; re-importing a changed file updates the same document.
+- **Removal without a trace**: deleting a document removes all derived data, including chat history that used it, and leaves no text in the database file ([ADR 0008](docs/adr/0008-remocao-de-documento.md)).
 
-## Requisitos
+### Extraction and indexing
 
-**Para usar o app**
+- **PDF via PDFium**: text per page with bounding boxes, repeated header/footer removal, de-hyphenation, headings and sections. Scanned PDFs are detected (`needs_ocr`).
+- **Structure-aware chunking** per format, with provenance (page, section, row, character range, …) kept for every chunk.
+- **Hybrid search**: BM25 (SQLite FTS5) and vector search (sqlite-vec) combined by weighted fusion ([ADR 0007](docs/adr/0007-weighted-hybrid-fusion.md)).
+- **Resumable indexing** with a dedicated screen to retry, reindex and see what is pending.
 
-- macOS 27 ou superior em Apple Silicon (sem suporte a Intel ou Rosetta)
-- Apple Intelligence ativo
-- A licença do `fm` aceita uma vez no Terminal com `sudo fm license`. O app nunca aceita essa licença no lugar do usuário.
+### Chat
 
-**Para desenvolver**
+- **Free conversation** with Apple Foundation Models (the default), isolated from your library, or **answers from your documents** (all of them or one), streamed token by token.
+- **Clickable citations**: `[n]` and `[page N]` open the PDF viewer beside the chat, or a source-details panel for other formats.
+- **PDF viewer** with highlighted passage, text selection, search, zoom and thumbnails.
+- **Saved conversations** with follow-up questions.
 
-- Rust stable (fixado em [`rust-toolchain.toml`](rust-toolchain.toml), alvo `aarch64-apple-darwin`)
+### Models
+
+- Download embedding models with explicit confirmation, progress, checksum verification, activation and removal.
+
+## Use cases
+
+- Query a folder of contracts or standards and jump straight to the clause that supports the answer.
+- Search a spreadsheet or CSV export in plain language.
+- Ask questions about an EPUB, a manual or your own Markdown notes without uploading them anywhere.
+
+## Requirements
+
+### Required (to use the app)
+
+- macOS 27 or later on Apple Silicon (no Intel, no Rosetta)
+- Apple Intelligence enabled
+- The `fm` license accepted once in Terminal with `sudo fm license`. The app never accepts it on your behalf.
+
+### Required (to develop)
+
+- Rust stable (pinned in [`rust-toolchain.toml`](rust-toolchain.toml), target `aarch64-apple-darwin`, MSRV 1.85)
 - Tauri CLI: `cargo install tauri-cli`
 - Xcode Command Line Tools: `xcode-select --install`
-- ImageMagick, só para regenerar os ícones
 
-## Primeiros passos
+### Optional
+
+- ImageMagick, only to regenerate app icons
+
+## Installation
+
+Pre-built releases are not published yet `[INFORMAÇÃO NECESSÁRIA: release/download URL]`. Build the installer yourself:
 
 ```sh
-git clone <url-do-repositório> NLMX
+git clone git@github.com:faeliaso/NLMX.git
 cd NLMX
-
-make bootstrap                        # Tailwind CLI, HTMX, PDFium e llama-server (uma vez)
-./scripts/fetch-embedding-model.sh    # opcional: modelo de embeddings para desenvolvimento (~640 MB)
-make dev                              # roda o app em modo debug
+make bootstrap   # Tailwind CLI, HTMX, PDFium, llama-server (once)
+make bundle      # dist/NLMX.dmg, ad-hoc signed, then verified
 ```
 
-Para usar o modelo baixado pelo script sem passar pela tela Modelos:
+1. Open `dist/NLMX.dmg` and drag **NLMX** to **Applications**.
+2. Ad-hoc signed builds must be opened the first time with right-click › **Open**.
+3. In the **Modelos** (Models) screen, download the embedding model. After that the app works offline.
+
+Signed and notarized builds: `make release` (see [`docs/RELEASE.md`](docs/RELEASE.md)).
+
+## Quick Start
+
+Run from source in debug mode:
+
+```sh
+git clone git@github.com:faeliaso/NLMX.git
+cd NLMX
+
+make bootstrap                      # once
+./scripts/fetch-embedding-model.sh  # optional: dev embedding model (~640 MB)
+make dev                            # cargo tauri dev
+```
+
+To use the model fetched by the script without going through the Models screen:
 
 ```sh
 NLMX_EMBEDDING_CONFIG=$PWD/models/embedding.json make dev
 ```
 
-## Scripts
+## Usage
 
-| Comando | O que faz |
-|---|---|
-| `make bootstrap` | Baixa as ferramentas de build e o runtime: Tailwind CLI, HTMX 4, PDFium e `llama-server` |
-| `make dev` | Roda o app em modo debug (`cargo tauri dev`) |
-| `make build` | Compila o workspace |
-| `make test` | Todos os testes que não precisam de modelo real |
-| `make test-unit` · `test-integration` | Subconjuntos do `make test` |
-| `make lint` · `make fmt` | `cargo fmt --check` + `clippy -D warnings` · formatação |
-| `make bundle` | Gera `dist/NLMX.dmg` (assinatura ad-hoc) e verifica o bundle |
-| `make release` | Gera o DMG assinado com Developer ID e notarizado |
-| `make acceptance` | Instala o DMG num ambiente temporário e o verifica de ponta a ponta |
-| `./scripts/fetch-embedding-model.sh` | Baixa o modelo de embeddings de desenvolvimento para `models/` |
-| `./scripts/make-icons.sh` | Regenera os ícones do app a partir de `icons/source.png` |
+1. **Documentos**: import files or add a note. Documents appear immediately as `queued` and move to `indexed`.
+2. **Chat**: start a conversation. By default it is a free conversation with Apple Foundation Models. Change the scope to your documents (all or one) to get answers with sources.
+3. Click a citation `[n]` to open the source. Use "Explique este documento." for an overview of a single document, or "seção N" to ask about a section.
+4. **Indexação**: check index state, retry failures or reindex everything.
+5. **Modelos**: manage embedding models.
 
-Mais detalhes em [`docs/TESTING.md`](docs/TESTING.md) e [`docs/RELEASE.md`](docs/RELEASE.md).
+The interface is in Brazilian Portuguese (pt-BR). A Portuguese question can find an English passage (multilingual embeddings).
 
-## Instalação
+## Configuration
 
-1. Gere o instalador com `make bundle`, ou use um `NLMX.dmg` publicado.
-2. Abra o DMG e arraste o **NLMX** para **Aplicativos**.
-3. Builds com assinatura ad-hoc precisam ser abertas pela primeira vez com clique direito › **Abrir**.
-4. Na tela **Modelos**, baixe o modelo de embeddings. Depois disso, o app funciona offline.
+| Variable / file | Required | Default | Description |
+|---|---|---|---|
+| `NLMX_EMBEDDING_CONFIG` | No | `<data>/embedding.json` | Path to the embedding-model config (see `models/embedding.example.json`) |
+| `NLMX_PDFIUM_PATH` | No | `Contents/Frameworks`, then `runtime/lib` in debug | Location of the PDFium dylib |
+| `NLMX_START_PATH` | No (debug builds only) | — | Start page, e.g. `/design-system?theme=dark` |
 
-Os dados do app ficam em `~/Library/Application Support/dev.nlmx.desktop/`.
+App data lives in `~/Library/Application Support/dev.nlmx.desktop/` (SQLite database, library, models, logs).
 
-## Estrutura do repositório
+## Architecture
 
+NLMX is a hexagonal Cargo workspace ([ADR 0001](docs/adr/0001-hexagonal-cargo-workspace.md)). The UI is HTML rendered by an in-process axum router, served to the WebView through a custom `nlmx://` protocol; there is no TCP listener.
+
+```mermaid
+flowchart LR
+    UI["WebView<br/>HTMX + askama"] -->|"nlmx://"| R["axum router<br/>(ui-web)"]
+    R --> APP["application<br/>use cases + ports"]
+    APP --> PDF["PDFium + parsers"]
+    APP --> DB[("SQLite<br/>FTS5 + sqlite-vec")]
+    APP -->|"HTTP, 127.0.0.1"| LL["llama-server<br/>embeddings"]
+    APP -->|"Unix socket"| FM["/usr/bin/fm<br/>Apple Foundation Models"]
 ```
-apps/desktop/          app Tauri: src-tauri/ (composition root, comandos) e ui/ (templates, estilos, scripts)
+
+**Answer flow:** question → hybrid retrieval → relevance gate (below the threshold, "not found" without calling the model) → context within a token budget → streamed generation → citations `[n]` mapped to document, location and passage.
+
+Dependency rules (`domain` ← `application` ← `adapters/*` and `ui-web` ← `apps/desktop/src-tauri`) are enforced by `tests/tests/architecture.rs`. Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Desktop app | [Tauri 2](https://tauri.app) + Rust (edition 2024) |
+| UI | [askama](https://github.com/askama-rs/askama) templates, [axum](https://github.com/tokio-rs/axum) router over `nlmx://` ([ADR 0003](docs/adr/0003-in-process-router-custom-protocol.md)), vendored [HTMX 4](https://htmx.org), [Tailwind CSS 4](https://tailwindcss.com) compiled at build time |
+| PDF | [PDFium](https://pdfium.googlesource.com/pdfium/) (build 7881) via [pdfium-render](https://github.com/ajrcarey/pdfium-render) |
+| Other formats | Dedicated parsers for Markdown/TXT/CSV, EPUB, DOCX and XLSX ([ADR 0011](docs/adr/0011-camada-de-parsers.md), [0017](docs/adr/0017-docx-xlsx-sem-visualizador.md)) |
+| Storage and search | [SQLite](https://sqlite.org) with FTS5 + [sqlite-vec](https://github.com/asg017/sqlite-vec), single database ([ADR 0004](docs/adr/0004-single-sqlite-store-fts5-sqlite-vec.md), [0005](docs/adr/0005-embedding-space-per-model.md)) |
+| Embeddings | [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` b11349) with Qwen3-Embedding-0.6B (GGUF) |
+| Generation | Apple Foundation Models via `/usr/bin/fm`, no Swift ([ADR 0002](docs/adr/0002-fm-cli-serve-over-uds.md)) |
+
+## Privacy
+
+- Documents and questions **never leave the device**. The only network access is a model download, always started by you.
+- No TCP listeners, with one exception: the supervised `llama-server` listens on `127.0.0.1` only, on an ephemeral port, with a per-run API key ([ADR 0006](docs/adr/0006-llama-server-loopback.md)).
+- No telemetry is sent anywhere. Logs are local JSON lines and never contain document text, chunks, questions, answers, prompts, titles, file names or user paths; a redaction layer is a safety net, and log changes are reviewed by hand.
+
+## Project Structure
+
+```text
+apps/desktop/          Tauri app: src-tauri/ (composition root, commands) and ui/ (templates, styles, scripts)
 crates/
-  domain/              tipos e regras puras
-  application/         casos de uso e todos os ports
-  adapters/            implementações: pdf-pdfium, store-sqlite, embed-llama, llm-fm, models-catalog, …
-  ui-web/              router axum e renderização das páginas
-  testing/             fakes em memória e suítes de contrato dos ports
-tests/                 testes de arquitetura, ativação de modelo e aceitação de release
-scripts/               bootstrap, bundle, verificação, aceitação e ícones
-docs/                  produto, arquitetura, design system, testes, release e ADRs
+  domain/              pure types and rules
+  application/         use cases and all ports
+  adapters/            pdf-pdfium, store-sqlite, embed-llama, llm-fm, models-catalog, parsers, chunkers, …
+  ui-web/              axum router and page rendering
+  testing/             in-memory fakes and port contract suites
+tests/                 architecture, model activation and release acceptance tests
+scripts/               bootstrap, bundle, verification, acceptance, icons
+docs/                  product, architecture, design system, testing, release, ADRs
 ```
 
-## Documentação
+## Development
 
-| Documento | Conteúdo |
+| Command | What it does |
 |---|---|
-| [`docs/PRODUCT.md`](docs/PRODUCT.md) | Visão, requisitos com status, metas e riscos |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Camadas, ports, fluxos, processos e banco |
-| [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md) | Tokens, componentes e acessibilidade |
-| [`docs/TESTING.md`](docs/TESTING.md) | Suítes de teste, métricas e logs |
-| [`docs/RELEASE.md`](docs/RELEASE.md) | DMG, assinatura, notarização e checklist |
-| [`docs/adr/`](docs/adr/) | Decisões de arquitetura |
+| `make bootstrap` | Downloads build tools and runtime: Tailwind CLI, HTMX 4, PDFium, `llama-server` |
+| `make dev` | Runs the app in debug mode (`cargo tauri dev`) |
+| `make build` | Builds the workspace |
+| `make test` · `test-unit` · `test-integration` | Tests that need no real model, and subsets |
+| `make lint` · `make fmt` | `cargo fmt --check` + `clippy -D warnings` · formatting |
+| `make bundle` | Builds `dist/NLMX.dmg` (ad-hoc signed) and verifies it |
+| `make release` | Developer ID signed and notarized DMG |
+| `make acceptance` | Installs the DMG in a temp environment and verifies it end to end (downloads the model, ~640 MB) |
+| `./scripts/make-icons.sh` | Regenerates app icons from `icons/source.png` |
 
-## Contribuição
+Run a single test: `cargo test -p nlmx-parser-text paragraphs`. More in [`docs/TESTING.md`](docs/TESTING.md).
 
-Contribuições são bem-vindas! Consulte o arquivo [CONTRIBUTING.md](CONTRIBUTING.md) para obter as diretrizes.
+## Contributing
 
-## Licença
+Contributions are welcome. Branch from `develop` (`feature/…`, `fix/…`, `docs/…`), keep changes small and tested, run `make lint` and `make test`, and open the pull request against `develop` (`main` only receives releases). Read [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture, privacy and database rules. Architectural decisions go in a new ADR under [`docs/adr/`](docs/adr/).
 
-Distribuído sob a licença MIT. Veja [LICENSE](LICENSE).
+## Roadmap
 
-O app inclui componentes de terceiros com licenças próprias (PDFium, llama.cpp, SQLite e sqlite-vec). Os textos dessas licenças estão em [`apps/desktop/src-tauri/licenses/`](apps/desktop/src-tauri/licenses/) e acompanham o app instalado.
+Status of every requirement is in [`docs/PRODUCT.md`](docs/PRODUCT.md).
+
+| Item | Status |
+|---|---|
+| PDF, Markdown, TXT, CSV, EPUB, DOCX, XLSX, notes | Done |
+| Hybrid search, cited chat, PDF viewer, model management | Done |
+| OCR for scanned PDFs (e.g. `fm respond --tool ocr`) | Planned |
+
+Out of scope: Intel/Windows/Linux, alternative generative LLMs, reranker, sync, PDF annotation, Mac App Store.
+
+## Documentation
+
+The documentation in `docs/` is written in Portuguese.
+
+| Document | Content |
+|---|---|
+| [`docs/PRODUCT.md`](docs/PRODUCT.md) | Vision, requirements with status, targets, risks |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, ports, flows, processes, database |
+| [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md) | Tokens, components, accessibility |
+| [`docs/TESTING.md`](docs/TESTING.md) | Test suites, metrics, logs |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | DMG, signing, notarization, checklist |
+| [`docs/adr/`](docs/adr/) | Architecture decision records |
+
+## Support
+
+Open an issue at [github.com/faeliaso/NLMX/issues](https://github.com/faeliaso/NLMX/issues). Include the NLMX and macOS versions, your Mac model, reproduction steps and, if relevant, excerpts from `~/Library/Application Support/dev.nlmx.desktop/logs/nlmx.jsonl`. **Do not attach private documents.**
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
+
+The app bundles third-party components under their own licenses (PDFium, llama.cpp, SQLite, sqlite-vec). Their texts are in [`apps/desktop/src-tauri/licenses/`](apps/desktop/src-tauri/licenses/) and ship with the installed app.
+
+## Acknowledgements
+
+[PDFium](https://pdfium.googlesource.com/pdfium/) and [pdfium-render](https://github.com/ajrcarey/pdfium-render), [llama.cpp](https://github.com/ggml-org/llama.cpp), [sqlite-vec](https://github.com/asg017/sqlite-vec), [Tauri](https://tauri.app), [HTMX](https://htmx.org), [Tailwind CSS](https://tailwindcss.com), and the Qwen3-Embedding model.

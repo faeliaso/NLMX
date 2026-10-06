@@ -4,7 +4,7 @@ Obrigado pelo interesse em contribuir! Este guia reúne o que você precisa sabe
 
 ## Preparar o ambiente
 
-Siga os [Requisitos](README.md#requisitos) e os [Primeiros passos](README.md#primeiros-passos) do README. Em resumo:
+Siga os [Requisitos](README.pt-BR.md#requisitos) e o [Início rápido](README.pt-BR.md#início-rápido) do README (também em [inglês](README.md#requirements)). Em resumo:
 
 ```sh
 make bootstrap
