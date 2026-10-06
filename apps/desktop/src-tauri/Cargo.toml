@@ -1,6 +1,6 @@
 [package]
 name = "nlmx-desktop"
-description = "NLMX desktop app: Tauri shell and composition root."
+description = "NLMX - Local AI Notebook for MacOS"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
