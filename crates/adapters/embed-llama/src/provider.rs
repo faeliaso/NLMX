@@ -176,7 +176,9 @@ impl LlamaCppEmbeddingProvider {
             .send()
             .await
             .map_err(|err| {
-                if err.is_connect() {
+                // A server that dies while a request is being sent (reset, closed pooled connection)
+                // is not always reported as a connect error; only a timeout means it is still alive.
+                if err.is_connect() || (err.is_request() && !err.is_timeout()) {
                     RequestFailure::Connection(err.to_string())
                 } else {
                     RequestFailure::Other(request_error(err))
