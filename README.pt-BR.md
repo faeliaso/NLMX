@@ -228,7 +228,7 @@ Rodar um teste isolado: `cargo test -p nlmx-parser-text paragraphs`. Mais em [`d
 
 ## Contribuição
 
-Contribuições são bem-vindas. Crie a branch a partir de `develop` (`feature/…`, `fix/…`, `docs/…`), faça mudanças pequenas e testadas, rode `make lint` e `make test`, e abra o pull request para `develop` (a `main` recebe só releases). Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para as regras de arquitetura, privacidade e banco de dados. Decisões de arquitetura vão num novo ADR em [`docs/adr/`](docs/adr/).
+Contribuições são bem-vindas. Crie a branch a partir de `develop` (`feature/…`; veja [docs/CI.md](docs/CI.md)), faça mudanças pequenas e testadas, rode `make lint` e `make test`, e abra o pull request para `develop` (a `main` recebe só releases). Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para as regras de arquitetura, privacidade e banco de dados. Decisões de arquitetura vão num novo ADR em [`docs/adr/`](docs/adr/).
 
 ## Roadmap
 

@@ -479,6 +479,19 @@ impl StorageDiagnostics for UnavailableStorage {
     }
 }
 
+/// The system `fm`. Debug builds accept `NLMX_FM_BINARY=<script>` to simulate its states
+/// (e.g. a script that exits 69 shows the license dialog).
+fn system_fm(data_dir: &Path) -> FoundationModelsProvider {
+    #[cfg(debug_assertions)]
+    if let Ok(binary) = std::env::var("NLMX_FM_BINARY") {
+        return FoundationModelsProvider::new(nlmx_llm_fm::FoundationModelsConfig::new(
+            binary,
+            data_dir.join("run"),
+        ));
+    }
+    FoundationModelsProvider::system(data_dir.join("run"))
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
@@ -522,17 +535,4 @@ mod tests {
         let page = settings_page(router).await;
         assert!(page.contains("Banco de dados indisponível"));
     }
-}
-
-/// The system `fm`. Debug builds accept `NLMX_FM_BINARY=<script>` to simulate its states
-/// (e.g. a script that exits 69 shows the license dialog).
-fn system_fm(data_dir: &Path) -> FoundationModelsProvider {
-    #[cfg(debug_assertions)]
-    if let Ok(binary) = std::env::var("NLMX_FM_BINARY") {
-        return FoundationModelsProvider::new(nlmx_llm_fm::FoundationModelsConfig::new(
-            binary,
-            data_dir.join("run"),
-        ));
-    }
-    FoundationModelsProvider::system(data_dir.join("run"))
 }

@@ -1,0 +1,54 @@
+# NLMX supports Apple Silicon only (aarch64-apple-darwin, macOS 27+): see docs/CI.md.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    # The app requires macOS 27 (`/usr/bin/fm`); this is the arm64 runner image that runs on it.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            runtime
+            tools
+            apps/desktop/ui/vendor
+          key: bootstrap-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap.sh') }}
+
+      - name: Bootstrap (Tailwind, HTMX, PDFium, llama.cpp)
+        run: make bootstrap
+
+      - name: Lint (fmt + clippy)
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      # The real bundle is only built for PRs into main (the stable branch); releases build it again.
+      - name: Tauri CLI
+        if: github.base_ref == 'main'
+        run: command -v cargo-tauri || cargo install tauri-cli --version '^2.12' --locked
+
+      - name: Bundle (DMG, unsigned) + verification
+        if: github.base_ref == 'main'
+        run: make bundle

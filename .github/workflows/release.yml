@@ -1,0 +1,64 @@
+# Runs only when a version tag (vX.Y.Z) is pushed. Apple Silicon only; unsigned and not notarized.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the app version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          conf=$(sed -n 's/^  "version": "\(.*\)",/\1/p' apps/desktop/src-tauri/tauri.conf.json)
+          cargo=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version = "\(.*\)"/\1/p;}' Cargo.toml)
+          echo "tag=$version tauri.conf.json=$conf Cargo.toml=$cargo"
+          if [ "$version" != "$conf" ] || [ "$version" != "$cargo" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the app version (tauri.conf.json=$conf, Cargo.toml=$cargo). Bump both, merge into main and tag again."
+            exit 1
+          fi
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            runtime
+            tools
+            apps/desktop/ui/vendor
+          key: bootstrap-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap.sh') }}
+
+      - name: Bootstrap (Tailwind, HTMX, PDFium, llama.cpp)
+        run: make bootstrap
+
+      - name: Tauri CLI
+        run: command -v cargo-tauri || cargo install tauri-cli --version '^2.12' --locked
+
+      - name: Bundle (DMG, unsigned) + verification
+        run: make bundle
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > notes.md <<'NOTES'
+          ## NLMX for Apple Silicon
+
+          **Unsigned and not notarized.** This build is ad-hoc signed only; Developer ID signing and notarization will be added later. On first launch macOS may refuse to open it: use right-click › Open on `NLMX.app` once, then confirm.
+
+          Requirements: Mac with Apple Silicon (M1 or later) and macOS 27 or later. Intel Macs are not supported.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" "dist/NLMX-${version}.dmg" \
+            --title "NLMX $version" --notes-file notes.md --generate-notes --verify-tag

@@ -20,6 +20,7 @@ make test-unit | test-integration   # subsets of `make test` (see docs/TESTING.m
 make dev         # cargo tauri dev in apps/desktop/src-tauri
 make test        # cargo test --workspace
 make lint        # cargo fmt --check + clippy -D warnings
+# CI/release: .github/workflows (ci.yml, release.yml), see docs/CI.md; flow feature/* → develop → main, tag vX.Y.Z releases
 make bundle      # dist/NLMX.dmg (Apple Silicon, ad-hoc signed) + scripts/verify-bundle.sh — see docs/RELEASE.md
 make release     # same, Developer ID signed + notarized (APPLE_SIGNING_IDENTITY, APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID)
 ./scripts/make-icons.sh  # app icons (icon.icns + PNGs) from apps/desktop/src-tauri/icons/source.png; needs ImageMagick

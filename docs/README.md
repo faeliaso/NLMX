@@ -6,6 +6,7 @@
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the system is built today: layers, ports, flows (ingestion, search, RAG, viewer), processes, models, database |
 | [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) | UI tokens, components, states and accessibility rules |
 | [`TESTING.md`](TESTING.md) | Test suites, what each one covers, metrics and logs |
+| [`CI.md`](CI.md) | Branches, pull requests, CI, releases by tag, Apple Silicon only, protecting `main` |
 | [`RELEASE.md`](RELEASE.md) | Building the DMG, signing/notarizing, where the app stores data, publishing checklist |
 | [`adr/`](adr/) | Architecture decisions. Do not rewrite an ADR: add an "Update" or create a new one |
 
