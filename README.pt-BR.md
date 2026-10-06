@@ -5,8 +5,8 @@
 <h1 align="center">NLMX</h1>
 
 <p align="center">
-  <strong>Pergunte aos seus documentos. Tudo roda no seu Mac.</strong><br/>
-  App macOS local-first que transforma PDFs, Word, Excel, EPUB, Markdown e mais numa base de conhecimento pesquisável, com citações clicáveis em cada resposta.
+  <strong>Use o Apple Foundation Models localmente, sem ficar preso ao terminal.</strong><br/>
+  Uma interface simples e minimalista para colocar a IA local da Apple ao alcance de todos.
 </p>
 
 <p align="center">

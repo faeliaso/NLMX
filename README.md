@@ -5,8 +5,8 @@
 <h1 align="center">NLMX</h1>
 
 <p align="center">
-  <strong>Ask questions about your documents. Everything runs on your Mac.</strong><br/>
-  A local-first macOS app that turns PDFs, Word, Excel, EPUB, Markdown and more into a searchable knowledge base, with clickable citations for every answer.
+  <strong>Use Apple Foundation Models locally, without being stuck in the terminal.</strong><br/>
+  A simple, minimalist interface that puts Apple's local AI within everyone's reach.
 </p>
 
 <p align="center">
