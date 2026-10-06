@@ -59,7 +59,7 @@ Cloud chat-with-your-documents tools require uploading sensitive files. Self-hos
 - **Multi-format import**: PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX and XLSX, several files at once, with background indexing and progress.
 - **Notes**: paste text and index it as a source, with no file involved.
 - **Deduplication**: SHA-256 content hash; re-importing a changed file updates the same document.
-- **Removal without a trace**: deleting a document removes all derived data, including chat history that used it, and leaves no text in the database file ([ADR 0008](docs/adr/0008-remocao-de-documento.md)).
+- **Removal without a trace**: deleting a document removes all derived data, including chat history that used it, and leaves no text in the database file ([ADR 0008](docs/adr/0008-document-removal.md)).
 
 ### Extraction and indexing
 
@@ -184,7 +184,7 @@ Dependency rules (`domain` ← `application` ← `adapters/*` and `ui-web` ← `
 | Desktop app | [Tauri 2](https://tauri.app) + Rust (edition 2024) |
 | UI | [askama](https://github.com/askama-rs/askama) templates, [axum](https://github.com/tokio-rs/axum) router over `nlmx://` ([ADR 0003](docs/adr/0003-in-process-router-custom-protocol.md)), vendored [HTMX 4](https://htmx.org), [Tailwind CSS 4](https://tailwindcss.com) compiled at build time |
 | PDF | [PDFium](https://pdfium.googlesource.com/pdfium/) (build 7881) via [pdfium-render](https://github.com/ajrcarey/pdfium-render) |
-| Other formats | Dedicated parsers for Markdown/TXT/CSV, EPUB, DOCX and XLSX ([ADR 0011](docs/adr/0011-camada-de-parsers.md), [0017](docs/adr/0017-docx-xlsx-sem-visualizador.md)) |
+| Other formats | Dedicated parsers for Markdown/TXT/CSV, EPUB, DOCX and XLSX ([ADR 0011](docs/adr/0011-parser-layer.md), [0017](docs/adr/0017-docx-xlsx-without-viewer.md)) |
 | Storage and search | [SQLite](https://sqlite.org) with FTS5 + [sqlite-vec](https://github.com/asg017/sqlite-vec), single database ([ADR 0004](docs/adr/0004-single-sqlite-store-fts5-sqlite-vec.md), [0005](docs/adr/0005-embedding-space-per-model.md)) |
 | Embeddings | [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` b11349) with Qwen3-Embedding-0.6B (GGUF) |
 | Generation | Apple Foundation Models via `/usr/bin/fm`, no Swift ([ADR 0002](docs/adr/0002-fm-cli-serve-over-uds.md)) |

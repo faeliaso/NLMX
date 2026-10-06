@@ -1,20 +1,20 @@
-# ADR 0005 — Um espaço vetorial (tabela vec0) por modelo de embedding
+# ADR 0005 — One vector space (vec0 table) per embedding model
 
-- Status: aceito
-- Data: 2026-10-02
+- Status: accepted
+- Date: 2026-10-02
 
-## Contexto
-Vetores de modelos diferentes não são comparáveis, e `vec0` tem dimensão fixa. O usuário pode trocar de modelo de embedding.
+## Context
+Vectors from different models are not comparable, and `vec0` has a fixed dimension. The user may switch embedding models.
 
-## Decisão
-- Entidade `EmbeddingSpace{model_id, revision, dims}`; cada uma tem sua tabela `chunks_vec_<space_id>`.
-- Exatamente um espaço ativo. Trocar de modelo cria o novo espaço e jobs `reembed` (reaproveitando os chunks, sem reextrair PDFs); a busca segue no espaço antigo até a conclusão; a ativação é atômica e o espaço antigo é removido depois.
-- Todo vetor é gravado junto com o seu espaço; consultas sempre informam o espaço.
+## Decision
+- Entity `EmbeddingSpace{model_id, revision, dims}`; each has its own `chunks_vec_<space_id>` table.
+- Exactly one active space. Switching models creates the new space and `reembed` jobs (reusing the chunks, without re-extracting PDFs); search stays on the old space until completion; activation is atomic and the old space is removed afterwards.
+- Every vector is stored together with its space; queries always specify the space.
 
-## Consequências
-- Impossível misturar vetores de modelos diferentes.
-- Troca de modelo sem indisponibilidade da busca, ao custo de espaço em disco temporário.
+## Consequences
+- Mixing vectors from different models is impossible.
+- Model switching without search downtime, at the cost of temporary disk space.
 
-## Atualização (2026-10-03)
-- Tabela real: `chunk_vectors_<embedding_model_id>` (vec0), criada em runtime por `VectorStore::create_index` a partir de `EmbeddingSpace::from_identity`; a ligação chunk → modelo → vetor fica em `chunk_embeddings` (migração 0006).
-- Troca de modelo implementada de forma mais simples: `apply_model_change` para o `llama-server` antigo, marca os documentos indexados como `embedding` e regera todos os vetores no novo espaço. Durante a regeração, a busca usa o novo espaço (parcial) e o lexical; não há troca atômica nem limpeza automática do espaço antigo.
+## Update (2026-10-03)
+- Actual table: `chunk_vectors_<embedding_model_id>` (vec0), created at runtime by `VectorStore::create_index` from `EmbeddingSpace::from_identity`; the chunk → model → vector link lives in `chunk_embeddings` (migration 0006).
+- Model switching implemented more simply: `apply_model_change` stops the old `llama-server`, marks indexed documents as `embedding` and regenerates all vectors in the new space. During regeneration, search uses the new (partial) space and the lexical index; there is no atomic switch nor automatic cleanup of the old space.

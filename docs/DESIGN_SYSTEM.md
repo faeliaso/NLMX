@@ -1,63 +1,63 @@
 # NLMX — Design System
 
-Interface macOS moderna e minimalista: muito espaço em branco, tipografia do sistema, bordas suaves, sombras sutis com hairline, azul como cor de ação, light/dark automáticos e acessibilidade WCAG 2.2 AA.
+Modern, minimalist macOS interface: lots of white space, system typography, soft borders, subtle shadows with a hairline, blue as the action color, automatic light/dark and WCAG 2.2 AA accessibility.
 
-Galeria interativa (somente builds debug): **Configurações › Sobre › Design System**, ou `NLMX_START_PATH="/design-system?theme=dark" make dev`.
+Interactive gallery (debug builds only): **Configurações › Sobre › Design System** (Settings › About › Design System), or `NLMX_START_PATH="/design-system?theme=dark" make dev`.
 
-## Onde fica cada coisa
+## Where everything lives
 
-| Arquivo | Conteúdo |
+| File | Contents |
 |---|---|
-| `apps/desktop/ui/styles/tokens.css` | **Fonte única** de cores, tipografia, radius, sombras, espaçamento, alturas de controle e movimento |
-| `apps/desktop/ui/styles/base.css` | Base: corpo, foco, seleção, scrollbars, `sr-only`, reduced motion, forced colors |
-| `apps/desktop/ui/styles/components/*.css` | Componentes como classes semânticas (`.btn`, `.field`, `.card`, `.badge`, `.menu`, `.dialog`, `.progress`, `.skeleton`, `.alert`, `.empty`, `.toast`) |
-| `apps/desktop/ui/styles/shell.css` | Layout do app (sidebar, header, status bar, composer, segmented) |
-| `apps/desktop/ui/components/ds.html` | Macros askama com a marcação acessível dos componentes |
-| `apps/desktop/ui/components/icons/*.html` | Ícones SVG (stroke 1.6, `currentColor`, `aria-hidden`) |
-| `apps/desktop/ui/scripts/ds.js` | Comportamento: tema, dialog, menu (teclado), toast, dismiss |
+| `apps/desktop/ui/styles/tokens.css` | **Single source** of colors, typography, radius, shadows, spacing, control heights and motion |
+| `apps/desktop/ui/styles/base.css` | Base: body, focus, selection, scrollbars, `sr-only`, reduced motion, forced colors |
+| `apps/desktop/ui/styles/components/*.css` | Components as semantic classes (`.btn`, `.field`, `.card`, `.badge`, `.menu`, `.dialog`, `.progress`, `.skeleton`, `.alert`, `.empty`, `.toast`) |
+| `apps/desktop/ui/styles/shell.css` | App layout (sidebar, header, status bar, composer, segmented) |
+| `apps/desktop/ui/components/ds.html` | askama macros with the accessible markup of the components |
+| `apps/desktop/ui/components/icons/*.html` | SVG icons (stroke 1.6, `currentColor`, `aria-hidden`) |
+| `apps/desktop/ui/scripts/ds.js` | Behavior: theme, dialog, menu (keyboard), toast, dismiss |
 
-## Regras
+## Rules
 
-1. **Sem cores cruas fora de `tokens.css`.** O `@theme` remove as paletas padrão do Tailwind (`--color-*: initial`); só existem utilities dos tokens (`bg-surface`, `text-fg-muted`, `border-border`…).
-2. **Não use `dark:`.** Cada cor é `light-dark(CLARO, ESCURO)` e acompanha `color-scheme`, que segue o sistema ou `<html data-theme="light|dark">`.
-3. **Contraste é conferido à mão.** O `ui-web` não tem mais testes automáticos (nem o de contraste, nem o que barrava cores cruas): ao mudar `tokens.css`, confira ≥ 4.5:1 para texto e ≥ 3:1 para contornos de controles nos dois temas.
-4. **Cor nunca é o único sinal:** badges e alerts sempre têm texto; erros têm ícone + mensagem.
-5. **Foco visível sempre** (`:focus-visible`, anel `--color-focus`); alvos ≥ 24px; animações respeitam `prefers-reduced-motion`.
-6. **Cabeçalho de página em uma linha.** Título e descrição (`.page-title`, `.page-description`) terminam em reticências quando a janela estreita, e o texto completo vai no atributo `title`; use o macro `page::header` em vez de montar o cabeçalho à mão.
+1. **No raw colors outside `tokens.css`.** `@theme` removes Tailwind's default palettes (`--color-*: initial`); only utilities from the tokens exist (`bg-surface`, `text-fg-muted`, `border-border`…).
+2. **Do not use `dark:`.** Every color is `light-dark(LIGHT, DARK)` and follows `color-scheme`, which follows the system or `<html data-theme="light|dark">`.
+3. **Contrast is checked by hand.** `ui-web` no longer has automated tests (neither the contrast one nor the one that blocked raw colors): when changing `tokens.css`, check ≥ 4.5:1 for text and ≥ 3:1 for control outlines in both themes.
+4. **Color is never the only signal:** badges and alerts always have text; errors have an icon + message.
+5. **Focus is always visible** (`:focus-visible`, `--color-focus` ring); targets ≥ 24px; animations respect `prefers-reduced-motion`.
+6. **Page header on one line.** Title and description (`.page-title`, `.page-description`) end in an ellipsis when the window narrows, and the full text goes in the `title` attribute; use the `page::header` macro instead of building the header by hand.
 
 ## Tokens
 
-**Cores semânticas** — superfícies (`bg`, `bg-subtle`, `surface`, `surface-raised`, `surface-hover`, `surface-pressed`), texto (`fg`, `fg-muted`, `fg-subtle` só para placeholder/desabilitado), linhas (`border` decorativa, `border-strong` para controles), ação (`accent` preenchimento, `accent-text` links, `accent-soft` seleção, `accent-fg` texto sobre accent), estados `success|warning|danger|info` com três variantes cada: base (indicadores), `-fg` (texto acessível), `-soft` (fundo).
+**Semantic colors** — surfaces (`bg`, `bg-subtle`, `surface`, `surface-raised`, `surface-hover`, `surface-pressed`), text (`fg`, `fg-muted`, `fg-subtle` only for placeholder/disabled), lines (`border` decorative, `border-strong` for controls), action (`accent` fill, `accent-text` links, `accent-soft` selection, `accent-fg` text on accent), `success|warning|danger|info` states with three variants each: base (indicators), `-fg` (accessible text), `-soft` (background).
 
-**Tipografia** (fonte do sistema / SF): `caption` 11 · `footnote` 12 · `body` 13 (padrão macOS) · `callout` 14 · `title-3` 15 · `title-2` 17 · `title-1` 22 · `large-title` 26. Pesos 400/500/600.
+**Typography** (system font / SF): `caption` 11 · `footnote` 12 · `body` 13 (macOS default) · `callout` 14 · `title-3` 15 · `title-2` 17 · `title-1` 22 · `large-title` 26. Weights 400/500/600.
 
-**Espaçamento** — grade de 4px do Tailwind (`p-4` = 16px) + aliases `--space-control-x` 10px, `--space-card` 16px, `--space-section` 32px, `--space-page` 40px.
+**Spacing** — Tailwind's 4px grid (`p-4` = 16px) + aliases `--space-control-x` 10px, `--space-card` 16px, `--space-section` 32px, `--space-page` 40px.
 
-**Radius** — `xs` 4 (badge, checkbox) · `sm` 6 (botão, input) · `md` 8 (menu) · `lg` 10 (card) · `xl` 14 (dialog) · `full`.
+**Radius** — `xs` 4 (badge, checkbox) · `sm` 6 (button, input) · `md` 8 (menu) · `lg` 10 (card) · `xl` 14 (dialog) · `full`.
 
-**Sombras** — `xs` controles · `sm` cards · `md` menus/toasts · `lg` dialogs; sempre com hairline de 0.5px.
+**Shadows** — `xs` controls · `sm` cards · `md` menus/toasts · `lg` dialogs; always with a 0.5px hairline.
 
-**Controles** — alturas `--control-sm` 24 · `--control-md` 28 · `--control-lg` 36.
+**Controls** — heights `--control-sm` 24 · `--control-md` 28 · `--control-lg` 36.
 
-## Componentes
+## Components
 
-| Componente | Uso |
+| Component | Usage |
 |---|---|
-| Botão | `.btn` + `.btn-primary` / `.btn-secondary` / `.btn-ghost` / `.btn-destructive`; tamanhos `.btn-sm` / `.btn-lg`; `.btn-icon` (exige `aria-label`). Loading: `aria-busy="true"` ou automático durante request HTMX (`.htmx-request`). |
-| Campo | `{% call ds::field(id, label, help, error, required) %}<input class="input" id=… aria-describedby="ID-help ID-error">{% endcall %}`; `aria-invalid="true"` quando há erro. Também `.select`, `.textarea`, `.search`, `.check` (checkbox/radio), `.check.switch`. |
-| Card / lista | `.card` + `.card-header` / `.card-body` / `.card-footer`; `.card-interactive`; `.list` + `.list-row`. |
-| Badge | `{% call ds::badge(texto, kind, dot) %}` — kind: neutral, accent, success, warning, danger, info. |
-| Menu | Gatilho `popovertarget="ID" aria-haspopup="menu"` + `<div class="menu" id="ID" popover role="menu">` com `ds::menu_item`. Setas ↑↓, Home/End, Esc. |
-| Dialog | `{% call ds::dialog(id, título, descrição, destructive) %}…botões…{% endcall %}`; abrir com `data-dialog-open="ID"`, fechar com `data-dialog-close`. Foco preso e devolvido ao gatilho. Ícone e título centralizados (`.dialog-confirm`); descrição e botões não. |
-| Progresso | `ds::progress(valor, rótulo, kind)`, `ds::progress_indeterminate(rótulo)`, `ds::spinner(rótulo, tamanho)`. |
-| Skeleton | `.skeleton` + `-line` / `-title` / `-block` / `-circle`; `ds::skeleton_card()`. Contêiner com `aria-busy="true"` e texto `sr-only`. |
+| Button | `.btn` + `.btn-primary` / `.btn-secondary` / `.btn-ghost` / `.btn-destructive`; sizes `.btn-sm` / `.btn-lg`; `.btn-icon` (requires `aria-label`). Loading: `aria-busy="true"` or automatic during an HTMX request (`.htmx-request`). |
+| Field | `{% call ds::field(id, label, help, error, required) %}<input class="input" id=… aria-describedby="ID-help ID-error">{% endcall %}`; `aria-invalid="true"` when there is an error. Also `.select`, `.textarea`, `.search`, `.check` (checkbox/radio), `.check.switch`. |
+| Card / list | `.card` + `.card-header` / `.card-body` / `.card-footer`; `.card-interactive`; `.list` + `.list-row`. |
+| Badge | `{% call ds::badge(text, kind, dot) %}` — kind: neutral, accent, success, warning, danger, info. |
+| Menu | Trigger `popovertarget="ID" aria-haspopup="menu"` + `<div class="menu" id="ID" popover role="menu">` with `ds::menu_item`. Arrows ↑↓, Home/End, Esc. |
+| Dialog | `{% call ds::dialog(id, title, description, destructive) %}…buttons…{% endcall %}`; open with `data-dialog-open="ID"`, close with `data-dialog-close`. Focus is trapped and returned to the trigger. Icon and title centered (`.dialog-confirm`); description and buttons are not. |
+| Progress | `ds::progress(value, label, kind)`, `ds::progress_indeterminate(label)`, `ds::spinner(label, size)`. |
+| Skeleton | `.skeleton` + `-line` / `-title` / `-block` / `-circle`; `ds::skeleton_card()`. Container with `aria-busy="true"` and `sr-only` text. |
 
-## Estados
+## States
 
-| Estado | Padrão |
+| State | Pattern |
 |---|---|
-| Loading | Skeleton no lugar do conteúdo; spinner em ações; barra global no topo do conteúdo durante navegação |
-| Fonte (qualquer formato) | Ícone do formato (`format-pdf/markdown/text/csv/epub/docx/xlsx (mesma família: contorno de página + glifo)`, vindo de `ui-web::formats`, nunca um `match` na view) + nome + formato + status + localização/meta. Só PDF tem preview (viewer); o clique em qualquer fonte ou referência `[n]` abre o painel lateral: viewer (PDF) ou **Informações da fonte** (`/sources/{id}`, os demais). Um `[n]` é sempre um botão (`aria-label` diz "Abrir a fonte n no PDF" ou "Ver informações da fonte n"). |
-| Empty | `ds::empty_state(ícone, título, descrição)` com a ação principal no corpo |
-| Error | `ds::alert("danger", …)` (`role="alert"`) com ação de recuperação; falhas sem resposta viram toast de erro |
-| Success | `ds::alert("success", …)` ou `DS.toast("success", msg)` (`role="status"`, some em 5 s). Uma resposta do servidor pede o toast com um marcador `<p hidden data-toast-on-load="KIND" data-toast-message="…"></p>` (o `app.js` o transforma em toast e o remove) |
+| Loading | Skeleton in place of the content; spinner on actions; global bar at the top of the content during navigation |
+| Source (any format) | Format icon (`format-pdf/markdown/text/csv/epub/docx/xlsx (same family: page outline + glyph)`, coming from `ui-web::formats`, never a `match` in the view) + name + format + status + location/meta. Only PDF has a preview (viewer); clicking any source or `[n]` reference opens the side panel: viewer (PDF) or **Informações da fonte** (Source information) (`/sources/{id}`, the other formats). A `[n]` is always a button (`aria-label` says "Abrir a fonte n no PDF" (Open source n in the PDF) or "Ver informações da fonte n" (View source n information)). |
+| Empty | `ds::empty_state(icon, title, description)` with the primary action in the body |
+| Error | `ds::alert("danger", …)` (`role="alert"`) with a recovery action; failures with no response become an error toast |
+| Success | `ds::alert("success", …)` or `DS.toast("success", msg)` (`role="status"`, disappears after 5 s). A server response requests the toast with a marker `<p hidden data-toast-on-load="KIND" data-toast-message="…"></p>` (`app.js` turns it into a toast and removes it) |

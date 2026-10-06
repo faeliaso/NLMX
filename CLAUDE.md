@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Implemented: app shell, design system, Apple FM status, SQLite persistence, PDFium document engine, the ingestion pipeline up to chunks (Documentos imports PDFs) embeddings + vector/lexical indexes, the Modelos screen (download with confirmation, progress, activate, remove, verify) the Chat (saved conversations; free conversation with Apple FM by default, or answers from the documents streamed with clickable citations) the PDF viewer beside the chat and the Indexação screen (index state, background work, retry/reindex). Multi-format import (PDF, Markdown, TXT, CSV, EPUB, DOCX, XLSX) with progress. Not yet: OCR. Design docs (Portuguese):
+Implemented: app shell, design system, Apple FM status, SQLite persistence, PDFium document engine, the ingestion pipeline up to chunks (Documentos imports PDFs) embeddings + vector/lexical indexes, the Modelos screen (download with confirmation, progress, activate, remove, verify) the Chat (saved conversations; free conversation with Apple FM by default, or answers from the documents streamed with clickable citations) the PDF viewer beside the chat and the Indexação screen (index state, background work, retry/reindex). Multi-format import (PDF, Markdown, TXT, CSV, EPUB, DOCX, XLSX) with progress. Not yet: OCR. Design docs:
 - `docs/README.md` — index of the docs below.
 - `docs/PRODUCT.md` — product vision, requirements (RF01–RF29) with implementation status, measured targets, open risks, next steps.
 - `docs/ARCHITECTURE.md` — current modules, ports, flows, process/model management, SQLite schema, packaging.

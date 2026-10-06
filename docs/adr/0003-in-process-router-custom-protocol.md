@@ -1,21 +1,21 @@
-# ADR 0003 — Router HTTP in-process atrás do custom URI scheme do Tauri
+# ADR 0003 — In-process HTTP router behind Tauri's custom URI scheme
 
-- Status: aceito
-- Data: 2026-10-02
+- Status: accepted
+- Date: 2026-10-02
 
-## Contexto
-HTMX faz requisições HTTP. Um servidor em `localhost` exporia a API a qualquer processo local. O Tauri 2 oferece custom URI schemes atendidos pelo Rust.
+## Context
+HTMX makes HTTP requests. A `localhost` server would expose the API to any local process. Tauri 2 offers custom URI schemes served by Rust.
 
-## Decisão
-- `ui-web` expõe um router axum como `tower::Service<http::Request>`, sem servidor nem porta.
-- `app-tauri` registra um custom scheme assíncrono e só encaminha `http::Request` → router → `http::Response`.
-- Streaming (tokens da resposta, progresso) não passa pelo protocolo: usa Tauri Channels/Events, com JS mínimo; ao concluir, HTMX busca o fragmento final.
+## Decision
+- `ui-web` exposes an axum router as a `tower::Service<http::Request>`, with no server or port.
+- `app-tauri` registers an async custom scheme and only forwards `http::Request` → router → `http::Response`.
+- Streaming (answer tokens, progress) does not go through the protocol: it uses Tauri Channels/Events, with minimal JS; when done, HTMX fetches the final fragment.
 
-## Consequências
-- Nenhuma porta TCP aberta; superfície de ataque mínima.
-- UI testável sem Tauri (requisições in-process); trocar HTMX afeta só `ui-web`.
-- Respostas do custom protocol não fazem streaming, então existe um segundo canal (Channel) a manter.
-- Comportamento de `fetch`/CORS para esquema customizado no WKWebView precisa ser validado (spike 1).
+## Consequences
+- No TCP port open; minimal attack surface.
+- UI testable without Tauri (in-process requests); replacing HTMX only affects `ui-web`.
+- Custom protocol responses do not stream, so there is a second channel (Channel) to maintain.
+- `fetch`/CORS behavior for a custom scheme in WKWebView must be validated (spike 1).
 
-## Atualização (2026-10-03)
-Validado: HTMX 4 funciona sobre o esquema `nlmx://` no WKWebView (`src-tauri/src/protocol.rs` encaminha via `oneshot`); a CSP é enviada como cabeçalho pelo `ui-web`. Os tokens da resposta chegam pelo comando `answer_message` com um Tauri Channel.
+## Update (2026-10-03)
+Validated: HTMX 4 works over the `nlmx://` scheme in WKWebView (`src-tauri/src/protocol.rs` forwards via `oneshot`); the CSP is sent as a header by `ui-web`. Answer tokens arrive through the `answer_message` command with a Tauri Channel.

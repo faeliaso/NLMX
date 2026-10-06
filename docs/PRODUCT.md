@@ -1,103 +1,103 @@
-# NLMX — Produto
+# NLMX — Product
 
-Visão, requisitos e o que está feito. Como o sistema é construído: [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Vision, requirements and what is done. How the system is built: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Visão
+## Vision
 
-**NLMX** é um app nativo para macOS que transforma uma coleção de PDFs numa base de conhecimento consultável em linguagem natural, com tudo rodando no próprio Mac. Documentos, índices e perguntas nunca saem do dispositivo.
+**NLMX** is a native macOS app that turns a collection of PDFs into a knowledge base you can query in natural language, with everything running on your own Mac. Documents, indexes and questions never leave the device.
 
-- **Usuário-alvo:** profissionais que lidam com muitos PDFs (normas, contratos, manuais, artigos, documentação técnica) e não podem ou não querem enviar esse conteúdo para a nuvem.
-- **Proposta de valor:** perguntar e receber uma resposta fundamentada, com **citações clicáveis** que levam à página e ao trecho exato do PDF.
-- **Princípios:**
-  1. Local-first de verdade — funciona offline após o download do modelo de embeddings.
-  2. Zero atrito de instalação — um `.dmg`, sem Python, Ollama, Docker ou terminal.
-  3. Confiança verificável — toda resposta mostra de onde veio; o app admite quando não encontrou.
-  4. Nativo do macOS — usa o modelo do sistema (Apple Foundation Models) em vez de embarcar um LLM gerador.
+- **Target user:** professionals who deal with many PDFs (standards, contracts, manuals, papers, technical documentation) and cannot or do not want to send that content to the cloud.
+- **Value proposition:** ask a question and get a grounded answer, with **clickable citations** that lead to the exact page and passage in the PDF.
+- **Principles:**
+  1. Truly local-first — works offline after the embedding model is downloaded.
+  2. Zero installation friction — one `.dmg`, no Python, Ollama, Docker or terminal.
+  3. Verifiable trust — every answer shows where it came from; the app admits when it found nothing.
+  4. Native to macOS — uses the system model (Apple Foundation Models) instead of shipping a generative LLM.
 
-## Restrições
+## Constraints
 
-- **macOS 27 ou superior, Apple Silicon.** Sem Intel, Rosetta, Windows ou Linux.
-- Distribuição direta: `.dmg` assinado (Developer ID) e notarizado. Mac App Store fora de escopo (o sandbox impediria executar `/usr/bin/fm`).
-- Geração só pelo `/usr/bin/fm` do sistema; **sem código Swift** (ADR 0002). Exige Apple Intelligence ativo e o aceite único de `sudo fm license`, que o app nunca faz pelo usuário.
-- Sem Python, Ollama, Node ou servidor remoto no runtime. Única rede: download de modelos iniciado pelo usuário.
+- **macOS 27 or later, Apple Silicon.** No Intel, Rosetta, Windows or Linux.
+- Direct distribution: `.dmg` signed (Developer ID) and notarized. Mac App Store is out of scope (the sandbox would prevent running `/usr/bin/fm`).
+- Generation only through the system's `/usr/bin/fm`; **no Swift code** (ADR 0002). Requires Apple Intelligence enabled and the one-time acceptance of `sudo fm license`, which the app never does on the user's behalf.
+- No Python, Ollama, Node or remote server in the runtime. The only network use is user-initiated model downloads.
 
-## Requisitos funcionais
+## Functional requirements
 
-✓ feito · ◐ parcial · ✗ não feito
+✓ done · ◐ partial · ✗ not done
 
-| ID | Requisito | Status |
+| ID | Requirement | Status |
 |---|---|---|
-| **Biblioteca** | | |
-| RF01 | Importar documentos (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) via seletor, drag & drop ou pasta (recursiva), e adicionar **notas** (texto colado, sem arquivo; ADR 0018) | ◐ só seletor e notas (vários arquivos, vários formatos; ADR 0014) |
-| RF02 | Detectar duplicatas por SHA-256 do conteúdo | ✓ |
-| RF03 | Copiar o arquivo para a biblioteca interna (`<data>/library/<sha>.<ext>`) | ✓ |
-| RF04 | Listar documentos com título, páginas, tamanho, data e status | ✓ |
-| RF05 | Remover documento e todos os dados derivados | ✓ com o histórico do Chat que o usou e sem rastro no arquivo do banco (ADR 0008) |
-| RF06 | Reindexar (ex.: troca do modelo de embeddings) | ✓ automático ao trocar o modelo; manual em Indexação ("Reindexar tudo", "Tentar novamente") |
-| **Extração e estrutura** | | |
-| RF07 | Texto por página via PDFium, com bounding box | ✓ |
-| RF08 | Metadados (título, autor, datas) e outline | ◐ sem idioma nem outline; `ModDate` raramente vem do pdfium-render |
-| RF09 | Normalização: hifenização, ligaduras, cabeçalhos/rodapés repetidos | ✓ |
-| RF10 | Estrutura: títulos/seções, parágrafos, listas | ✓ |
-| RF11 | Detectar PDFs escaneados (OCR fora de escopo por ora) | ✓ detecta (`needs_ocr`) |
-| RF12 | Chunking por seção com sobreposição e página/bbox de origem | ✓ |
-| **Embeddings e índices** | | |
-| RF13 | Embeddings locais com llama.cpp (Metal) e GGUF multilíngue | ✓ `llama-server` + Qwen3-Embedding-0.6B |
-| RF14 | Vetores em sqlite-vec e texto em FTS5, no mesmo SQLite | ✓ |
-| RF15 | Ingestão em background retomável após reinício | ◐ retoma no boot; progresso em Indexação; sem pausa/cancelamento |
-| RF16 | Registrar modelo/versão de cada vetor; nunca misturar espaços | ✓ |
-| **Busca e perguntas** | | |
-| RF17 | Busca semântica, lexical e híbrida | ✓ fusão ponderada (ADR 0007) |
-| RF18 | Escopo: biblioteca, documento ou coleção | ◐ conversa livre, todos os documentos ou um documento (ADR 0009); coleções só no backend |
-| RF19 | Resposta via Apple FM com streaming | ✓ |
-| RF20 | Citações `[n]` vinculadas a documento, localização (página, seção, intervalo, linhas, capítulo) e trecho, de qualquer formato | ✓ (também `[página N]` em PDF; ADR 0015) |
-| RF21 | Clicar na citação abre o PDF na página com o trecho destacado; nos outros formatos seleciona a fonte e mostra suas informações (sem viewer) | ✓ (ADR 0016) |
-| RF22 | "Não encontrei" quando a relevância é baixa, sem chamar o modelo | ✓ no modo documento, com a opção "Responder sem os documentos" |
-| RF23 | Conversas salvas, com perguntas de acompanhamento | ✓ |
-| RF24 | Transparência: mostrar os trechos enviados ao modelo | ✓ lista de fontes na resposta |
-| RF29 | Conversa livre com o Apple FM, sem documentos, como padrão do Chat | ✓ isolada da biblioteca; respostas marcadas "Sem documentos" (ADR 0009) |
-| **Modelos** | | |
-| RF25 | Catálogo embarcado de modelos de embedding | ✓ |
-| RF26 | Download com confirmação, progresso, retomada (Range), SHA-256 e checagem de disco | ✓ |
-| RF27 | Importação manual de arquivo GGUF (instalação offline) | ✗ |
-| RF28 | Detectar Apple FM e licença do `fm`, explicando como resolver | ✓ |
+| **Library** | | |
+| RF01 | Import documents (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) via file picker, drag & drop or folder (recursive), and add **notes** (pasted text, no file; ADR 0018) | ◐ picker and notes only (several files, several formats; ADR 0014) |
+| RF02 | Detect duplicates by SHA-256 of the content | ✓ |
+| RF03 | Copy the file into the internal library (`<data>/library/<sha>.<ext>`) | ✓ |
+| RF04 | List documents with title, pages, size, date and status | ✓ |
+| RF05 | Remove a document and all derived data | ✓ together with the Chat history that used it and leaving no trace in the database file (ADR 0008) |
+| RF06 | Reindex (e.g. when the embedding model changes) | ✓ automatic when the model changes; manual in Indexação ("Reindexar tudo", "Tentar novamente") |
+| **Extraction and structure** | | |
+| RF07 | Text per page via PDFium, with bounding boxes | ✓ |
+| RF08 | Metadata (title, author, dates) and outline | ◐ no language or outline; `ModDate` rarely comes from pdfium-render |
+| RF09 | Normalization: hyphenation, ligatures, repeated headers/footers | ✓ |
+| RF10 | Structure: headings/sections, paragraphs, lists | ✓ |
+| RF11 | Detect scanned PDFs (OCR out of scope for now) | ✓ detects (`needs_ocr`) |
+| RF12 | Chunking by section with overlap and source page/bbox | ✓ |
+| **Embeddings and indexes** | | |
+| RF13 | Local embeddings with llama.cpp (Metal) and multilingual GGUF | ✓ `llama-server` + Qwen3-Embedding-0.6B |
+| RF14 | Vectors in sqlite-vec and text in FTS5, in the same SQLite | ✓ |
+| RF15 | Background ingestion that resumes after a restart | ◐ resumes on boot; progress in Indexação; no pause/cancel |
+| RF16 | Record the model/version of each vector; never mix spaces | ✓ |
+| **Search and questions** | | |
+| RF17 | Semantic, lexical and hybrid search | ✓ weighted fusion (ADR 0007) |
+| RF18 | Scope: library, document or collection | ◐ free conversation, all documents or one document (ADR 0009); collections only in the backend |
+| RF19 | Answer via Apple FM with streaming | ✓ |
+| RF20 | `[n]` citations linked to document, location (page, section, range, rows, chapter) and passage, for any format | ✓ (also `[página N]` in PDF; ADR 0015) |
+| RF21 | Clicking the citation opens the PDF at the page with the passage highlighted; for other formats it selects the source and shows its information (no viewer) | ✓ (ADR 0016) |
+| RF22 | "Not found" when relevance is low, without calling the model | ✓ in document mode, with the "Responder sem os documentos" option |
+| RF23 | Saved conversations, with follow-up questions | ✓ |
+| RF24 | Transparency: show the passages sent to the model | ✓ source list in the answer |
+| RF29 | Free conversation with Apple FM, without documents, as the Chat default | ✓ isolated from the library; answers labelled "Sem documentos" (ADR 0009) |
+| **Models** | | |
+| RF25 | Embedded catalog of embedding models | ✓ |
+| RF26 | Download with confirmation, progress, resume (Range), SHA-256 and disk check | ✓ |
+| RF27 | Manual import of a GGUF file (offline installation) | ✗ |
+| RF28 | Detect Apple FM and the `fm` license, explaining how to resolve it | ✓ |
 
-Também feito, fora da lista original: intenções "Explique este documento." e "seção N", regenerar/cancelar resposta, viewer com busca, camada de texto, zoom e miniaturas, diagnóstico local (métricas e logs sem conteúdo), `--self-check`.
+Also done, outside the original list: the "Explique este documento." and "seção N" intents, regenerate/cancel answer, viewer with search, text layer, zoom and thumbnails, local diagnostics (metrics and logs without content), `--self-check`.
 
-## Requisitos não funcionais
+## Non-functional requirements
 
-| Categoria | Requisito | Medido (0.1.0, M4 16 GB) |
+| Category | Requirement | Measured (0.1.0, M4 16 GB) |
 |---|---|---|
-| Privacidade | Nenhum dado de documento sai do dispositivo; sem telemetria | `lsof`: só loopback e o socket do `fm`; canário de privacidade nos testes |
-| Segurança | Sem servidor HTTP em porta TCP (exceção: `llama-server` em 127.0.0.1 com chave, ADR 0006); CSP restritiva; capabilities mínimas | ✓ |
-| Ingestão | PDF de texto de 200 páginas indexado em < 60 s | ~16 s (p95, com embeddings) |
-| Busca | Híbrida < 300 ms | p50 32 ms · p95 41 ms |
-| Resposta | 1º token < 3 s | p50 0,7 s |
-| Responsividade | UI nunca bloqueia durante a ingestão | ✓ |
-| Robustez | PDF corrompido/com senha falha isolado, com mensagem | ✓ |
-| Integridade | SQLite WAL, migrações reversíveis, gravação transacional por documento | ✓ |
-| Dados | Tudo em `~/Library/Application Support/dev.nlmx.desktop/` | ✓ |
-| Idiomas | UI em pt-BR; pergunta em PT encontra trecho em EN | ✓ |
-| Observabilidade | Logs JSON locais com rotação, sem conteúdo | ✓ ([`TESTING.md`](TESTING.md#logs-estruturados)) |
+| Privacy | No document data leaves the device; no telemetry | `lsof`: only loopback and the `fm` socket; privacy canary in the tests |
+| Security | No HTTP server on a TCP port (exception: `llama-server` on 127.0.0.1 with a key, ADR 0006); restrictive CSP; minimal capabilities | ✓ |
+| Ingestion | 200-page text PDF indexed in < 60 s | ~16 s (p95, with embeddings) |
+| Search | Hybrid < 300 ms | p50 32 ms · p95 41 ms |
+| Answer | 1st token < 3 s | p50 0.7 s |
+| Responsiveness | The UI never blocks during ingestion | ✓ |
+| Robustness | Corrupted/password-protected PDF fails in isolation, with a message | ✓ |
+| Integrity | SQLite WAL, reversible migrations, transactional write per document | ✓ |
+| Data | Everything in `~/Library/Application Support/dev.nlmx.desktop/` | ✓ |
+| Languages | UI in pt-BR; a question in Portuguese finds a passage in English | ✓ |
+| Observability | Local JSON logs with rotation, without content | ✓ ([`TESTING.md`](TESTING.md#structured-logs)) |
 
-## Riscos em aberto
+## Open risks
 
-| Risco | Mitigação atual |
+| Risk | Current mitigation |
 |---|---|
-| Janela do Apple FM (4 096 tokens) limita perguntas amplas | Orçamento de ~1 800 tokens de contexto, contagem exata com `fm count-tokens` |
-| Guardrails do FM recusam conteúdo legítimo | Recusa mostrada com os trechos recuperados |
-| Interface do `fm` muda com atualizações do macOS | Status classificado, fallback `fm respond`, testes de contrato |
-| Qualidade de extração (colunas, tabelas, escaneados) | Fixtures + conjunto-ouro; OCR pendente |
-| sqlite-vec pré-1.0, força bruta | Adequado a ~100k chunks; port `VectorStore` permite trocar |
-| FTS5 sem stemming para português | Remoção de diacríticos; o vetor cobre a semântica |
+| The Apple FM window (4,096 tokens) limits broad questions | Context budget of ~1,800 tokens, exact counting with `fm count-tokens` |
+| FM guardrails refuse legitimate content | Refusal shown together with the retrieved passages |
+| The `fm` interface changes with macOS updates | Classified status, `fm respond` fallback, contract tests |
+| Extraction quality (columns, tables, scans) | Fixtures + golden set; OCR pending |
+| sqlite-vec is pre-1.0, brute force | Adequate for ~100k chunks; the `VectorStore` port allows swapping it |
+| FTS5 has no stemming for Portuguese | Diacritic removal; the vector covers the semantics |
 
-## Próximos passos
+## Next steps
 
-1. **Distribuição pública:** certificado Developer ID e `make release` (assinatura, notarização), depois `make acceptance` e teste num Mac limpo.
-2. **Lacunas de requisitos:** drag & drop e pasta (RF01), importação manual de GGUF (RF27), coleções na UI (RF18), pausa/cancelamento da ingestão (RF15).
-3. **Desempenho dos embeddings:** reduzir contexto/lote do `llama-server` (~1,9 GB e 8,4 embeddings/s hoje).. O cache de prompts do servidor, que chegava a ~10 GB, está desligado, e o processo é encerrado depois de 45 s ocioso (ADR 0006).
-4. **OCR** de escaneados (ex.: `fm respond --tool ocr`), preservando página e coordenadas.
-5. **Qualidade:** títulos numerados repetidos removidos como cabeçalho; documentos padronizados que só mudam números.
-6. **Primeiro uso guiado:** checklist na primeira abertura (licença do `fm`, Apple Intelligence, modelo).
+1. **Public distribution:** Developer ID certificate and `make release` (signing, notarization), then `make acceptance` and a test on a clean Mac.
+2. **Requirement gaps:** drag & drop and folder (RF01), manual GGUF import (RF27), collections in the UI (RF18), ingestion pause/cancel (RF15).
+3. **Embedding performance:** reduce the `llama-server` context/batch (~1.9 GB and 8.4 embeddings/s today). The server's prompt cache, which reached ~10 GB, is turned off, and the process exits after 45 s idle (ADR 0006).
+4. **OCR** for scans (e.g. `fm respond --tool ocr`), preserving page and coordinates.
+5. **Quality:** numbered headings repeated and removed as a header; standardized documents that differ only in numbers.
+6. **Guided first use:** checklist on first launch (`fm` license, Apple Intelligence, model).
 
-**Fora de escopo:** Intel/Windows/Linux, LLM gerador alternativo, reranker, sincronização, anotação de PDFs, Mac App Store.
+**Out of scope:** Intel/Windows/Linux, an alternative generative LLM, reranker, sync, PDF annotation, Mac App Store.

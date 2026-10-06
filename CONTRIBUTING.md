@@ -1,81 +1,81 @@
-# Contribuindo com o NLMX
+# Contributing to NLMX
 
-Obrigado pelo interesse em contribuir! Este guia reúne o que você precisa saber antes de abrir uma issue ou um pull request.
+Thanks for your interest in contributing! This guide covers what you need to know before opening an issue or a pull request.
 
-## Preparar o ambiente
+## Setting up the environment
 
-Siga os [Requisitos](README.pt-BR.md#requisitos) e o [Início rápido](README.pt-BR.md#início-rápido) do README (também em [inglês](README.md#requirements)). Em resumo:
+Follow the [Requirements](README.md#requirements) and [Quick Start](README.md#quick-start) sections of the README (also available in [Portuguese](README.pt-BR.md)). In short:
 
 ```sh
 make bootstrap
 make dev
 ```
 
-Para os testes com modelos reais, baixe o modelo de embeddings (`./scripts/fetch-embedding-model.sh`) e aceite a licença do `fm` (`sudo fm license`).
+For tests with real models, download the embedding model (`./scripts/fetch-embedding-model.sh`) and accept the `fm` license (`sudo fm license`).
 
-## Fluxo de trabalho
+## Workflow
 
-1. Crie uma branch a partir de `develop` (`feature/…`, `fix/…`, `docs/…`).
-2. Faça mudanças pequenas e focadas, com testes.
-3. Abra o pull request para `develop`. A branch `main` recebe só releases.
+1. Create a branch from `develop` (`feature/…`, `fix/…`, `docs/…`).
+2. Make small, focused changes, with tests.
+3. Open the pull request against `develop`. The `main` branch only receives releases.
 
-Antes de abrir o PR, rode:
+Before opening the PR, run:
 
 ```sh
 make lint   # cargo fmt --check + clippy -D warnings
-make test   # todos os testes sem modelo real
+make test   # all tests that need no real model
 ```
 
-Só há testes unitários e de integração (`make test`). As suítes estão descritas em [`docs/TESTING.md`](docs/TESTING.md).
+There are only unit and integration tests (`make test`). The suites are described in [`docs/TESTING.md`](docs/TESTING.md).
 
-## Regras do código
+## Code rules
 
-### Arquitetura
+### Architecture
 
-- O workspace é hexagonal ([ADR 0001](docs/adr/0001-hexagonal-cargo-workspace.md)): `domain` ← `application` ← `adapters/*` e `ui-web` ← `apps/desktop/src-tauri`.
-- `application` não depende de crates de infraestrutura. Adapters não dependem uns dos outros, e `ui-web` não depende de adapters nem do Tauri.
-- Tipos externos não atravessam ports: adapters convertem para tipos do `domain`.
-- Todo port tem um fake em memória e uma suíte de contrato em `crates/testing/`, e todo adapter novo precisa passar nessa suíte.
-- `tests/tests/architecture.rs` verifica essas regras e precisa continuar passando.
+- The workspace is hexagonal ([ADR 0001](docs/adr/0001-hexagonal-cargo-workspace.md)): `domain` ← `application` ← `adapters/*` and `ui-web` ← `apps/desktop/src-tauri`.
+- `application` does not depend on infrastructure crates. Adapters do not depend on each other, and `ui-web` depends on neither adapters nor Tauri.
+- External types do not cross ports: adapters convert them to `domain` types.
+- Every port has an in-memory fake and a contract suite in `crates/testing/`, and every new adapter must pass that suite.
+- `tests/tests/architecture.rs` checks these rules and must keep passing.
 
-### Privacidade
+### Privacy
 
-- Documentos e perguntas nunca saem do dispositivo. Não adicione acesso à rede além do download de modelos iniciado pelo usuário.
-- **Nunca registre em log** texto de documentos, trechos, perguntas, respostas, prompts, títulos, nomes de arquivo ou caminhos do usuário. Identifique documentos pelo id.
-- Medições passam por `telemetry::record(Measurement)`. Para medir algo novo, adicione uma variante em vez de registrar números avulsos.
-- Não há mais teste automático de privacidade: revise à mão qualquer mudança em logs e métricas.
+- Documents and questions never leave the device. Do not add network access beyond the user-initiated model download.
+- **Never log** document text, passages, questions, answers, prompts, titles, file names or user paths. Identify documents by id.
+- Measurements go through `telemetry::record(Measurement)`. To measure something new, add a variant instead of logging ad hoc numbers.
+- There is no longer an automated privacy test: review any change to logs and metrics by hand.
 
-### Banco de dados
+### Database
 
-- Migrations ficam em `crates/adapters/store-sqlite/migrations/NNNN_nome/` e sempre têm `up.sql` e `down.sql`.
-- Use tabelas `STRICT`, timestamps ISO-8601 com milissegundos e colunas de status com `CHECK`.
-- Toda tabela nova com dados derivados de documentos precisa ser coberta pela remoção de documento ([ADR 0008](docs/adr/0008-remocao-de-documento.md)).
+- Migrations live in `crates/adapters/store-sqlite/migrations/NNNN_name/` and always have `up.sql` and `down.sql`.
+- Use `STRICT` tables, ISO-8601 timestamps with milliseconds, and `CHECK`ed status columns.
+- Every new table holding document-derived data must be covered by document removal ([ADR 0008](docs/adr/0008-document-removal.md)).
 
 ### Interface
 
-- Use só os tokens de `apps/desktop/ui/styles/tokens.css`, sem cores cruas nem a variante `dark:` do Tailwind. Veja [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).
-- Texto gerado pelo modelo é renderizado apenas por `crates/ui-web/src/markdown.rs`.
+- Use only the tokens in `apps/desktop/ui/styles/tokens.css`, with no raw colors and no Tailwind `dark:` variant. See [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).
+- Model-generated text is rendered only by `crates/ui-web/src/markdown.rs`.
 
-## Decisões e documentação
+## Decisions and documentation
 
-- Para mudar uma decisão registrada, crie um novo ADR em [`docs/adr/`](docs/adr/). Não reescreva ADRs existentes; acrescente uma seção "Atualização" ou crie um ADR novo.
-- Atualize a documentação em `docs/` quando a mudança alterar o comportamento, e o status dos requisitos em [`docs/PRODUCT.md`](docs/PRODUCT.md).
+- To change a recorded decision, create a new ADR in [`docs/adr/`](docs/adr/). Do not rewrite existing ADRs; add an "Update" section or create a new ADR.
+- Update the documentation in `docs/` when a change alters behavior, and the requirement status in [`docs/PRODUCT.md`](docs/PRODUCT.md).
 
 ## Commits
 
-- Mensagens curtas, no imperativo, descrevendo o que a mudança faz (por exemplo: `Free llama-server memory after indexing`).
-- Um assunto por commit sempre que possível.
+- Short messages in the imperative mood, describing what the change does (for example: `Free llama-server memory after indexing`).
+- One subject per commit whenever possible.
 
-## Reportando bugs
+## Reporting bugs
 
-Abra uma issue com:
+Open an issue with:
 
-- a versão do NLMX e do macOS, e o modelo do Mac;
-- os passos para reproduzir, o comportamento esperado e o obtido;
-- se relevante, trechos de `~/Library/Application Support/dev.nlmx.desktop/logs/nlmx.jsonl`.
+- the NLMX and macOS versions, and the Mac model;
+- the steps to reproduce, the expected behavior and the actual behavior;
+- if relevant, excerpts from `~/Library/Application Support/dev.nlmx.desktop/logs/nlmx.jsonl`.
 
-**Não anexe documentos privados.** Se o problema depende de um PDF específico, tente reproduzi-lo com um arquivo público ou gerado para o teste.
+**Do not attach private documents.** If the problem depends on a specific PDF, try to reproduce it with a public file or one generated for the test.
 
-## Licença
+## License
 
-Ao contribuir, você concorda que suas contribuições serão licenciadas sob a [licença MIT](LICENSE) do projeto.
+By contributing, you agree that your contributions will be licensed under the project's [MIT license](LICENSE).

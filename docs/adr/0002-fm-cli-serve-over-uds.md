@@ -1,26 +1,26 @@
-# ADR 0002 — Apple Foundation Models via `fm serve` em Unix socket
+# ADR 0002 — Apple Foundation Models via `fm serve` on a Unix socket
 
-- Status: aceito
-- Data: 2026-10-02
+- Status: accepted
+- Date: 2026-10-02
 
-## Contexto
-O FoundationModels é uma API Swift. Integrá-lo exigiria ponte Swift↔Rust, linkagem Swift no build e tratamento de async/cancelamento entre linguagens. O macOS 27 inclui `/usr/bin/fm`, CLI oficial com `fm serve`, que expõe API compatível com OpenAI Chat Completions (`/health`, `/v1/models`, `/v1/chat/completions` com SSE) via TCP ou Unix socket. Validado em macOS 27.0.1.
+## Context
+FoundationModels is a Swift API. Integrating it would require a Swift↔Rust bridge, Swift linking in the build and async/cancellation handling across languages. macOS 27 ships `/usr/bin/fm`, the official CLI, whose `fm serve` exposes an OpenAI Chat Completions-compatible API (`/health`, `/v1/models`, `/v1/chat/completions` with SSE) over TCP or a Unix socket. Verified on macOS 27.0.1.
 
-## Decisão
-- Versão mínima do app: macOS 27.
-- Sem código Swift. O adapter `llm-fm` supervisiona `fm serve --socket <path>` como processo filho e fala HTTP/SSE pelo socket (`reqwest` 0.13 com `ClientBuilder::unix_socket`, já usado no workspace — dispensa `hyper` + `hyperlocal`).
-- Nunca usar modo TCP (evita exposição a outros processos).
-- Fallback: `fm respond --stream` por requisição, mesmo contrato `LanguageModel`.
+## Decision
+- Minimum app version: macOS 27.
+- No Swift code. The `llm-fm` adapter supervises `fm serve --socket <path>` as a child process and speaks HTTP/SSE over the socket (`reqwest` 0.13 with `ClientBuilder::unix_socket`, already used in the workspace — no need for `hyper` + `hyperlocal`).
+- Never use TCP mode (avoids exposure to other processes).
+- Fallback: `fm respond --stream` per request, same `LanguageModel` contract.
 
-## Consequências
-- Elimina a ponte Swift e um risco grande de build.
-- Caminho do socket limitado a 104 bytes (`sun_path`); caminho longo falha silenciosamente → assert no código.
-- Licença do `fm` precisa de aceite único e explícito via `sudo fm license` (sem aceite, exit 69); o app guia o usuário e nunca aceita sozinho.
-- A interface do `fm` pode mudar com atualizações do macOS → detecção por `/health`/`/v1/models` e testes de contrato.
-- Exige gestão do processo filho (start lazy, health check, restart com backoff, shutdown, limpeza de órfãos).
+## Consequences
+- Removes the Swift bridge and a major build risk.
+- Socket path limited to 104 bytes (`sun_path`); a long path fails silently → assert in the code.
+- The `fm` license needs a one-time, explicit acceptance via `sudo fm license` (without it, exit 69); the app guides the user and never accepts it on their behalf.
+- The `fm` interface may change with macOS updates → detection via `/health`/`/v1/models` and contract tests.
+- Requires child process management (lazy start, health check, restart with backoff, shutdown, orphan cleanup).
 
-## Notas de implementação (2026-10-02)
-- `fm serve` sempre responde em SSE (mesmo sem `"stream": true`), sem `usage`; recusas do guardrail chegam como `event: error` no meio do stream com HTTP 200.
-- Prompt acima da janela (4096 tokens) não gera erro: o modelo produz saída degenerada. O limite é garantido pelo app com `fm count-tokens`.
-- Implementado como `FoundationModelsProvider` (`crates/adapters/llm-fm`): compatibilidade (macOS 27+, Apple Silicon nativo, `fm` presente) checada antes de tudo; status classificado (`Incompatible`, `LicenseRequired`, `Unavailable{AppleIntelligenceDisabled | DeviceNotEligible | ModelNotReady | Other}`) com cache de 30 s; **fallback `fm respond --stream`** (instruções em `-i`) quando o `fm serve` não sobe ou cai antes de responder — `fm respond` escreve texto puro em stdout e, na recusa do guardrail, sai com código 1 e "Error: …guardrails…" no stderr.
-- Swift/Objective-C continuam desnecessários: o `fm` cobre disponibilidade, contagem, instruções separadas, streaming e cancelamento.
+## Implementation notes (2026-10-02)
+- `fm serve` always responds in SSE (even without `"stream": true`), with no `usage`; guardrail refusals arrive as `event: error` in the middle of the stream with HTTP 200.
+- A prompt above the window (4096 tokens) does not raise an error: the model produces degenerate output. The app enforces the limit with `fm count-tokens`.
+- Implemented as `FoundationModelsProvider` (`crates/adapters/llm-fm`): compatibility (macOS 27+, native Apple Silicon, `fm` present) is checked first; status is classified (`Incompatible`, `LicenseRequired`, `Unavailable{AppleIntelligenceDisabled | DeviceNotEligible | ModelNotReady | Other}`) with a 30 s cache; **`fm respond --stream` fallback** (instructions in `-i`) when `fm serve` fails to start or drops before answering — `fm respond` writes plain text to stdout and, on a guardrail refusal, exits with code 1 and "Error: …guardrails…" on stderr.
+- Swift/Objective-C remain unnecessary: `fm` covers availability, counting, separate instructions, streaming and cancellation.

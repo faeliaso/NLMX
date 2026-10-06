@@ -1,17 +1,17 @@
-# ADR 0001 — Arquitetura hexagonal em Cargo workspace
+# ADR 0001 — Hexagonal architecture in a Cargo workspace
 
-- Status: aceito
-- Data: 2026-10-02
+- Status: accepted
+- Date: 2026-10-02
 
-## Contexto
-O app combina várias bibliotecas nativas (PDFium, llama.cpp, SQLite/sqlite-vec) e um processo externo (`fm`), todos com risco de substituição futura. Precisamos que a lógica de ingestão, busca e RAG seja testável sem essas dependências e que trocar uma delas não se propague pelo código.
+## Context
+The app combines several native libraries (PDFium, llama.cpp, SQLite/sqlite-vec) and an external process (`fm`), all of which may be replaced in the future. Ingestion, search and RAG logic must be testable without these dependencies, and swapping one of them must not spread through the code.
 
-## Decisão
-Ports & Adapters, com uma crate por camada/adapter num Cargo workspace:
-`domain` ← `application` (use cases + ports) ← `adapters/*` e `ui-web` ← `app-tauri` (composition root).
-Adapters nunca dependem entre si; `application` não importa bibliotecas de infraestrutura; tipos externos não atravessam ports. Fakes e suítes de contrato por port ficam em `testing/`.
+## Decision
+Ports & Adapters, with one crate per layer/adapter in a Cargo workspace:
+`domain` ← `application` (use cases + ports) ← `adapters/*` and `ui-web` ← `app-tauri` (composition root).
+Adapters never depend on each other; `application` does not import infrastructure libraries; external types do not cross ports. Fakes and per-port contract suites live in `testing/`.
 
-## Consequências
-- Fronteiras impostas pelo compilador, não por convenção.
-- Use cases testáveis com fakes, sem GPU, PDFium ou `fm`.
-- Custo: mais crates, mapeamento de tipos em cada adapter, wiring explícito em `app-tauri`.
+## Consequences
+- Boundaries enforced by the compiler, not by convention.
+- Use cases testable with fakes, without GPU, PDFium or `fm`.
+- Cost: more crates, type mapping in each adapter, explicit wiring in `app-tauri`.

@@ -1,237 +1,239 @@
-# NLMX — Arquitetura
+# NLMX — Architecture
 
-Como o sistema é hoje. Visão e requisitos: [`PRODUCT.md`](PRODUCT.md). Decisões: [`adr/`](adr/). Regras do dia a dia para quem edita o código: `CLAUDE.md` na raiz.
+How the system is today. Vision and requirements: [`PRODUCT.md`](PRODUCT.md). Decisions: [`adr/`](adr/). Day-to-day rules for anyone editing the code: `CLAUDE.md` at the root.
 
-## 1. Estilo e regras de dependência
+## 1. Style and dependency rules
 
-**Hexagonal (Ports & Adapters) num Cargo workspace** (ADR 0001): cada camada é uma crate, então a regra de dependência é imposta pelo compilador e verificada por `tests/tests/architecture.rs` sobre o grafo real do `cargo metadata`.
+**Hexagonal (Ports & Adapters) in a Cargo workspace** (ADR 0001): each layer is a crate, so the dependency rule is enforced by the compiler and checked by `tests/tests/architecture.rs` against the real `cargo metadata` graph.
 
 ```
                  apps/desktop/src-tauri  (nlmx-desktop: composition root + shell)
                     │                │
           crates/ui-web        crates/adapters/*
-                    │                │   implementam ports
+                    │                │   implement ports
                     └──► crates/application ◄──┘   use cases + services + ports (traits)
                                   │
-                           crates/domain          entidades, value objects, funções puras
+                           crates/domain          entities, value objects, pure functions
 ```
 
-- `domain` não depende de nada externo; `application` só de `domain` (nunca de rusqlite, pdfium-render, tauri, axum, askama…).
-- **Adapters nunca dependem entre si**; `ui-web` não conhece adapters nem Tauri.
-- Nenhum tipo externo atravessa um port: adapters mapeiam para tipos do `domain` e para o enum de erro do port.
-- Só `src-tauri/src/wiring.rs` instancia adapters (DI com `Arc<dyn Port>`).
-- Todo port tem fake em memória e suíte de contrato reutilizável em `crates/testing`, executada contra o fake e o adapter real.
+- `domain` depends on nothing external; `application` depends only on `domain` (never on rusqlite, pdfium-render, tauri, axum, askama…).
+- **Adapters never depend on each other**; `ui-web` knows neither adapters nor Tauri.
+- No external type crosses a port: adapters map to `domain` types and to the port's error enum.
+- Only `src-tauri/src/wiring.rs` instantiates adapters (DI with `Arc<dyn Port>`).
+- Every port has an in-memory fake and a reusable contract suite in `crates/testing`, run against both the fake and the real adapter.
 
 ## 2. Layout
 
 ```
 crates/
-  domain/                 tipos e funções puras: document, ingestion, retrieval (fuse, join_adjacent,
+  domain/                 pure types and functions: document, ingestion, retrieval (fuse, join_adjacent,
                           jaccard…), rag_intent, viewer (find_in_spans), telemetry (Measurement)
   application/            ports.rs · use_cases/ (DocumentIngestion, EmbedDocuments, ChatService,
                           ViewDocument, GetSystemStatus) · services/ (retrieval, retriever, rag/, free_chat)
-  ui-web/                 router axum in-process, handlers, markdown seguro, view models
-  testing/                fakes de todos os ports + suítes de contrato
+  ui-web/                 in-process axum router, handlers, safe markdown, view models
+  testing/                fakes for all ports + contract suites
   adapters/
-    pdf-pdfium/           DocumentEngine (thread única do PDFium)
+    pdf-pdfium/           DocumentEngine (single PDFium thread)
     structure-heuristic/  StructureAnalyzer
     chunker-structural/   Chunker
-    embed-llama/          EmbeddingProvider + InferenceRuntime (llama-server supervisionado)
-    store-sqlite/         repositórios, LexicalIndex (FTS5), VectorStore (sqlite-vec), migrações
+    embed-llama/          EmbeddingProvider + InferenceRuntime (supervised llama-server)
+    store-sqlite/         repositories, LexicalIndex (FTS5), VectorStore (sqlite-vec), migrations
     llm-fm/               LlmProvider (fm serve / fm respond)
-    models-catalog/       ModelProvider (catálogo embarcado em catalog/models.json, download)
-    fs-library/           FileStore (biblioteca de PDFs, SHA-256)
-    telemetry/            logs JSON com redação, MetricsRegistry, sampler de memória/disco
+    models-catalog/       ModelProvider (catalog embedded in catalog/models.json, download)
+    fs-library/           FileStore (PDF library, SHA-256)
+    telemetry/            JSON logs with redaction, MetricsRegistry, memory/disk sampler
 apps/desktop/
   src-tauri/              main, wiring, protocol (nlmx://), commands, tauri.conf.json
-  ui/                     templates askama (pages, components), styles (Tailwind 4), scripts (JS mínimo)
-tests/                    testes de workspace: arquitetura, E2E, qualidade do RAG, privacidade, bench
+  ui/                     askama templates (pages, components), styles (Tailwind 4), scripts (minimal JS)
+tests/                    workspace tests: architecture, E2E, RAG quality, privacy, bench
 ```
 
 ## 3. Ports (`crates/application/src/ports.rs`)
 
-| Port | Para quê | Adapter |
+| Port | Purpose | Adapter |
 |---|---|---|
-| `DocumentEngine` | abrir PDF, metadados, spans de texto com bbox, imagens, renderizar página | `pdf-pdfium` |
-| `DocumentParser` | ler um formato (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) em `ParsedDocument`: metadados, seções, blocos tipados e localização; registro por formato em `ParserRegistry` (ainda não ligado à ingestão, ADR 0011) | `PdfDocumentParser` (em `application`, sobre `DocumentEngine` + `StructureAnalyzer`), `parser-text` (Markdown, TXT, CSV), `parser-epub`, `parser-office` (DOCX e XLSX, ADR 0017) |
-| `DocumentNormalizer` · `DocumentChunker` | limpar o texto de um `ParsedDocument` e cortá-lo em `DocumentChunk`s que mantêm caminho de seção e `SourceLocation`; compostos com o parser por `ContentPipeline` (parse → normalize → chunk, sem embeddings; ADR 0012; ligado à ingestão pelo ADR 0014) | `normalizer-text`, `chunker-structural` (`MultiFormatChunker`) |
-| `FileStore` | hash e cópia do PDF para a biblioteca | `fs-library` |
-| `StructureAnalyzer` · `Chunker` · `TokenCounter` | layout → seções/blocos → chunks | `structure-heuristic`, `chunker-structural` |
-| `DocumentRepository` | documentos, páginas, `save_extraction` atômico, pendentes | `store-sqlite` |
-| `IndexingReader` | só leitura: documentos com o último job de ingestão e vetores por modelo (tela Indexação) | `store-sqlite` |
-| `ChunkReader` | resolver filtros, ler chunks de um documento ou por ids | `store-sqlite` |
-| `LexicalIndex` · `VectorStore` | BM25 (FTS5) e KNN (vec0), separados mesmo no mesmo banco | `store-sqlite` |
-| `ConversationRepository` | conversas, escopo, mensagens, fontes/citações | `store-sqlite` |
-| `SettingsRepository` · `StorageDiagnostics` | configurações e tamanhos em disco | `store-sqlite` |
-| `EmbeddingProvider` · `EmbeddingSource` | vetores Query/Passage; provider atual (trocável em runtime) | `embed-llama`; `EmbeddingSlot` no wiring |
-| `InferenceRuntime` | versão/caminho do llama.cpp do bundle | `embed-llama` |
-| `ModelProvider` | catálogo, plano + download confirmado, verificar, ativar, remover, atualizar | `models-catalog` |
-| `LlmProvider` | status, contagem exata de tokens, geração com streaming e cancelamento | `llm-fm` |
-| `Diagnostics` | métricas agregadas da sessão | `telemetry` |
+| `DocumentEngine` | open PDF, metadata, text spans with bbox, images, render page | `pdf-pdfium` |
+| `DocumentParser` | read one format (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX, XLSX) into a `ParsedDocument`: metadata, sections, typed blocks and location; per-format registry in `ParserRegistry` (not yet wired into ingestion, ADR 0011) | `PdfDocumentParser` (in `application`, on top of `DocumentEngine` + `StructureAnalyzer`), `parser-text` (Markdown, TXT, CSV), `parser-epub`, `parser-office` (DOCX and XLSX, ADR 0017) |
+| `DocumentNormalizer` · `DocumentChunker` | clean the text of a `ParsedDocument` and cut it into `DocumentChunk`s that keep the section path and `SourceLocation`; composed with the parser by `ContentPipeline` (parse → normalize → chunk, no embeddings; ADR 0012; wired into ingestion by ADR 0014) | `normalizer-text`, `chunker-structural` (`MultiFormatChunker`) |
+| `FileStore` | hash and copy the PDF into the library | `fs-library` |
+| `StructureAnalyzer` · `Chunker` · `TokenCounter` | layout → sections/blocks → chunks | `structure-heuristic`, `chunker-structural` |
+| `DocumentRepository` | documents, pages, atomic `save_extraction`, pending items | `store-sqlite` |
+| `IndexingReader` | read-only: documents with their latest ingestion job and vectors per model (Indexação screen) | `store-sqlite` |
+| `ChunkReader` | resolve filters, read the chunks of a document or by ids | `store-sqlite` |
+| `LexicalIndex` · `VectorStore` | BM25 (FTS5) and KNN (vec0), kept separate even in the same database | `store-sqlite` |
+| `ConversationRepository` | conversations, scope, messages, sources/citations | `store-sqlite` |
+| `SettingsRepository` · `StorageDiagnostics` | settings and on-disk sizes | `store-sqlite` |
+| `EmbeddingProvider` · `EmbeddingSource` | Query/Passage vectors; current provider (swappable at runtime) | `embed-llama`; `EmbeddingSlot` in the wiring |
+| `InferenceRuntime` | version/path of the bundled llama.cpp | `embed-llama` |
+| `ModelProvider` | catalog, plan + confirmed download, verify, activate, remove, update | `models-catalog` |
+| `LlmProvider` | status, exact token count, streaming generation with cancellation | `llm-fm` |
+| `Diagnostics` | aggregated session metrics | `telemetry` |
 
-Streaming e progresso saem de `application` por callbacks (`on_token`, progresso de download) que o shell traduz em Tauri Channels/Events.
+Streaming and progress leave `application` through callbacks (`on_token`, download progress) that the shell translates into Tauri Channels/Events.
 
-## 4. Ingestão
+## 4. Ingestion
 
 ```
-seletor ─► import_documents (Tauri) ─► DocumentIngestion::import(path)
-  SHA-256 ─► duplicata? (failed/inacabado ⇒ reprocessa) ─► FileStore: <data>/library/<sha>.pdf
+picker ─► import_documents (Tauri) ─► DocumentIngestion::import(path)
+  SHA-256 ─► duplicate? (failed/unfinished ⇒ reprocess) ─► FileStore: <data>/library/<sha>.pdf
   ─► ingest(id): DocumentEngine ─► StructureAnalyzer ─► Chunker
-  ─► DocumentRepository::save_extraction (páginas + chunks + FTS numa transação)
-  ─► EmbedDocuments: EmbeddingProvider(Passage) ─► VectorStore (vetor + chunk_embeddings numa transação)
+  ─► DocumentRepository::save_extraction (pages + chunks + FTS in one transaction)
+  ─► EmbedDocuments: EmbeddingProvider(Passage) ─► VectorStore (vector + chunk_embeddings in one transaction)
 ```
 
-- Status do documento: `queued → extracting → structuring → chunking → embedding → indexed`, ou `needs_ocr` (sem camada de texto) / `failed` (corrompido, senha). Uma falha nunca afeta outros documentos.
-- Nada é gravado antes do `save_extraction`, então repetir é idempotente; no boot, `resume()` reprocessa documentos parados e `embed_pending()` gera os vetores que faltam.
-- Sem modelo de embeddings ativo, o documento fica em `embedding` (job `waiting_model`) e a busca é só lexical.
-- Mudança na saída do analisador ou do chunker ⇒ incrementar `structure_heuristic::VERSION` / `chunker_structural::VERSION`.
+- Document status: `queued → extracting → structuring → chunking → embedding → indexed`, or `needs_ocr` (no text layer) / `failed` (corrupted, password). A failure never affects other documents.
+- Nothing is written before `save_extraction`, so retrying is idempotent; at boot, `resume()` reprocesses stalled documents and `embed_pending()` generates the missing vectors.
+- Without an active embedding model, the document stays in `embedding` (job `waiting_model`) and search is lexical-only.
+- A change in the analyzer's or chunker's output ⇒ bump `structure_heuristic::VERSION` / `chunker_structural::VERSION`.
 
-### Notas (ADR 0018)
+### Notes (ADR 0018)
 
 ```
 "Adicionar nota" (dialog) ─► POST /documents/notes ─► NoteSubmitter (NoteInbox) ─► ImportQueue::push_note
-  clean_note_text (vazio/só espaços ⇒ recusa) ─► DocumentIngestion::enqueue_note
-  ─► digest_text (duplicata) ─► documents (format 'note', note_text, sem arquivo) ─► queued
-  ─► ingest(id): NoteDocumentParser(DocumentSource::note(texto)) ─► normalizer ─► MultiFormatChunker
+  clean_note_text (empty/whitespace-only ⇒ rejected) ─► DocumentIngestion::enqueue_note
+  ─► digest_text (duplicate) ─► documents (format 'note', note_text, no file) ─► queued
+  ─► ingest(id): NoteDocumentParser(DocumentSource::note(text)) ─► normalizer ─► MultiFormatChunker
   ─► save_processed (SourceLocation::Note) ─► EmbedDocuments ─► VectorStore ─► RAG
 ```
 
-É o mesmo pipeline e a mesma fila dos arquivos; só a origem do texto muda (banco em vez de `<sha>.<ext>`). Reindexar e retomar leem `note_text`.
+It is the same pipeline and the same queue as files; only the source of the text changes (database instead of `<sha>.<ext>`). Reindexing and resuming read `note_text`.
 
-### Indexação (tela)
-
-```
-GET /indexing · /fragments/indexing ─► Indexing::report ─► IndexingReader::snapshot(modelo ativo)
-  ─► IndexingModel: estado do índice, Em andamento, Precisa de atenção, Concluídos recentemente
-botões ─► retry_document · retry_failed · embed_pending_now · reindex_all (Tauri)
-  ─► Indexing::begin (exclusivo; recusa com `busy`) ─► tarefa em segundo plano ─► evento `indexing-changed`
-```
-
-- `IndexingActivity` conta o trabalho em segundo plano: importações, `resume`/`embed_pending` no boot e `apply_model_change` chamam `begin()` (podem se sobrepor); as ações da tela usam `try_begin()` (nunca se sobrepõem a nada).
-- Enquanto há trabalho (atividade ou documento em leitura), o fragmento se renderiza com `hx-trigger="every 2s, …"`; sem trabalho, só reage a `indexing-changed`/`documents-changed`/`models-changed`. O elemento não tem `id` (quirk de settle do HTMX 4) e tem `data-poll` (não aciona o indicador global de carregamento).
-- "Tentar novamente": `failed` ⇒ `DocumentIngestion::retry` (precisa do PDFium); `embedding` ⇒ `EmbedDocuments::embed_document`.
-- Duração de um job = `finished_at − started_at` de `embedding_jobs` (o job espelha o status do documento).
-
-### Remoção (ADR 0008)
+### Indexing (screen)
 
 ```
-Documentos ─► menu "Remover…" ─► diálogo (RemoveDocument::impact) ─► POST /documents/{id}/delete
-  ─► RemoveDocument::remove: recusa se queued/extracting/structuring/chunking
-  ─► DocumentRepository::remove (uma transação): conversas restritas ao documento; pares
-     pergunta + resposta que o usaram; conversas esvaziadas; o documento (cascatas: páginas,
-     trechos, FTS5, vec0, chunk_embeddings, jobs, coleções, citações) ─► wal_checkpoint(TRUNCATE)
+GET /indexing · /fragments/indexing ─► Indexing::report ─► IndexingReader::snapshot(active model)
+  ─► IndexingModel: index state, "Em andamento", "Precisa de atenção", "Concluídos recentemente"
+buttons ─► retry_document · retry_failed · embed_pending_now · reindex_all (Tauri)
+  ─► Indexing::begin (exclusive; refuses with `busy`) ─► background task ─► `indexing-changed` event
+```
+
+(The section titles above are the screen's labels: in progress, needs attention, recently completed.)
+
+- `IndexingActivity` counts background work: imports, `resume`/`embed_pending` at boot and `apply_model_change` call `begin()` (they may overlap); the screen's actions use `try_begin()` (they never overlap with anything).
+- While there is work (activity or a document being read), the fragment renders with `hx-trigger="every 2s, …"`; with no work, it only reacts to `indexing-changed`/`documents-changed`/`models-changed`. The element has no `id` (HTMX 4 settle quirk) and has `data-poll` (it does not trigger the global loading indicator).
+- "Tentar novamente" (retry): `failed` ⇒ `DocumentIngestion::retry` (needs PDFium); `embedding` ⇒ `EmbedDocuments::embed_document`.
+- Duration of a job = `finished_at − started_at` of `embedding_jobs` (the job mirrors the document status).
+
+### Removal (ADR 0008)
+
+```
+Documentos ─► "Remover…" menu ─► dialog (RemoveDocument::impact) ─► POST /documents/{id}/delete
+  ─► RemoveDocument::remove: refuses if queued/extracting/structuring/chunking
+  ─► DocumentRepository::remove (one transaction): conversations scoped to the document; question +
+     answer pairs that used it; conversations left empty; the document (cascades: pages,
+     chunks, FTS5, vec0, chunk_embeddings, jobs, collections, citations) ─► wal_checkpoint(TRUNCATE)
   ─► FileStore::remove(<sha>.pdf) ─► ViewDocument::forget(id) ─► Measurement::DocumentRemoved
 ```
 
-- `secure_delete` (conexão) e `secure-delete` do FTS5 (migração 0009) não deixam o texto removido nos bytes do banco.
-- Na inicialização, `RemoveDocument::prune_library` apaga arquivos da biblioteca sem documento (antes do `resume()`).
+- `secure_delete` (connection) and FTS5 `secure-delete` (migration 0009) keep the removed text out of the database bytes.
+- At startup, `RemoveDocument::prune_library` deletes library files that have no document (before `resume()`).
 
-## 5. Busca
+## 5. Search
 
-**`HybridRetriever`** (`application::services::retrieval`), com `RetrievalOptions { top_k, semantic_weight, lexical_weight, filter }`:
+**`HybridRetriever`** (`application::services::retrieval`), with `RetrievalOptions { top_k, semantic_weight, lexical_weight, filter }`:
 
-1. Filtros (documento, coleção, página) resolvidos por `ChunkReader::resolve`.
-2. Vetorial: `embed(Query)` → `VectorStore::search` (KNN cosseno, filtro `document_id IN` dentro do vec0).
-3. Lexical: `LexicalQuery` (termos em minúsculas, sem stopwords PT/EN, cada termo entre aspas — texto do usuário nunca vai cru para o `MATCH`) → `LexicalIndex::search` (BM25).
-4. Fusão ponderada (`domain::retrieval::fuse`, ADR 0007): cosseno limitado a [0, 1] + min-max de −bm25 × cobertura² dos termos; desempate pelo semântico e pelo id.
-5. Sem modelo (ou se ele falhar) cai para lexical e informa `mode` + `warnings`.
+1. Filters (document, collection, page) resolved by `ChunkReader::resolve`.
+2. Vector: `embed(Query)` → `VectorStore::search` (cosine KNN, `document_id IN` filter inside vec0).
+3. Lexical: `LexicalQuery` (lowercase terms, no PT/EN stopwords, each term quoted — user text never goes raw into the `MATCH`) → `LexicalIndex::search` (BM25).
+4. Weighted fusion (`domain::retrieval::fuse`, ADR 0007): cosine clamped to [0, 1] + min-max of −bm25 × term coverage²; ties broken by the semantic score and then by id.
+5. Without a model (or if it fails) it falls back to lexical and reports `mode` + `warnings`.
 
-**`Retriever`** (`application::services::retriever`) prepara o contexto do RAG: sobre-amostra (`top_k × 3`), remove duplicatas exatas entre documentos (`metadata.duplicates`), une chunks vizinhos **da mesma seção** sem repetir o overlap, remove quase-duplicatas (Jaccard de trigramas ≥ 0,8 **e** mesmos números), aplica `min_score`, `max_per_document` e Top-K.
+**`Retriever`** (`application::services::retriever`) prepares the RAG context: it oversamples (`top_k × 3`), removes exact duplicates across documents (`metadata.duplicates`), joins neighbouring chunks **of the same section** without repeating the overlap, removes near-duplicates (trigram Jaccard ≥ 0.8 **and** same numbers), and applies `min_score`, `max_per_document` and Top-K.
 
-## 6. Pergunta e resposta
+## 6. Question and answer
 
 ```
-POST /chat/{id}/messages ─► pergunta + resposta "streaming" salvas ─► turno HTML
-app.js ─► comando answer_message({messageId, onEvent: Channel})
-        ─► ChatService::answer ─► RagEngine (modo documento) | FreeChat (livre) ─► {kind:"token"}… {kind:"done"}
-done ─► GET /chat/messages/{id} (HTML final)      cancel_answer ─► CancelFlag (parcial salvo)
+POST /chat/{id}/messages ─► question + "streaming" answer saved ─► HTML turn
+app.js ─► command answer_message({messageId, onEvent: Channel})
+        ─► ChatService::answer ─► RagEngine (document mode) | FreeChat (free) ─► {kind:"token"}… {kind:"done"}
+done ─► GET /chat/messages/{id} (final HTML)      cancel_answer ─► CancelFlag (partial answer saved)
 ```
 
-**Escopo e modo (ADR 0009).** A conversa é livre (padrão), sobre todos os documentos ou sobre um documento (`ConversationScope`). Cada resposta guarda o modo em que foi gerada (`messages.grounding`), e `ChatService::answer` escolhe por ele:
+**Scope and mode (ADR 0009).** A conversation is free (default), about all documents, or about one document (`ConversationScope`). Each answer stores the mode it was generated in (`messages.grounding`), and `ChatService::answer` chooses by it:
 
-- **Livre** — `FreeChat` (`application::services::free_chat`) recebe só o `LlmProvider`, sem acesso à biblioteca. Instruções fixas no `system`. Os últimos 6 turnos (cada um com até 1 500 caracteres, neutralizados) vão em `GenerationRequest::history`, que o `fm serve` recebe como mensagens `user`/`assistant`; o `user` leva só a pergunta. `fm respond` e `fm count-tokens` recebem `flat_user()`. Os turnos mais antigos saem até `count_tokens` caber. "Explique este documento." pede um documento sem chamar o modelo. A resposta não tem fontes.
-- **Documento** — `RagEngine`, abaixo. Uma resposta `NotFound` pode ser refeita sem os documentos (`POST /chat/messages/{id}/free` → `ChatService::answer_freely`), e passa a ser livre.
+- **Free** — `FreeChat` (`application::services::free_chat`) receives only the `LlmProvider`, with no access to the library. Fixed instructions go in `system`. The last 6 turns (each up to 1,500 characters, neutralized) go in `GenerationRequest::history`, which `fm serve` receives as `user`/`assistant` messages; `user` carries only the question. `fm respond` and `fm count-tokens` receive `flat_user()`. Older turns are dropped until `count_tokens` fits. "Explique este documento." (explain this document) asks for a document without calling the model. The answer has no sources.
+- **Document** — `RagEngine`, below. A `NotFound` answer can be redone without the documents (`POST /chat/messages/{id}/free` → `ChatService::answer_freely`), and becomes free.
 
 `RagEngine::ask` (`application::services::rag`):
 
-1. **Intenção** (`domain::rag_intent`): pergunta comum → busca; "Explique este documento." → `Overview` (primeiro trecho de cada seção do documento do escopo); "seção N" → `Section(N)` (trechos da seção e subseções, complementados pela busca; sem título correspondente, busca normal). Com histórico, o follow-up é reescrito como pergunta independente por uma chamada curta ao LLM.
-2. **Retriever** + **relevance gate**: melhor score < `min_relevance` (0,35) ⇒ `NotFound` **sem chamar o modelo**, mostrando os melhores trechos. (Overview e Section não passam pelo gate.)
-3. **`ContextBuilder`** (`rag/context.rs`, puro): orçamento = mín(1 800, janela 4 096 − instruções − pergunta − reserva de resposta 700 − margem 10 %); trechos numerados em blocos `<trecho>`, documentos por relevância e páginas em ordem; duplicatas e trechos contidos descartados.
-4. **Isolamento**: instruções fixas só no `system`; texto do documento e pergunta só no `user`, passados por `context::neutralize` (`<`/`>` → `‹`/`›`, sem caracteres de controle).
-5. **Contagem exata** com `count_tokens` (`fm count-tokens`); acima do limite, remove o trecho mais fraco e recalcula. O `fm serve` não rejeita prompt longo — degenera —, por isso o limite é garantido aqui.
-6. **Geração** com streaming; recusa do guardrail ⇒ `Refused` com os trechos.
-7. **`CitationEngine`** (`rag/citations.rs`, puro): `[n]`, `[1, 3]`, `[2–3]` → documento/chunk/páginas/bboxes; números inválidos removidos; `[página N]` resolvido para a fonte que cobre a página. Todas as fontes enviadas ficam em `citations` (`cited` marca as citadas); referências de página em `message_page_refs`.
+1. **Intent** (`domain::rag_intent`): ordinary question → search; "Explique este documento." → `Overview` (first passage of each section of the document in scope); "seção N" (section N) → `Section(N)` (passages of the section and its subsections, complemented by search; with no matching heading, regular search). With history, the follow-up is rewritten as a standalone question by a short LLM call.
+2. **Retriever** + **relevance gate**: best score < `min_relevance` (0.35) ⇒ `NotFound` **without calling the model**, showing the best passages. (Overview and Section skip the gate.)
+3. **`ContextBuilder`** (`rag/context.rs`, pure): budget = min(1,800, 4,096 window − instructions − question − 700 answer reserve − 10% margin); passages numbered in `<trecho>` blocks, documents by relevance and pages in order; duplicates and contained passages dropped.
+4. **Isolation**: fixed instructions only in `system`; document text and question only in `user`, passed through `context::neutralize` (`<`/`>` → `‹`/`›`, no control characters).
+5. **Exact count** with `count_tokens` (`fm count-tokens`); above the limit, it removes the weakest passage and recomputes. `fm serve` does not reject a long prompt — it degenerates — so the limit is enforced here.
+6. **Generation** with streaming; guardrail refusal ⇒ `Refused` with the passages.
+7. **`CitationEngine`** (`rag/citations.rs`, pure): `[n]`, `[1, 3]`, `[2–3]` → document/chunk/pages/bboxes; invalid numbers removed; `[página N]` (page N) resolved to the source that covers the page. All the sources sent are kept in `citations` (`cited` marks the cited ones); page references in `message_page_refs`.
 
-Saída do modelo só é renderizada por `ui-web/src/markdown.rs` (escapa tudo; só parágrafos, listas, negrito e botões de citação).
+Model output is rendered only by `ui-web/src/markdown.rs` (escapes everything; only paragraphs, lists, bold and citation buttons).
 
 ## 7. PDF Viewer
 
-Tudo via PDFium, sem pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` ou `&ref={msg}-{page}` abre ao lado do chat (redimensionável, tela cheia, Esc fecha); `/chat?view={doc}` abre a partir de Documentos.
+Everything through PDFium, no pdf.js. `GET /viewer/{doc}?page=N&cite={msg}-{n}` or `&ref={msg}-{page}` opens beside the chat (resizable, full screen, Esc closes); `/chat?view={doc}` opens it from Documentos.
 
-- Tamanhos das páginas vêm do banco (`document_pages`), sem abrir o PDF.
-- `ui/scripts/viewer.js` carrega só as páginas próximas do viewport: PNG em degraus de largura (`/documents/{id}/pages/{n}.png?w=`) e camada de texto (`/viewer/{doc}/pages/{n}/text`, spans transparentes para seleção nativa).
-- Busca `/viewer/{doc}/search?q=` (`domain::viewer::find_in_spans`: sem acento/caixa, atravessa spans e hifenização); spans em cache por página em `ViewDocument`.
-- Destaques são caixas em pontos PDF (origem no topo-esquerda) convertidas em % da página. Zoom 50–300 %, miniaturas, atalhos ←/→, ⌘+/−/0, ⌘F.
+- Page sizes come from the database (`document_pages`), without opening the PDF.
+- `ui/scripts/viewer.js` loads only the pages near the viewport: PNG in width steps (`/documents/{id}/pages/{n}.png?w=`) and a text layer (`/viewer/{doc}/pages/{n}/text`, transparent spans for native selection).
+- Search `/viewer/{doc}/search?q=` (`domain::viewer::find_in_spans`: accent/case-insensitive, crosses spans and hyphenation); spans cached per page in `ViewDocument`.
+- Highlights are boxes in PDF points (top-left origin) converted to % of the page. Zoom 50–300%, thumbnails, ←/→ shortcuts, ⌘+/−/0, ⌘F.
 
-## 8. Processos e threads
+## 8. Processes and threads
 
-| Unidade | Tipo | Dono | Ciclo de vida |
+| Unit | Type | Owner | Lifecycle |
 |---|---|---|---|
-| UI / event loop | thread principal | Tauri | app |
-| Runtime async | tokio multi-thread | Tauri | app |
-| PDFium | 1 thread dedicada (não é thread-safe) | `pdf-pdfium` | lazy |
-| `llama-server` | processo filho (sidecar), 127.0.0.1, porta efêmera, chave por execução | `embed-llama::LlamaServer` | primeiro uso → ocioso por `idle_shutdown_secs` (45 s) ou `RunEvent::Exit`; sobe de novo na próxima requisição |
-| `fm serve --socket` | processo filho, Unix socket | `llm-fm` | primeira geração → `RunEvent::Exit` |
-| SQLite | conexão WAL | `store-sqlite` | app |
+| UI / event loop | main thread | Tauri | app |
+| Async runtime | tokio multi-thread | Tauri | app |
+| PDFium | 1 dedicated thread (not thread-safe) | `pdf-pdfium` | lazy |
+| `llama-server` | child process (sidecar), 127.0.0.1, ephemeral port, per-run key | `embed-llama::LlamaServer` | first use → idle for `idle_shutdown_secs` (45 s) or `RunEvent::Exit`; starts again on the next request |
+| `fm serve --socket` | child process, Unix socket | `llm-fm` | first generation → `RunEvent::Exit` |
+| SQLite | WAL connection | `store-sqlite` | app |
 
-- **`llama-server`** (ADR 0006): pidfile + arquivo de chave em `<data>/run/`, log em `<data>/logs/llama-server.log`. Um servidor saudável de uma sessão anterior, mesmo binário e modelo, é reaproveitado; um velho é substituído; processos que não são o nosso binário nunca recebem sinal. Roda com `--cache-ram 0 --no-cache-prompt --parallel 1`: o cache de prompts padrão (até 8 GiB) não serve para embeddings e levava o processo de ~1 GB a ~10 GB depois de uma importação. Depois de `idle_shutdown_secs` sem requisições (`embedding.json`, padrão 45, `0` = nunca), o processo é encerrado para devolver a memória; enquanto um `UseGuard` (`LlamaServer::begin_use`, mantido por todo `embed_batch`) estiver vivo, ele não para.
-- **`fm`** (ADR 0002): compatibilidade (macOS ≥ 27, arm64 nativo, `fm` presente) checada uma vez; `status()` via `fm available` com cache de 30 s (exit 69 ⇒ `LicenseRequired`). Socket em `$TMPDIR/nlmx-fm-<pid>-<n>.sock` (≤ 103 bytes, senão `/tmp`); reiniciado se morrer; uma geração por vez. Se o `serve` não sobe ou cai antes de responder, usa `fm respond --stream -i <instruções> <prompt>` e só tenta o `serve` de novo após 5 min.
+- **`llama-server`** (ADR 0006): pidfile + key file in `<data>/run/`, log in `<data>/logs/llama-server.log`. A healthy server from a previous session, same binary and model, is reused; a stale one is replaced; processes that are not our binary never receive a signal. It runs with `--cache-ram 0 --no-cache-prompt --parallel 1`: the default prompt cache (up to 8 GiB) is of no use for embeddings and took the process from ~1 GB to ~10 GB after an import. After `idle_shutdown_secs` without requests (`embedding.json`, default 45, `0` = never), the process is stopped to give the memory back; while a `UseGuard` (`LlamaServer::begin_use`, held for the whole `embed_batch`) is alive, it does not stop.
+- **`fm`** (ADR 0002): compatibility (macOS ≥ 27, native arm64, `fm` present) checked once; `status()` via `fm available` with a 30 s cache (exit 69 ⇒ `LicenseRequired`). Socket at `$TMPDIR/nlmx-fm-<pid>-<n>.sock` (≤ 103 bytes, else `/tmp`); restarted if it dies; one generation at a time. If `serve` does not start or drops before answering, it uses `fm respond --stream -i <instructions> <prompt>` and only tries `serve` again after 5 min.
 
-## 9. Modelos
+## 9. Models
 
-- **Runtime (parte do app):** `llama-server` do llama.cpp, build fixado em `scripts/bootstrap.sh`, vai como sidecar; detectado por `LlamaCppRuntime` (`InferenceRuntime`). Nunca é baixado nem removido.
-- **Modelos (sob demanda):** `LocalModelProvider` (`models-catalog`) a partir do catálogo embarcado — revisão upstream fixada em `version` e `url`, tamanho e SHA-256 verificados.
-  - Armazenamento: `<data>/models/<id>/<versão>/<arquivo>.gguf` + `manifest.json`; download em andamento como `.part`.
-  - **Confirmação obrigatória:** `plan_download`/`plan_update` devolvem um `DownloadPlan` (tamanho, licença, espaço); `download` só aceita `ConfirmedDownload`, criado por `DownloadPlan::confirm()` — chamado apenas pelo comando `download_model` (botão do diálogo).
-  - Download com retomada via `Range`, SHA-256 incremental, progresso, cancelamento, checagem de disco (margem: o maior entre 5 % e 256 MB); checksum divergente apaga o `.part`.
-  - Verificação rápida (manifest, tamanho, magic `GGUF`) no status; SHA-256 completo em `verify`.
-  - Atualização: baixa em pasta nova, verifica, troca o ativo e só então remove a antiga.
-  - Ativação grava `<data>/embedding.json`, lido pelo `LlamaCppEmbeddingProvider`. Depois de ativar/remover, `apply_model_change` para o `llama-server` antigo e regera os vetores (todos, se o modelo mudou; senão só os pendentes).
+- **Runtime (part of the app):** llama.cpp's `llama-server`, build pinned in `scripts/bootstrap.sh`, shipped as a sidecar; detected by `LlamaCppRuntime` (`InferenceRuntime`). Never downloaded or removed.
+- **Models (on demand):** `LocalModelProvider` (`models-catalog`) from the embedded catalog — upstream revision pinned in `version` and `url`, size and SHA-256 verified.
+  - Storage: `<data>/models/<id>/<version>/<file>.gguf` + `manifest.json`; download in progress as `.part`.
+  - **Mandatory confirmation:** `plan_download`/`plan_update` return a `DownloadPlan` (size, license, space); `download` only accepts a `ConfirmedDownload`, created by `DownloadPlan::confirm()` — called only by the `download_model` command (dialog button).
+  - Download with resume via `Range`, incremental SHA-256, progress, cancellation, disk check (margin: the larger of 5% and 256 MB); a checksum mismatch deletes the `.part`.
+  - Quick verification (manifest, size, `GGUF` magic) in the status; full SHA-256 in `verify`.
+  - Update: downloads into a new folder, verifies, switches the active one and only then removes the old one.
+  - Activation writes `<data>/embedding.json`, read by `LlamaCppEmbeddingProvider`. After activating/removing, `apply_model_change` stops the old `llama-server` and regenerates the vectors (all of them if the model changed; otherwise only the pending ones).
 
-## 10. Banco SQLite
+## 10. SQLite database
 
-`~/Library/Application Support/dev.nlmx.desktop/nlmx.sqlite3`, migrações em `crates/adapters/store-sqlite/migrations/NNNN_nome/{up,down}.sql` (todas reversíveis, tabelas STRICT):
+`~/Library/Application Support/dev.nlmx.desktop/nlmx.sqlite3`, migrations in `crates/adapters/store-sqlite/migrations/NNNN_name/{up,down}.sql` (all reversible, STRICT tables):
 
-| Migração | Tabelas |
+| Migration | Tables |
 |---|---|
 | 0001 | `app_settings` |
 | 0002 | `documents`, `document_pages`, `document_chunks`, `document_chunks_fts` (FTS5, `unicode61 remove_diacritics 2`) |
 | 0003 | `collections`, `collection_documents` |
 | 0004 | `embedding_models`, `embedding_jobs` |
 | 0005 · 0007 | `conversations`, `messages`, `citations`, `conversation_scopes` |
-| 0006 | `chunk_embeddings` (chunk → modelo → vetor, com o `content_hash` do chunk) |
+| 0006 | `chunk_embeddings` (chunk → model → vector, with the chunk's `content_hash`) |
 | 0008 | `message_page_refs` |
-| 0009 | opção `secure-delete` do `document_chunks_fts` (ADR 0008) |
-| 0010 | `conversations.mode` (livre/documentos) e `messages.grounding` (ADR 0009) |
-| 0011 | `documents.format`/`mime_type`/`metadata`/`normalizer_version`/`previewable` (gerada), `document_sections`, `chunk_provenance` — só aditiva (ADR 0013) |
-| 0012 | `citations.document_type`/`document_name`/`locator` — proveniência da fonte de qualquer formato (ADR 0015) |
+| 0009 | `secure-delete` option of `document_chunks_fts` (ADR 0008) |
+| 0010 | `conversations.mode` (free/documents) and `messages.grounding` (ADR 0009) |
+| 0011 | `documents.format`/`mime_type`/`metadata`/`normalizer_version`/`previewable` (generated), `document_sections`, `chunk_provenance` — additive only (ADR 0013) |
+| 0012 | `citations.document_type`/`document_name`/`locator` — source provenance for any format (ADR 0015) |
 
-Vetores: uma tabela vec0 `chunk_vectors_<embedding_model_id>` por espaço vetorial (modelo + revisão + dimensão), criada em runtime por `create_index`; rowid = id do chunk (ADR 0005).
+Vectors: one vec0 table `chunk_vectors_<embedding_model_id>` per vector space (model + revision + dimension), created at runtime by `create_index`; rowid = chunk id (ADR 0005).
 
-## 11. Empacotamento
+## 11. Packaging
 
-`.app`/`.dmg` aarch64, `minimumSystemVersion 27.0`: `llama-server` como sidecar em `Contents/MacOS`, dylibs do llama.cpp e `libpdfium` em `Contents/Frameworks`, SQLite e sqlite-vec estáticos no binário, Tailwind compilado no build, HTMX vendorizado. Modelos e `fm` ficam fora do bundle. Detalhes, assinatura e verificação: [`RELEASE.md`](RELEASE.md).
+`.app`/`.dmg` aarch64, `minimumSystemVersion 27.0`: `llama-server` as a sidecar in `Contents/MacOS`, llama.cpp dylibs and `libpdfium` in `Contents/Frameworks`, SQLite and sqlite-vec statically linked in the binary, Tailwind compiled at build time, HTMX vendored. Models and `fm` stay outside the bundle. Details, signing and verification: [`RELEASE.md`](RELEASE.md).
 
-## 12. Substituições previstas
+## 12. Planned replacements
 
-Cada uma é um novo adapter, sem mudança em `application`:
+Each one is a new adapter, with no change in `application`:
 
-| Componente | Substituto possível |
+| Component | Possible replacement |
 |---|---|
-| PDFium | MuPDF, pdf-rs, processo helper (isolamento de crash) |
-| `llama-server` | MLX, Core ML, candle; ou `llama-server` em Unix socket |
-| sqlite-vec | usearch, LanceDB, HNSW próprio |
+| PDFium | MuPDF, pdf-rs, helper process (crash isolation) |
+| `llama-server` | MLX, Core ML, candle; or `llama-server` on a Unix socket |
+| sqlite-vec | usearch, LanceDB, custom HNSW |
 | FTS5 | tantivy |
-| `fm serve` | llama.cpp gerador, provedor remoto opt-in |
-| HTMX/Tailwind | outra UI (só `ui-web`) |
-| Tauri | outro shell (só `src-tauri`) |
+| `fm serve` | llama.cpp generator, opt-in remote provider |
+| HTMX/Tailwind | another UI (only `ui-web`) |
+| Tauri | another shell (only `src-tauri`) |

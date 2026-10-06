@@ -1,23 +1,23 @@
-# ADR 0004 — SQLite único com FTS5 e sqlite-vec
+# ADR 0004 — Single SQLite with FTS5 and sqlite-vec
 
-- Status: aceito (fusão RRF substituída pelo ADR 0007)
-- Data: 2026-10-02
+- Status: accepted (RRF fusion superseded by ADR 0007)
+- Date: 2026-10-02
 
-## Contexto
-Precisamos de metadados, texto, índice lexical e índice vetorial locais, consistentes entre si e sem serviço externo.
+## Context
+We need metadata, text, a lexical index and a vector index that are local, consistent with each other and free of external services.
 
-## Decisão
-- Um arquivo SQLite (WAL) por biblioteca; SQLite `bundled` e sqlite-vec linkado estaticamente.
-- FTS5 com conteúdo externo (`chunks`), tokenizer `unicode61 remove_diacritics 2`, BM25.
-- sqlite-vec (`vec0`) para KNN; fusão com BM25 por RRF no `Retriever` (camada de aplicação).
-- Uma conexão escritora (actor) + pool de leitura; `commit_document` grava chunks, FTS e vetores numa única transação.
-- `LexicalIndex` e `VectorIndex` são ports separados, mesmo implementados pela mesma crate.
+## Decision
+- One SQLite file (WAL) per library; SQLite `bundled` and sqlite-vec statically linked.
+- FTS5 with external content (`chunks`), tokenizer `unicode61 remove_diacritics 2`, BM25.
+- sqlite-vec (`vec0`) for KNN; fusion with BM25 via RRF in the `Retriever` (application layer).
+- One writer connection (actor) + read pool; `commit_document` writes chunks, FTS and vectors in a single transaction.
+- `LexicalIndex` and `VectorIndex` are separate ports, even when implemented by the same crate.
 
-## Consequências
-- Ingestão atômica por documento; backup = um diretório.
-- sqlite-vec é pré-1.0 e faz força bruta: adequado ao MVP (~100k chunks); escala maior pode exigir quantização ou trocar o adapter `VectorIndex`.
-- FTS5 não tem stemming em português; o vetor cobre a semântica.
+## Consequences
+- Atomic ingestion per document; backup = one directory.
+- sqlite-vec is pre-1.0 and brute-force: fine for the MVP (~100k chunks); larger scale may require quantization or replacing the `VectorIndex` adapter.
+- FTS5 has no Portuguese stemming; the vector covers semantics.
 
-## Atualização (2026-10-03)
-- A fusão por RRF foi substituída por fusão ponderada de scores normalizados (ADR 0007).
-- O port vetorial chama-se `VectorStore` (não `VectorIndex`). Não há `commit_document` único: `save_extraction` grava páginas, chunks e FTS numa transação, e cada lote de vetores é gravado (vec0 + `chunk_embeddings`) em outra, depois.
+## Update (2026-10-03)
+- RRF fusion was replaced by weighted fusion of normalized scores (ADR 0007).
+- The vector port is named `VectorStore` (not `VectorIndex`). There is no single `commit_document`: `save_extraction` writes pages, chunks and FTS in one transaction, and each batch of vectors is written (vec0 + `chunk_embeddings`) in another, afterwards.
