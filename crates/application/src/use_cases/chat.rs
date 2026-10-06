@@ -187,7 +187,7 @@ impl ChatService {
 
         let (content, status, error, sources, page_refs) = match pending.grounding {
             Some(AnswerGrounding::Free) => {
-                let history = history(earlier, FREE_HISTORY_TURNS);
+                let history = history(earlier, FREE_HISTORY_TURNS, false);
                 let result = self
                     .free
                     .answer(&question, &history, &self.options, on_token, cancel)
@@ -195,7 +195,7 @@ impl ChatService {
                 free_outcome(result)
             }
             Some(AnswerGrounding::Documents) | None => {
-                let history = history(earlier, HISTORY_TURNS);
+                let history = history(earlier, HISTORY_TURNS, true);
                 let mut options = self.options.clone();
                 // "Explique este documento" after leaving a single document for the whole
                 // library still means the document the conversation was about.
@@ -281,14 +281,18 @@ fn last_cited_document(messages: &[Message]) -> Option<DocumentId> {
 }
 
 /// The last `limit` question/answer pairs that ended with an answer, most recent last.
-fn history(messages: &[Message], limit: usize) -> Vec<HistoryTurn> {
+/// `documents_only` drops free answers: they say nothing about the documents, and a follow-up
+/// rewritten from them would search for the wrong thing.
+fn history(messages: &[Message], limit: usize, documents_only: bool) -> Vec<HistoryTurn> {
     let mut turns = Vec::new();
     let mut question: Option<&str> = None;
     for m in messages {
         match m.role {
             Role::User => question = Some(&m.content),
             Role::Assistant => {
-                if let (Some(q), MessageStatus::Answered) = (question.take(), m.status) {
+                let skip = documents_only && m.grounding == Some(AnswerGrounding::Free);
+                if let (Some(q), MessageStatus::Answered, false) = (question.take(), m.status, skip)
+                {
                     turns.push(HistoryTurn {
                         question: q.to_string(),
                         answer: m.content.clone(),

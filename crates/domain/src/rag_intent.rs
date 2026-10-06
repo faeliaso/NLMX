@@ -46,7 +46,62 @@ const DOCUMENT_WORDS: &[&str] = &[
     "report",
 ];
 
+/// Words that may accompany a bare summary request ("faça um resumo disso, por favor").
+const BARE_FILLERS: &[&str] = &[
+    "isso",
+    "isto",
+    "ele",
+    "ela",
+    "tudo",
+    "me",
+    "mim",
+    "pra",
+    "para",
+    "por",
+    "favor",
+    "faca",
+    "fazer",
+    "um",
+    "uma",
+    "o",
+    "a",
+    "breve",
+    "curto",
+    "rapido",
+    "rapidamente",
+    "disso",
+    "aqui",
+    "this",
+    "it",
+    "please",
+    "a",
+    "an",
+    "short",
+    "brief",
+    "quick",
+    "me",
+];
+
 impl QueryIntent {
+    /// Like `parse`, for a conversation scoped to a single document: a bare request such as
+    /// "resuma" or "faça um resumo disso" can only mean that document.
+    pub fn parse_in_document(question: &str) -> Self {
+        let intent = Self::parse(question);
+        if intent != Self::Regular {
+            return intent;
+        }
+        let text = fold(question);
+        let words: Vec<&str> = text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect();
+        let bare = words.iter().any(|w| OVERVIEW_VERBS.contains(w))
+            && words
+                .iter()
+                .all(|w| OVERVIEW_VERBS.contains(w) || BARE_FILLERS.contains(w));
+        if bare { Self::Overview } else { intent }
+    }
+
     pub fn parse(question: &str) -> Self {
         let text = fold(question);
         if let Some(label) = section_label(&text) {
@@ -180,6 +235,25 @@ mod tests {
         ];
         for (question, intent) in cases {
             assert_eq!(QueryIntent::parse(question), intent, "{question}");
+        }
+    }
+
+    #[test]
+    fn bare_summary_in_a_document_is_an_overview() {
+        for q in ["resuma", "Faça um resumo disso, por favor", "Summarize it"] {
+            assert_eq!(
+                QueryIntent::parse_in_document(q),
+                QueryIntent::Overview,
+                "{q}"
+            );
+            assert_eq!(QueryIntent::parse(q), QueryIntent::Regular, "{q}");
+        }
+        for q in ["Explique a carência", "resuma a seção de prazos"] {
+            assert_eq!(
+                QueryIntent::parse_in_document(q),
+                QueryIntent::parse(q),
+                "{q}"
+            );
         }
     }
 

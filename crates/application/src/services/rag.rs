@@ -219,7 +219,17 @@ impl RagEngine {
         cancel: CancelFlag,
     ) -> Result<RagAnswer, RagError> {
         let question = normalize_query(question);
-        let mut intent = QueryIntent::parse(&question);
+        let single_document = options
+            .retriever
+            .filter
+            .documents
+            .as_ref()
+            .is_some_and(|d| d.len() == 1);
+        let mut intent = if single_document {
+            QueryIntent::parse_in_document(&question)
+        } else {
+            QueryIntent::parse(&question)
+        };
         let mut standalone = question.clone();
         if intent == QueryIntent::Regular && !history.is_empty() {
             standalone = self.rewrite(&question, history).await;
@@ -234,7 +244,16 @@ impl RagEngine {
         };
 
         let selection = match intent {
-            QueryIntent::Regular => self.search(&standalone, options).await?,
+            QueryIntent::Regular => {
+                let found = self.search(&standalone, options).await?;
+                // A rewrite that drifted must not turn an answerable question into "not found".
+                if found.is_err() && standalone != question {
+                    standalone = question.clone();
+                    self.search(&standalone, options).await?
+                } else {
+                    found
+                }
+            }
             QueryIntent::Overview => self.overview(&standalone, options, &budget).await?,
             QueryIntent::Section(label) => self.section(&standalone, &label, options).await?,
         };
