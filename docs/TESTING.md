@@ -75,4 +75,4 @@ The `MetricsRegistry` (`crates/adapters/telemetry`) aggregates the session: coun
   - fields named `text`, `content`, `quote`, `query`, `question`, `answer`, `prompt`, `path`, `file`, `filename`, `title`… become `[redigido]` (redacted);
   - `/Users/`, `/Volumes/`, `/private/`, `/var/folders/`, `/tmp/` paths in messages become `<path>`;
   - free text is cut at 300 characters.
-- The logs of `llama-server` itself (`logs/llama-server.log`) and of `fm serve` (`run/fm-serve.log`) are written by those processes. The real canary verifies that they contain no content.
+- The logs of `llama-server` itself (`logs/llama-server.log`) and of `fm serve` (`run/fm-serve.log`) are written by those processes. There is no automated check that they contain no content: review changes to what is passed to those processes by hand.

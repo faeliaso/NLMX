@@ -68,7 +68,7 @@ Also done, outside the original list: the "Explique este documento." and "seçã
 
 | Category | Requirement | Measured (0.1.0, M4 16 GB) |
 |---|---|---|
-| Privacy | No document data leaves the device; no telemetry | `lsof`: only loopback and the `fm` socket; privacy canary in the tests |
+| Privacy | No document data leaves the device; no telemetry | `lsof`: only loopback and the `fm` socket; no automated privacy test (log changes are reviewed by hand, see `CONTRIBUTING.md`) |
 | Security | No HTTP server on a TCP port (exception: `llama-server` on 127.0.0.1 with a key, ADR 0006); restrictive CSP; minimal capabilities | ✓ |
 | Ingestion | 200-page text PDF indexed in < 60 s | ~16 s (p95, with embeddings) |
 | Search | Hybrid < 300 ms | p50 32 ms · p95 41 ms |

@@ -45,7 +45,7 @@ crates/
 apps/desktop/
   src-tauri/              main, wiring, protocol (nlmx://), commands, tauri.conf.json
   ui/                     askama templates (pages, components), styles (Tailwind 4), scripts (minimal JS)
-tests/                    workspace tests: architecture, E2E, RAG quality, privacy, bench
+tests/                    workspace tests: architecture, model activation, notes, release acceptance
 ```
 
 ## 3. Ports (`crates/application/src/ports.rs`)
