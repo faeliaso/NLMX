@@ -15,9 +15,9 @@ For tests with real models, download the embedding model (`./scripts/fetch-embed
 
 ## Workflow
 
-1. Create a branch from `develop` (`feature/…`, `fix/…`, `docs/…`).
+1. Create a branch from `develop` named `feature/…`.
 2. Make small, focused changes, with tests.
-3. Open the pull request against `develop`. The `main` branch only receives releases.
+3. Open the pull request against `develop`. The `main` branch only receives pull requests from `develop`; CI must pass. See [`docs/CI.md`](docs/CI.md).
 
 Before opening the PR, run:
 

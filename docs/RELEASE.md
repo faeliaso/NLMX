@@ -77,6 +77,10 @@ There is no auto-updater and no network check: the app's only network use remain
 
 Configurações › Sobre (Settings › About) shows the version. With `NLMX_DOWNLOAD_URL=https://…` set at build time, the **Página de downloads** (Downloads page) button also appears.
 
+## Publishing from GitHub
+
+Pushing a `vX.Y.Z` tag builds and publishes the DMG through `.github/workflows/release.yml` — unsigned and not notarized for now. See [CI.md](CI.md).
+
 ## Before publishing
 
 - [ ] `make lint && make test`
