@@ -15,7 +15,7 @@
 
 <div align="center">
 
-![macOS 27+](https://img.shields.io/badge/macOS-27%2B-000000?logo=apple&logoColor=white) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-555555?logo=apple&logoColor=white) ![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-B7410E?logo=rust&logoColor=white) ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white) ![Version 0.3.1](https://img.shields.io/badge/version-0.3.1-blue) ![License MIT](https://img.shields.io/badge/license-MIT-green)
+![macOS 27+](https://img.shields.io/badge/macOS-27%2B-000000?logo=apple&logoColor=white) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-555555?logo=apple&logoColor=white) ![Rust 1.85+](https://img.shields.io/badge/Rust-1.85%2B-B7410E?logo=rust&logoColor=white) ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white) [![Version](https://img.shields.io/github/v/release/faeliaso/NLMX?label=version&color=blue)](https://github.com/faeliaso/NLMX/releases/latest) ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
 </div>
 
