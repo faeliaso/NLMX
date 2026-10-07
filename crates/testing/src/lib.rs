@@ -2207,6 +2207,9 @@ pub async fn conversation_repository_contract(
     let free = repo.create(ConversationScope::Free).await.unwrap();
     assert_eq!(free.scope, ConversationScope::Free);
 
+    // Activity is ordered by millisecond timestamps: make `all`'s activity strictly later than
+    // the creation of the conversations above, or a fast machine ties and the newest id wins.
+    std::thread::sleep(std::time::Duration::from_millis(5));
     let q = repo
         .add_message(
             all.id,
