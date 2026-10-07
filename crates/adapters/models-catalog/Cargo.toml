@@ -1,0 +1,28 @@
+[package]
+name = "nlmx-models-catalog"
+description = "ModelProvider: embedded model catalog, on-demand verified downloads and the local model store."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nlmx-domain.workspace = true
+nlmx-application.workspace = true
+fs4.workspace = true
+# Downloads come from https:// (Hugging Face): TLS via the macOS Security framework and its trust store.
+reqwest = { workspace = true, features = ["native-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

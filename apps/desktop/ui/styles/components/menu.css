@@ -1,0 +1,47 @@
+@layer components {
+  /* Dropdown menu: <div popover class="menu" role="menu"> opened via popovertarget. */
+  .menu {
+    position: fixed;
+    inset: auto;
+    min-width: 12rem;
+    margin: 0;
+    padding: 0.3125rem;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    color: var(--color-fg);
+    box-shadow: var(--shadow-md);
+  }
+  .menu:popover-open { display: grid; gap: 1px; }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 1.5rem;
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+  .menu-item > svg { width: 0.875rem; height: 0.875rem; color: var(--color-fg-muted); }
+  .menu-item:hover, .menu-item:focus-visible {
+    outline: none;
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  .menu-item:hover > svg, .menu-item:focus-visible > svg { color: inherit; }
+  .menu-item[data-destructive] { color: var(--color-danger-fg); }
+  .menu-item[data-destructive]:hover, .menu-item[data-destructive]:focus-visible {
+    background: var(--color-danger-fill);
+    color: var(--color-danger-fill-fg);
+  }
+  .menu-item[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+  .menu-shortcut { margin-left: auto; padding-left: 1.5rem; color: var(--color-fg-muted); font-size: var(--text-footnote); }
+  .menu-item:hover .menu-shortcut, .menu-item:focus-visible .menu-shortcut { color: inherit; opacity: 0.8; }
+  .menu-separator { height: 1px; margin: 0.25rem 0.5rem; background: var(--color-border); }
+  .menu-label { padding: 0.25rem 0.5rem; font-size: var(--text-caption); font-weight: 600; color: var(--color-fg-muted); }
+}

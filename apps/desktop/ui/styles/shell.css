@@ -1,0 +1,271 @@
+/* Application shell: sidebar + main column (header, content, status bar). */
+@layer components {
+  .shell {
+    display: grid;
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    /* One row exactly the window height: content never stretches the shell. */
+    grid-template-rows: minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* Sidebar — the window uses an overlay title bar, so leave room for the traffic lights. */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 2.75rem 0.625rem 0.75rem;
+    background: var(--color-bg-subtle);
+    border-right: 1px solid var(--color-border);
+  }
+  .sidebar-title {
+    padding: 0.5rem 0.625rem 0.25rem;
+    font-size: var(--text-caption);
+    font-weight: 600;
+    color: var(--color-fg-muted);
+  }
+  .nav { display: grid; gap: 1px; }
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 1.75rem;
+    padding: 0 0.625rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-fg);
+    cursor: default;
+  }
+  .nav-link:hover { background: var(--color-surface-hover); text-decoration: none; }
+  .nav-link > svg { width: 1rem; height: 1rem; flex: none; color: var(--color-accent-text); }
+  .nav-link[aria-current="page"] { background: var(--color-accent-soft); font-weight: 500; }
+  .nav-link .nav-shortcut { margin-left: auto; font-size: var(--text-caption); color: var(--color-fg-muted); opacity: 0; }
+  .sidebar:hover .nav-shortcut, .nav-link:focus-visible .nav-shortcut { opacity: 1; }
+  .sidebar-footer { margin-top: auto; }
+
+  /* Main column */
+  .main {
+    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    background: var(--color-bg);
+  }
+  .content { overflow-y: auto; min-height: 0; }
+  /* The chat scrolls its own log so the composer stays pinned to the bottom. */
+  .content:has(> .chat-page) { overflow: hidden; }
+  .content:focus { outline: none; }
+
+  .page { display: flex; flex-direction: column; min-height: 100%; }
+  .page-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 3.25rem;
+    padding: 0.625rem var(--space-page) 0.625rem;
+    background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .page-heading { flex: 1; min-width: 0; }
+  /* One line each: a narrow window ends the text in an ellipsis (the full text is the title attribute). */
+  .page-title { font-size: var(--text-title-2); font-weight: 600; letter-spacing: -0.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-title:focus { outline: none; }
+  .page-description { color: var(--color-fg-muted); font-size: var(--text-footnote); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-actions { display: flex; flex: none; gap: 0.5rem; }
+  .page-body {
+    flex: 1;
+    width: 100%;
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: var(--space-section) var(--space-page);
+    display: grid;
+    /* minmax(0, …): the implicit `auto` column grows to fit nowrap text, which stops truncation. */
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 1.5rem;
+  }
+  .page-body-center { align-content: center; }
+  .section-heading { font-size: var(--text-footnote); font-weight: 600; color: var(--color-fg-muted); margin-bottom: 0.5rem; }
+
+  /* Global loading bar, shown while HTMX requests are in flight (html[data-busy]). */
+  .global-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    height: 2px;
+    opacity: 0;
+    transition: opacity var(--duration-base);
+    pointer-events: none;
+  }
+  .global-loading .progress { height: 2px; border-radius: 0; background: transparent; }
+  html[data-busy] .global-loading { opacity: 1; }
+
+  /* Status bar */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    height: 1.75rem;
+    padding: 0 0.875rem;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-bg-subtle);
+    font-size: var(--text-caption);
+    color: var(--color-fg-muted);
+  }
+  .statusbar-item { display: inline-flex; align-items: center; gap: 0.375rem; }
+  .statusbar-spacer { flex: 1; }
+  .activity-busy { display: none; }
+  html[data-busy] .activity-idle { display: none; }
+  html[data-busy] .activity-busy { display: inline-flex; }
+
+  /* Chat: header, scrolling message log and a composer fixed at the bottom */
+  .chat-page { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+  .chat-page > .page-header { flex: none; }
+  .chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-padding-top: 1rem; }
+  .chat-log-inner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-section);
+    max-width: 48rem;
+    min-height: 100%;
+    margin: 0 auto;
+    padding: var(--space-section) var(--space-page);
+  }
+  .chat-empty { margin: auto 0; }
+  /* Long conversations: turns off screen skip layout and paint. */
+  .chat-turn { display: grid; gap: 0.75rem; min-width: 0; overflow-wrap: anywhere; content-visibility: auto; contain-intrinsic-size: auto 12rem; }
+  .chat-question {
+    justify-self: end;
+    max-width: 80%;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
+    background: var(--color-accent-soft);
+    color: var(--color-fg);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .composer {
+    flex: none;
+    padding: 0.75rem var(--space-page) 0.5rem;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .composer-box {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 0.375rem 0.375rem 0.375rem 0.75rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .composer-box:focus-within { border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--color-focus); }
+  .composer-box .textarea {
+    border: 0;
+    box-shadow: none;
+    padding: 0.25rem 0;
+    min-height: 1.75rem;
+    max-height: 10rem;
+    resize: none;
+    overflow-y: auto;
+    background: transparent;
+  }
+  .composer-box .textarea:focus-visible { box-shadow: none; }
+  .composer-hint { max-width: 48rem; margin: 0.375rem auto 0; font-size: var(--text-caption); color: var(--color-fg-muted); text-align: right; }
+
+  /* Segmented control (e.g. theme picker) */
+  .segmented {
+    display: inline-flex;
+    padding: 2px;
+    gap: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+    box-shadow: inset 0 0 0 0.5px var(--ds-hairline);
+  }
+  .segmented > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.5rem;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: calc(var(--radius-sm) - 2px);
+    background: transparent;
+    color: var(--color-fg);
+    font: inherit;
+  }
+  .segmented > button > svg { width: 0.875rem; height: 0.875rem; }
+  .segmented > button[aria-pressed="true"] { background: var(--color-surface); box-shadow: var(--shadow-sm); font-weight: 500; }
+}
+
+/* Design-system gallery helpers (debug page only). */
+@layer components {
+  .ds-gallery { height: 100vh; overflow-y: auto; }
+  .ds-gallery [id] { scroll-margin-top: 4.5rem; }
+  .ds-stack { display: grid; gap: 0.875rem; }
+  .ds-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+  .ds-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; align-items: start; }
+  .ds-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.5rem; }
+  .ds-swatch { display: flex; align-items: center; gap: 0.5rem; font-size: var(--text-footnote); }
+  .ds-swatch-chip { width: 1.75rem; height: 1.75rem; flex: none; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 0.5px var(--ds-hairline); }
+  .ds-shape {
+    display: grid;
+    place-items: center;
+    width: 6.5rem;
+    height: 4rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    font-size: var(--text-footnote);
+    color: var(--color-fg-muted);
+  }
+}
+
+@layer components {
+  .statusbar-item > svg { width: 0.75rem; height: 0.75rem; flex: none; }
+}
+
+/* Chat search results and model rows */
+@layer components {
+  .search-results { display: grid; gap: 0.75rem; }
+  .search-query { color: var(--color-fg-muted); font-size: var(--text-footnote); }
+  .result-list { display: grid; gap: 0.75rem; list-style: none; padding: 0; margin: 0; }
+  .result { display: grid; gap: 0.5rem; }
+  .result-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; font-size: var(--text-footnote); color: var(--color-fg-muted); }
+  .result-source { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--color-fg); font-weight: 500; }
+  .result-source > svg { width: 0.875rem; height: 0.875rem; color: var(--color-accent-text); }
+  .result-score { margin-left: auto; }
+  .result-text { line-height: 1.55; }
+  .result-text mark { background: var(--color-accent-soft); color: inherit; border-radius: 2px; padding: 0 1px; }
+  .result-badges { display: flex; gap: 0.375rem; }
+  .model-row { align-items: flex-start; }
+  .model-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+  .download-progress { display: grid; gap: 0.25rem; margin-top: 0.5rem; max-width: 28rem; }
+  .download-progress[hidden] { display: none; }
+}
+
+@layer components {
+  .section-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.25rem; }
+  .section-heading-row .section-heading { margin-bottom: 0; }
+  .section-help { margin-bottom: 0.5rem; color: var(--color-fg-muted); font-size: var(--text-footnote); }
+  .section-subheading { margin: 1rem 0 0.375rem; font-size: var(--text-footnote); font-weight: 600; color: var(--color-fg-muted); }
+  .metrics-table {
+    width: 100%;
+    margin-top: 0.75rem;
+    border-collapse: collapse;
+    font-size: var(--text-footnote);
+    font-variant-numeric: tabular-nums;
+  }
+  .metrics-table th, .metrics-table td { padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--color-border); text-align: right; }
+  .metrics-table th:first-child { text-align: left; font-weight: 500; }
+  .metrics-table thead th { color: var(--color-fg-muted); font-weight: 600; }
+}

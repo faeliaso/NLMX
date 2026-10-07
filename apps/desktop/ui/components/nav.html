@@ -1,0 +1,11 @@
+{% import "components/ds.html" as ds %}
+<nav class="nav" id="sidebar-nav" aria-label="Seções"{% if nav.oob %} hx-swap-oob="true"{% endif %}>
+  {%- for item in nav.items %}
+  <a class="nav-link" href="{{ item.path }}" hx-get="{{ item.path }}" hx-target="#content" hx-push-url="true"
+     data-shortcut-index="{{ loop.index }}"{% if item.current %} aria-current="page"{% endif %}>
+    {%- call ds::icon(item.icon) %}{% endcall -%}
+    <span>{{ item.label }}</span>
+    <kbd class="nav-shortcut" aria-hidden="true">⌘{{ loop.index }}</kbd>
+  </a>
+  {%- endfor %}
+</nav>

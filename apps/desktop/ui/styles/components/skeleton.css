@@ -1,0 +1,23 @@
+@layer components {
+  .skeleton {
+    display: block;
+    border-radius: var(--radius-xs);
+    background: linear-gradient(90deg, var(--color-skeleton) 0%, var(--color-skeleton-shine) 50%, var(--color-skeleton) 100%);
+    background-size: 200% 100%;
+    animation: ds-shimmer 1.4s ease-in-out infinite;
+  }
+  .skeleton-line { height: 0.75rem; }
+  .skeleton-title { height: 1rem; width: 40%; }
+  .skeleton-block { height: 5rem; border-radius: var(--radius-md); }
+  .skeleton-circle { width: 2rem; height: 2rem; border-radius: var(--radius-full); }
+  .skeleton-stack { display: grid; gap: 0.5rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton { animation: none; background: var(--color-skeleton); }
+  }
+}
+
+@keyframes ds-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}

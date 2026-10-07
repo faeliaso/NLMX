@@ -1,0 +1,137 @@
+{#- Design-system macros. Import with: {% import "components/ds.html" as ds %} -#}
+
+{#- Icons: static includes selected by name (askama includes are resolved at compile time). -#}
+{% macro icon(name) -%}
+{%- if name == "chat" %}{% include "icons/chat.html" %}
+{%- elif name == "document" %}{% include "icons/document.html" %}
+{%- elif name == "layers" %}{% include "icons/layers.html" %}
+{%- elif name == "cube" %}{% include "icons/cube.html" %}
+{%- elif name == "settings" %}{% include "icons/settings.html" %}
+{%- elif name == "search" %}{% include "icons/search.html" %}
+{%- elif name == "check" %}{% include "icons/check.html" %}
+{%- elif name == "x" %}{% include "icons/x.html" %}
+{%- elif name == "alert" %}{% include "icons/alert.html" %}
+{%- elif name == "alert-circle" %}{% include "icons/alert-circle.html" %}
+{%- elif name == "check-circle" %}{% include "icons/check-circle.html" %}
+{%- elif name == "info" %}{% include "icons/info.html" %}
+{%- elif name == "chevron-down" %}{% include "icons/chevron-down.html" %}
+{%- elif name == "plus" %}{% include "icons/plus.html" %}
+{%- elif name == "more" %}{% include "icons/more.html" %}
+{%- elif name == "sun" %}{% include "icons/sun.html" %}
+{%- elif name == "moon" %}{% include "icons/moon.html" %}
+{%- elif name == "upload" %}{% include "icons/upload.html" %}
+{%- elif name == "send" %}{% include "icons/send.html" %}
+{%- elif name == "trash" %}{% include "icons/trash.html" %}
+{%- elif name == "refresh" %}{% include "icons/refresh.html" %}
+{%- elif name == "copy" %}{% include "icons/copy.html" %}
+{%- elif name == "stop" %}{% include "icons/stop.html" %}
+{%- elif name == "clock" %}{% include "icons/clock.html" %}
+{%- elif name == "chevron-left" %}{% include "icons/chevron-left.html" %}
+{%- elif name == "chevron-right" %}{% include "icons/chevron-right.html" %}
+{%- elif name == "chevron-up" %}{% include "icons/chevron-up.html" %}
+{%- elif name == "minus" %}{% include "icons/minus.html" %}
+{%- elif name == "fit-width" %}{% include "icons/fit-width.html" %}
+{%- elif name == "expand" %}{% include "icons/expand.html" %}
+{%- elif name == "sidebar" %}{% include "icons/sidebar.html" %}
+{%- elif name == "format-pdf" %}{% include "icons/format-pdf.html" %}
+{%- elif name == "format-markdown" %}{% include "icons/format-markdown.html" %}
+{%- elif name == "format-text" %}{% include "icons/format-text.html" %}
+{%- elif name == "format-csv" %}{% include "icons/format-csv.html" %}
+{%- elif name == "format-epub" %}{% include "icons/format-epub.html" %}
+{%- elif name == "format-docx" %}{% include "icons/format-docx.html" %}
+{%- elif name == "format-xlsx" %}{% include "icons/format-xlsx.html" %}
+{%- elif name == "format-note" %}{% include "icons/format-note.html" %}
+{%- endif -%}
+{%- endmacro %}
+
+{#- kind: neutral | accent | success | warning | danger | info -#}
+{% macro badge(text, kind = "neutral", dot = false) -%}
+<span class="badge{% if kind != "neutral" %} badge-{{ kind }}{% endif %}{% if dot %} badge-dot{% endif %}">{{ text }}</span>
+{%- endmacro %}
+
+{#- Alert. danger uses role="alert" (interrupts); others role="status". -#}
+{% macro alert(kind, title, message) -%}
+<div class="alert alert-{{ kind }}" role="{% if kind == "danger" %}alert{% else %}status{% endif %}">
+  {%- if kind == "danger" %}{% call icon("alert-circle") %}{% endcall %}
+  {%- elif kind == "warning" %}{% call icon("alert") %}{% endcall %}
+  {%- elif kind == "success" %}{% call icon("check-circle") %}{% endcall %}
+  {%- else %}{% call icon("info") %}{% endcall %}{% endif %}
+  <div class="alert-content">
+    <p class="alert-title">{{ title }}</p>
+    {% if !message.is_empty() %}<p>{{ message }}</p>{% endif %}
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}
+
+{#- Empty state. The call body holds the actions (may be empty). -#}
+{% macro empty_state(icon_name, title, description) -%}
+<section class="empty" aria-label="{{ title }}">
+  <div class="empty-icon">{% call icon(icon_name) %}{% endcall %}</div>
+  <h2 class="empty-title">{{ title }}</h2>
+  <p class="empty-description">{{ description }}</p>
+  <div class="empty-actions">{{ caller() }}</div>
+</section>
+{%- endmacro %}
+
+{#-
+  Form field. The call body is the control; it must use id="{{ id }}" and
+  aria-describedby="{{ id }}-help {{ id }}-error" (and aria-invalid="true" when error is set).
+-#}
+{% macro field(id, label, help = "", error = "", required = false) -%}
+<div class="field">
+  <label class="field-label" for="{{ id }}"{% if required %} data-required{% endif %}>{{ label }}</label>
+  {{ caller() }}
+  {% if !help.is_empty() %}<p class="field-help" id="{{ id }}-help">{{ help }}</p>{% endif %}
+  {% if !error.is_empty() %}<p class="field-error" id="{{ id }}-error">{% call icon("alert-circle") %}{% endcall %}{{ error }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{#- Determinate progress, value in 0..=100. -#}
+{% macro progress(value, label, kind = "") -%}
+<div class="progress-labelled">
+  <div class="progress-label"><span>{{ label }}</span><span class="tabular">{{ value }}%</span></div>
+  <div class="progress{% if !kind.is_empty() %} progress-{{ kind }}{% endif %}" role="progressbar" aria-label="{{ label }}"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ value }}" aria-valuetext="{{ value }}%">
+    <div class="progress-bar" style="--value: {{ value }}%"></div>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro progress_indeterminate(label) -%}
+<div class="progress" data-indeterminate role="progressbar" aria-label="{{ label }}"><div class="progress-bar"></div></div>
+{%- endmacro %}
+
+{% macro spinner(label, size = "") -%}
+<span class="spinner{% if !size.is_empty() %} spinner-{{ size }}{% endif %}" role="status" aria-label="{{ label }}"></span>
+{%- endmacro %}
+
+{#- Card-shaped skeleton for list/card placeholders. -#}
+{% macro skeleton_card(label = "Carregando…") -%}
+<div class="card card-body skeleton-stack" aria-busy="true">
+  <span class="sr-only">{{ label }}</span>
+  <span class="skeleton skeleton-title"></span>
+  <span class="skeleton skeleton-line"></span>
+  <span class="skeleton skeleton-line" style="width: 80%"></span>
+</div>
+{%- endmacro %}
+
+{#- Modal dialog. Open with a button carrying data-dialog-open="{{ id }}". The call body is the footer. -#}
+{% macro dialog(id, title, description, destructive = false) -%}
+<dialog class="dialog dialog-confirm" id="{{ id }}" aria-labelledby="{{ id }}-title" aria-describedby="{{ id }}-desc">
+  <div class="dialog-body">
+    {% if destructive %}<div class="dialog-icon">{% call icon("alert") %}{% endcall %}</div>{% endif %}
+    <h2 class="dialog-title" id="{{ id }}-title">{{ title }}</h2>
+    <p class="dialog-description" id="{{ id }}-desc">{{ description }}</p>
+  </div>
+  <div class="dialog-footer">{{ caller() }}</div>
+</dialog>
+{%- endmacro %}
+
+{% macro menu_item(label, icon_name = "", shortcut = "", destructive = false) -%}
+<button type="button" class="menu-item" role="menuitem" tabindex="-1"{% if destructive %} data-destructive{% endif %}>
+  {%- if !icon_name.is_empty() %}{% call icon(icon_name) %}{% endcall %}{% endif %}
+  <span>{{ label }}</span>
+  {%- if !shortcut.is_empty() %}<kbd class="menu-shortcut">{{ shortcut }}</kbd>{% endif %}
+</button>
+{%- endmacro %}

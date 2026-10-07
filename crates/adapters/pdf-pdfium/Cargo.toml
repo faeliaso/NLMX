@@ -1,0 +1,21 @@
+[package]
+name = "nlmx-pdf-pdfium"
+description = "DocumentEngine adapter backed by PDFium (pdfium-render)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nlmx-domain.workspace = true
+nlmx-application.workspace = true
+pdfium-render.workspace = true
+image.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

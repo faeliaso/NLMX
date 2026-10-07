@@ -1,0 +1,12 @@
+{
+  "model_id": "qwen3-embedding-0.6b-q8_0",
+  "model_path": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+  "pooling": "last",
+  "query_prefix": "Instruct: Given a question, retrieve passages that answer it\nQuery: ",
+  "passage_prefix": "",
+  "context_size": 8192,
+  "batch_size": 2048,
+  "max_batch_inputs": 32,
+  "gpu_layers": 99,
+  "idle_shutdown_secs": 45
+}

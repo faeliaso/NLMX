@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./components/button.css";
+@import "./components/field.css";
+@import "./components/card.css";
+@import "./components/badge.css";
+@import "./components/menu.css";
+@import "./components/dialog.css";
+@import "./components/fm-setup.css";
+@import "./components/progress.css";
+@import "./components/skeleton.css";
+@import "./components/feedback.css";
+@import "./components/chat.css";
+@import "./components/viewer.css";
+@import "./shell.css";
+
+@source "../pages";
+@source "../components";

@@ -1,0 +1,93 @@
+[workspace]
+resolver = "3"
+members = [
+    "apps/desktop/src-tauri",
+    "crates/domain",
+    "crates/application",
+    "crates/ui-web",
+    "crates/testing",
+    "crates/adapters/*",
+    "tests",
+]
+
+[workspace.package]
+version = "0.3.3"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+nlmx-domain = { path = "crates/domain" }
+nlmx-application = { path = "crates/application" }
+nlmx-ui-web = { path = "crates/ui-web" }
+nlmx-testing = { path = "crates/testing" }
+nlmx-pdf-pdfium = { path = "crates/adapters/pdf-pdfium" }
+nlmx-structure-heuristic = { path = "crates/adapters/structure-heuristic" }
+nlmx-chunker-structural = { path = "crates/adapters/chunker-structural" }
+nlmx-embed-llama = { path = "crates/adapters/embed-llama" }
+nlmx-store-sqlite = { path = "crates/adapters/store-sqlite" }
+nlmx-llm-fm = { path = "crates/adapters/llm-fm" }
+nlmx-models-catalog = { path = "crates/adapters/models-catalog" }
+nlmx-fs-library = { path = "crates/adapters/fs-library" }
+nlmx-telemetry = { path = "crates/adapters/telemetry" }
+nlmx-parser-text = { path = "crates/adapters/parser-text" }
+nlmx-parser-epub = { path = "crates/adapters/parser-epub" }
+nlmx-parser-office = { path = "crates/adapters/parser-office" }
+nlmx-normalizer-text = { path = "crates/adapters/normalizer-text" }
+
+# External
+tauri = { version = "2.12", features = [] }
+tauri-build = { version = "2.7", features = [] }
+tauri-plugin-dialog = "2.8"
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "form", "query", "json"] }
+askama = "0.16"
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+http-body-util = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+cargo_metadata = "0.23"
+rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite_migration = "2.6"
+sqlite-vec = "0.1.9"
+pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_7881", "thread_safe", "image_025"] }
+sha2 = "0.11"
+fs4 = { version = "1.1", features = ["sync"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+csv = "1.4"
+encoding_rs = "0.8"
+encoding_rs_io = "0.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.38"
+unicode-normalization = "0.1"
+
+[workspace.lints.rust]
+# `deny`, not `forbid`: the sqlite-vec FFI registration in store-sqlite/src/vector.rs is the one allowed exception.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.debugging]
+inherits = "dev"
+opt-level = 0
+debug = true
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

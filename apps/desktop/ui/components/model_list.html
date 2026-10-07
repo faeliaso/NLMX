@@ -1,0 +1,71 @@
+{% import "components/ds.html" as ds %}
+{%- match catalog %}
+{%- when None %}
+{% call ds::alert("warning", "Gerenciador de modelos indisponível", "") %}{% endcall %}
+{%- when Some(catalog) %}
+<div class="list" aria-label="Modelos de embeddings">
+  {%- for m in catalog.rows %}
+  <div class="list-row model-row">
+    {% call ds::icon("cube") %}{% endcall %}
+    <div class="list-row-title">
+      <p><span class="selectable">{{ m.name }}</span>{% if m.recommended %} {% call ds::badge("Recomendado", "accent") %}{% endcall %}{% endif %}</p>
+      <p class="list-row-meta">{{ m.description }}</p>
+      <p class="list-row-meta">{{ m.size }} · {{ m.dimensions }} dimensões · <a href="{{ m.license_url }}" target="_blank" rel="noreferrer">{{ m.license_id }}</a></p>
+      <div class="download-progress" data-download-progress="{{ m.id }}" hidden>
+        <div class="progress" role="progressbar" aria-label="Download de {{ m.name }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="progress-bar" style="--value: 0%"></div>
+        </div>
+        <p class="list-row-meta tabular" data-download-label>Iniciando…</p>
+      </div>
+    </div>
+    <div class="model-actions">
+      {% call ds::badge(m.state_label, m.state_kind, true) %}{% endcall %}
+      {%- if m.plan.is_some() %}
+      <button type="button" class="btn btn-primary btn-sm" data-dialog-open="plan-{{ m.id }}" data-download-start="{{ m.id }}">{% if m.plan_is_update %}Atualizar{% else %}Baixar{% endif %}</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-command="cancel_download" data-command-args='{"id":"{{ m.id }}"}' data-download-cancel="{{ m.id }}" hidden>Cancelar</button>
+      {%- endif %}
+      {%- if m.installed && !m.active %}
+      <button type="button" class="btn btn-secondary btn-sm" data-command="activate_model" data-command-args='{"id":"{{ m.id }}"}'>Usar este</button>
+      {%- endif %}
+      {%- if m.installed || m.corrupted %}
+      <button type="button" class="btn btn-ghost btn-sm btn-icon" popovertarget="menu-{{ m.id }}" aria-haspopup="menu" aria-expanded="false" aria-label="Mais ações para {{ m.name }}">{% call ds::icon("more") %}{% endcall %}</button>
+      <div class="menu" id="menu-{{ m.id }}" popover role="menu" aria-label="Ações">
+        {%- if m.installed %}
+        <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-command="verify_model" data-command-args='{"id":"{{ m.id }}"}'>{% call ds::icon("check-circle") %}{% endcall %}<span>Verificar integridade</span></button>
+        {%- endif %}
+        <div class="menu-separator" role="separator"></div>
+        <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="remove-{{ m.id }}">{% call ds::icon("trash") %}{% endcall %}<span>Remover…</span></button>
+      </div>
+      {% call ds::dialog("remove-{}"|format(m.id), "Remover {}?"|format(m.name), "O arquivo do modelo será apagado deste Mac. Os documentos continuam na biblioteca, mas a busca semântica fica indisponível até outro modelo ser instalado.", true) %}
+        <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
+        <button type="button" class="btn btn-destructive" data-dialog-close data-command="remove_model" data-command-args='{"id":"{{ m.id }}"}'>Remover</button>
+      {% endcall %}
+      {%- endif %}
+    </div>
+    {%- if let Some(plan) = m.plan %}
+    <dialog class="dialog" id="plan-{{ m.id }}" aria-labelledby="plan-{{ m.id }}-title">
+      <div class="dialog-body">
+        <h2 class="dialog-title" id="plan-{{ m.id }}-title">{% if m.plan_is_update %}Atualizar{% else %}Baixar{% endif %} {{ m.name }}?</h2>
+        <p class="dialog-description">O arquivo é baixado do Hugging Face uma única vez e fica somente neste Mac. Seus documentos não são enviados.</p>
+        <div class="list" style="margin-top: 0.5rem">
+          <div class="list-row"><span class="list-row-title">Tamanho</span><span class="list-row-meta tabular">{{ plan.size }}</span></div>
+          <div class="list-row"><span class="list-row-title">Licença</span><a class="list-row-meta" href="{{ m.license_url }}" target="_blank" rel="noreferrer">{{ m.license_id }}</a></div>
+          <div class="list-row"><span class="list-row-title">Espaço necessário</span><span class="list-row-meta tabular">{{ plan.required }} ({{ plan.available }} livres)</span></div>
+          {%- if !plan.replaces.is_empty() %}<div class="list-row"><span class="list-row-title">Substitui a versão</span><span class="list-row-meta tabular">{{ plan.replaces }}</span></div>{% endif %}
+        </div>
+        {%- if !plan.resume.is_empty() %}<p class="list-row-meta">{{ plan.resume }}</p>{% endif %}
+        {%- if !plan.fits %}
+        <div style="margin-top: 0.5rem">{% call ds::alert("danger", "Espaço em disco insuficiente", "Libere espaço e tente novamente.") %}{% endcall %}</div>
+        {%- endif %}
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
+        <button type="button" class="btn btn-primary" data-dialog-close data-command="download_model" data-command-args='{"id":"{{ m.id }}"}'{% if !plan.fits %} disabled{% endif %}>Baixar {{ plan.size }}</button>
+      </div>
+    </dialog>
+    {%- endif %}
+  </div>
+  {%- endfor %}
+</div>
+{%- if !catalog.disk.is_empty() %}<p class="list-row-meta" style="margin-top: 0.5rem">{{ catalog.disk }}</p>{% endif %}
+{%- endmatch %}

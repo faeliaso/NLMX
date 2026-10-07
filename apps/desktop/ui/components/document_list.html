@@ -1,0 +1,41 @@
+{% import "components/ds.html" as ds %}
+{%- match library %}
+{%- when Library::Unavailable(reason) %}
+{% call ds::alert("danger", "Biblioteca indisponível", reason) %}{% endcall %}
+{%- when Library::Documents(rows) %}
+{%- if rows.is_empty() %}
+{% call ds::empty_state("document", "Nenhum documento", "Use Importar documentos, no topo da página, para começar (PDF, Markdown, TXT, CSV/TSV, EPUB, DOCX ou XLSX), ou Adicionar nota para colar um texto. Os arquivos são copiados para a biblioteca local e divididos em trechos para a busca.") %}
+{% endcall %}
+{%- else %}
+<ul class="list" aria-label="Documentos">
+  {%- for doc in rows %}
+  <li class="list-row">
+    {% call ds::icon(doc.icon) %}{% endcall %}
+    <div class="list-row-title">
+      <p class="selectable truncate" title="{{ doc.title }}">{{ doc.title }}</p>
+      <p class="list-row-meta flex">{% if !doc.is_note %}<span class="truncate" title="{{ doc.filename }}">{{ doc.filename }}</span>{% endif %}<span class="shrink-0 whitespace-nowrap">{% if !doc.is_note %}&nbsp;· {% endif %}{{ doc.format }}{% if !doc.pages.is_empty() %} · {{ doc.pages }}{% endif %} · {{ doc.chunks }} · {{ doc.imported_on }}</span></p>
+      {%- if !doc.error.is_empty() %}<p class="field-error selectable">{{ doc.error }}</p>{% endif %}
+    </div>
+    {% call ds::badge(doc.status_label, doc.status_kind, true) %}{% endcall %}
+    {%- if doc.viewable %}
+    <a class="btn btn-secondary btn-sm" href="/chat?view={{ doc.id }}" hx-get="/chat?view={{ doc.id }}" hx-target="#content" hx-push-url="true">Abrir</a>
+    {%- elif doc.has_details %}
+    <a class="btn btn-secondary btn-sm" href="/chat?source={{ doc.id }}" hx-get="/chat?source={{ doc.id }}" hx-target="#content" hx-push-url="true">Detalhes</a>
+    {%- endif %}
+    {%- if doc.removable %}
+    <button type="button" class="btn btn-ghost btn-sm btn-icon" popovertarget="doc-menu-{{ doc.id }}" aria-haspopup="menu" aria-expanded="false" aria-label="Mais ações para {{ doc.title }}">{% call ds::icon("more") %}{% endcall %}</button>
+    <div class="menu" id="doc-menu-{{ doc.id }}" popover role="menu" aria-label="Ações">
+      <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="remove-doc-{{ doc.id }}">{% call ds::icon("trash") %}{% endcall %}<span>Remover…</span></button>
+    </div>
+    {% call ds::dialog("remove-doc-{}"|format(doc.id), "Remover “{}”?"|format(doc.title), doc.removal, true) %}
+      <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
+      <button type="button" class="btn btn-destructive" data-dialog-close hx-post="/documents/{{ doc.id }}/delete" hx-target="#content">Remover</button>
+    {% endcall %}
+    {%- else %}
+    <button type="button" class="btn btn-ghost btn-sm btn-icon" disabled title="Disponível quando a leitura do documento terminar" aria-label="Mais ações (indisponível enquanto o documento é processado)">{% call ds::icon("more") %}{% endcall %}</button>
+    {%- endif %}
+  </li>
+  {%- endfor %}
+</ul>
+{%- endif %}
+{%- endmatch %}

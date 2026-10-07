@@ -1,0 +1,36 @@
+@layer components {
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  .card-body { padding: var(--space-card); }
+  .card-header, .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem var(--space-card);
+  }
+  .card-header { border-bottom: 1px solid var(--color-border); }
+  .card-footer { border-top: 1px solid var(--color-border); }
+  .card-title { font-size: var(--text-title-3); font-weight: 600; }
+  .card-subtitle { color: var(--color-fg-muted); font-size: var(--text-footnote); }
+
+  .card-interactive { transition: box-shadow var(--duration-fast), background-color var(--duration-fast); }
+  .card-interactive:hover { background: var(--color-surface-hover); }
+
+  /* Grouped list (macOS inset list) */
+  .list { background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2.5rem;
+    padding: 0.5rem var(--space-card);
+  }
+  .list-row + .list-row { border-top: 1px solid var(--color-border); }
+  .list-row > svg { width: 1rem; height: 1rem; flex: none; color: var(--color-fg-muted); }
+  .list-row-title { flex: 1; min-width: 0; }
+  .list-row-meta { color: var(--color-fg-muted); font-size: var(--text-footnote); }
+}

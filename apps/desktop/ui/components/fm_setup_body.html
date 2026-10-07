@@ -1,0 +1,74 @@
+{% import "components/ds.html" as ds %}
+{%- match stage %}
+{%- when Stage::License %}
+<div class="dialog-body">
+  <div class="dialog-icon dialog-icon-info">{% call ds::icon("cube") %}{% endcall %}</div>
+  <h2 class="dialog-title" id="fm-setup-title">Ative a IA local</h2>
+  <p class="dialog-description" id="fm-setup-desc">O NLMX usa o Apple Foundation Models diretamente no seu Mac. Para começar, é necessária uma autorização única neste Mac.</p>
+  {%- if rechecked %}
+  <div tabindex="-1" data-fm-focus>{% call ds::alert("warning", "A autorização ainda não foi identificada.", "Execute sudo fm license no Terminal e tente novamente.") %}{% endcall %}</div>
+  {%- endif %}
+  <ol class="fm-steps">
+    <li><span class="fm-step-number" aria-hidden="true">1</span><span class="fm-step-text">Abra o Terminal</span></li>
+    <li>
+      <span class="fm-step-number" aria-hidden="true">2</span>
+      <div class="fm-step-text">
+        <span>Execute o comando abaixo</span>
+        <div class="fm-command">
+          <code aria-label="Comando do Terminal">{{ command }}</code>
+          <button type="button" class="btn btn-secondary btn-sm" data-copy-from="fm-license-command" data-copy-message="Comando copiado" aria-label="Copiar comando {{ command }}"{% if !rechecked %} autofocus data-fm-focus{% endif %}>{% call ds::icon("copy") %}{% endcall %}Copiar comando</button>
+          <template id="fm-license-command">{{ command }}</template>
+        </div>
+      </div>
+    </li>
+    <li><span class="fm-step-number" aria-hidden="true">3</span><span class="fm-step-text">Confirme a licença quando solicitado</span></li>
+    <li><span class="fm-step-number" aria-hidden="true">4</span><span class="fm-step-text">Volte ao NLMX e clique em “Verificar novamente”</span></li>
+  </ol>
+  <details class="fm-help">
+    <summary>Não sabe qual senha usar?</summary>
+    <div class="fm-help-body">
+      <p>Use a senha de uma conta administradora deste Mac.</p>
+      <p>Essa é a senha usada para iniciar sessão ou autorizar alterações importantes no sistema. Ela não é necessariamente a senha do seu Apple ID.</p>
+      <p><strong>Ao digitar uma senha no Terminal, nenhum caractere aparece na tela. Isso é normal.</strong></p>
+      <p>Digite a senha somente no Terminal — o NLMX nunca a solicita nem a guarda.</p>
+      <p>Se a sua conta não tiver privilégios administrativos, será necessário que um administrador deste Mac realize essa etapa.</p>
+    </div>
+  </details>
+</div>
+<div class="dialog-footer">
+  <span class="fm-checking" id="fm-checking" role="status">{% call ds::spinner("Verificando autorização", "sm") %}{% endcall %}Verificando autorização…</span>
+  <button type="button" class="btn btn-secondary" data-dialog-close>Agora não</button>
+  <button type="button" class="btn btn-primary" hx-post="/fragments/fm-setup/recheck" hx-target="#fm-setup-body" hx-swap="innerHTML" hx-disabled-elt="this" hx-sync="this:drop" hx-indicator="#fm-checking">Verificar novamente</button>
+</div>
+{%- when Stage::Unavailable { detail, hint } %}
+<div class="dialog-body">
+  <div class="dialog-icon">{% call ds::icon("alert") %}{% endcall %}</div>
+  <h2 class="dialog-title" id="fm-setup-title">Apple Foundation Models indisponível</h2>
+  <p class="dialog-description" id="fm-setup-desc">{{ detail }}</p>
+  {%- if !hint.is_empty() %}<p class="dialog-description">{{ hint }}</p>{% endif %}
+  {%- if rechecked %}<div tabindex="-1" data-fm-focus class="sr-only" role="status">Ainda indisponível.</div>{% endif %}
+</div>
+<div class="dialog-footer">
+  <span class="fm-checking" id="fm-checking" role="status">{% call ds::spinner("Verificando", "sm") %}{% endcall %}Verificando…</span>
+  <button type="button" class="btn btn-secondary" data-dialog-close{% if !rechecked %} autofocus data-fm-focus{% endif %}>Fechar</button>
+  <button type="button" class="btn btn-primary" hx-post="/fragments/fm-setup/recheck" hx-target="#fm-setup-body" hx-swap="innerHTML" hx-disabled-elt="this" hx-sync="this:drop" hx-indicator="#fm-checking">Verificar novamente</button>
+</div>
+{%- when Stage::Problem %}
+<div class="dialog-body">
+  <div class="dialog-icon">{% call ds::icon("alert") %}{% endcall %}</div>
+  <h2 class="dialog-title" id="fm-setup-title">Não foi possível verificar o estado da IA local</h2>
+  <p class="dialog-description" id="fm-setup-desc">Tente novamente.</p>
+  {%- if rechecked %}<div tabindex="-1" data-fm-focus class="sr-only" role="status">Não foi possível verificar o estado da IA local.</div>{% endif %}
+</div>
+<div class="dialog-footer">
+  <span class="fm-checking" id="fm-checking" role="status">{% call ds::spinner("Verificando", "sm") %}{% endcall %}Verificando…</span>
+  <button type="button" class="btn btn-secondary" data-dialog-close>Fechar</button>
+  <button type="button" class="btn btn-primary" hx-post="/fragments/fm-setup/recheck" hx-target="#fm-setup-body" hx-swap="innerHTML" hx-disabled-elt="this" hx-sync="this:drop" hx-indicator="#fm-checking"{% if !rechecked %} autofocus data-fm-focus{% endif %}>Tentar novamente</button>
+</div>
+{%- when Stage::Ready %}
+<div class="dialog-body" data-fm-setup-done tabindex="-1" data-fm-focus>
+  <div class="dialog-icon dialog-icon-success">{% call ds::icon("check-circle") %}{% endcall %}</div>
+  <h2 class="dialog-title" id="fm-setup-title">IA local ativada</h2>
+  <p class="dialog-description" id="fm-setup-desc" role="status">O Apple Foundation Models está pronto para uso.</p>
+</div>
+{%- endmatch %}

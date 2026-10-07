@@ -1,0 +1,5 @@
+<article class="chat-turn" data-chat-turn>
+  <div class="chat-question"><p class="selectable">{{ turn.question }}</p></div>
+  {%- let answer = turn.answer %}
+  {% include "components/chat_answer.html" %}
+</article>
