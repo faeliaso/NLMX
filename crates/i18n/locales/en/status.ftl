@@ -1,0 +1,16 @@
+status-lm-available-label = Available
+status-lm-available-detail = The Apple Intelligence on-device model is ready to generate answers.
+status-lm-license-label = License pending
+status-lm-license-detail = Accept the terms of use once on this Mac by running this in Terminal: sudo fm license
+status-lm-not-installed-label = Not installed
+status-lm-not-installed-detail = NLMX could not find fm on this Mac.
+status-lm-incompatible-label = Incompatible
+status-lm-ai-disabled-label = Apple Intelligence turned off
+status-lm-ai-disabled-detail = Turn on Apple Intelligence in System Settings to generate answers.
+status-lm-device-label = Mac not supported
+status-lm-device-detail = This Mac does not support Apple Intelligence.
+status-lm-preparing-label = Preparing the model
+status-lm-preparing-detail = macOS is still downloading or preparing the model. Try again in a few minutes.
+status-unavailable = Unavailable
+status-database = Database
+status-schema-version = { $current } of { $latest }

@@ -1,5 +1,5 @@
 {% import "components/ds.html" as ds %}
-<nav class="nav" id="sidebar-nav" aria-label="Seções"{% if nav.oob %} hx-swap-oob="true"{% endif %}>
+<nav class="nav" id="sidebar-nav" aria-label="{{ nlmx_i18n::t("nav-sections") }}"{% if nav.oob %} hx-swap-oob="true"{% endif %}>
   {%- for item in nav.items %}
   <a class="nav-link" href="{{ item.path }}" hx-get="{{ item.path }}" hx-target="#content" hx-push-url="true"
      data-shortcut-index="{{ loop.index }}"{% if item.current %} aria-current="page"{% endif %}>

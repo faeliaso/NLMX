@@ -39,6 +39,10 @@ Extraction, indexing, search and answer generation all happen on the device. Doc
 
 It is built for people who work with many documents (standards, contracts, manuals, papers, technical docs) and cannot or do not want to send that content to the cloud.
 
+<p align="center">
+  <img src="docs/images/screenshot.png" width="900" alt="NLMX in a free conversation with the on-device model: the interface is in English and the answers follow the language of each question (Portuguese, Spanish)">
+</p>
+
 ## Why NLMX?
 
 ### The problem

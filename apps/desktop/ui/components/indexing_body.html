@@ -12,7 +12,7 @@
     </div>
     {% call ds::badge(r.label, r.kind, true) %}{% endcall %}
     {%- if let Some(a) = r.action %}
-    <button type="button" class="btn btn-secondary btn-sm" data-command="{{ a.command }}" data-command-args='{"id":{{ a.document_id }}}'{% if running %} disabled title="Disponível quando a indexação em andamento terminar"{% endif %}>{% call ds::icon("refresh") %}{% endcall %}{{ a.label }}</button>
+    <button type="button" class="btn btn-secondary btn-sm" data-command="{{ a.command }}" data-command-args='{"id":{{ a.document_id }}}'{% if running %} disabled title="{{ nlmx_i18n::t("indexing-disabled-while-running") }}"{% endif %}>{% call ds::icon("refresh") %}{% endcall %}{{ a.label }}</button>
     {%- endif %}
   </li>
   {%- endfor %}
@@ -22,34 +22,34 @@
      hx-trigger="{% if let Ok(m) = state %}{% if m.active %}every 2s, {% endif %}{% endif %}indexing-changed from:body, documents-changed from:body, models-changed from:body">
 {%- match state %}
 {%- when Err(reason) %}
-  {% call ds::alert("danger", "Indexação indisponível", reason) %}{% endcall %}
+  {% call ds::alert("danger", nlmx_i18n::t("indexing-unavailable-title"), reason) %}{% endcall %}
 {%- when Ok(m) %}
 {%- if m.empty %}
   <div class="page-body-center">
-  {% call ds::empty_state("layers", "Nenhum documento indexado", "Ao importar documentos, o progresso de cada etapa é exibido aqui.") %}
-    <a class="btn btn-primary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">Ir para Documentos</a>
+  {% call ds::empty_state("layers", nlmx_i18n::t("indexing-empty-title"), nlmx_i18n::t("indexing-empty-description")) %}
+    <a class="btn btn-primary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{{ nlmx_i18n::t("indexing-go-documents") }}</a>
   {% endcall %}
   </div>
 {%- else %}
   <section aria-labelledby="index-heading">
     <div class="section-heading-row">
-      <h2 class="section-heading" id="index-heading">Índice de busca</h2>
+      <h2 class="section-heading" id="index-heading">{{ nlmx_i18n::t("indexing-index-heading") }}</h2>
     </div>
     {%- match m.model %}
     {%- when None %}
     <div style="margin-bottom: 0.75rem">
-      {% call ds::alert("warning", "Busca só por palavras-chave", "Sem um modelo de embeddings, as perguntas usam apenas a busca lexical. Ative um modelo para incluir a busca semântica.") %}
-        <p><a href="/models" hx-get="/models" hx-target="#content" hx-push-url="true">Abrir Modelos</a></p>
+      {% call ds::alert("warning", nlmx_i18n::t("indexing-keyword-only-title"), nlmx_i18n::t("indexing-keyword-only-message")) %}
+        <p><a href="/models" hx-get="/models" hx-target="#content" hx-push-url="true">{{ nlmx_i18n::t("indexing-open-models") }}</a></p>
       {% endcall %}
     </div>
     {%- when Some(_) %}
     {%- endmatch %}
     <div class="list">
       <div class="list-row">
-        <span class="list-row-title">Modelo de embeddings</span>
+        <span class="list-row-title">{{ nlmx_i18n::t("indexing-embedding-model") }}</span>
         {%- match m.model %}
-        {%- when Some(name) %}<span class="list-row-meta selectable">{{ name }}</span>{% call ds::badge("Busca híbrida", "success", true) %}{% endcall %}
-        {%- when None %}<span class="list-row-meta">Nenhum</span>{% call ds::badge("Só palavras-chave", "warning", true) %}{% endcall %}
+        {%- when Some(name) %}<span class="list-row-meta selectable">{{ name }}</span>{% call ds::badge(nlmx_i18n::t("indexing-hybrid"), "success", true) %}{% endcall %}
+        {%- when None %}<span class="list-row-meta">{{ nlmx_i18n::t("indexing-none") }}</span>{% call ds::badge(nlmx_i18n::t("indexing-keyword-only-badge"), "warning", true) %}{% endcall %}
         {%- endmatch %}
       </div>
       {%- for s in m.stats %}
@@ -59,16 +59,16 @@
     {%- if m.embed_pending || m.retry_failed || m.reindex %}
     <div class="flex flex-wrap gap-2" style="margin-top: 0.75rem">
       {%- if m.embed_pending %}
-      <button type="button" class="btn btn-primary btn-sm" data-command="embed_pending_now"{% if m.running %} disabled{% endif %}>Gerar embeddings pendentes</button>
+      <button type="button" class="btn btn-primary btn-sm" data-command="embed_pending_now"{% if m.running %} disabled{% endif %}>{{ nlmx_i18n::t("indexing-embed-pending") }}</button>
       {%- endif %}
       {%- if m.retry_failed %}
-      <button type="button" class="btn btn-secondary btn-sm" data-command="retry_failed"{% if m.running %} disabled{% endif %}>{% call ds::icon("refresh") %}{% endcall %}Tentar novamente as falhas</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-command="retry_failed"{% if m.running %} disabled{% endif %}>{% call ds::icon("refresh") %}{% endcall %}{{ nlmx_i18n::t("indexing-retry-failed") }}</button>
       {%- endif %}
       {%- if m.reindex %}
-      <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="reindex-dialog"{% if m.running %} disabled{% endif %}>Reindexar tudo…</button>
-      {% call ds::dialog("reindex-dialog", "Reindexar todos os documentos?", m.reindex_description) %}
-        <button type="button" class="btn btn-secondary" data-dialog-close autofocus>Cancelar</button>
-        <button type="button" class="btn btn-primary" data-dialog-close data-command="reindex_all">Reindexar</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="reindex-dialog"{% if m.running %} disabled{% endif %}>{{ nlmx_i18n::t("indexing-reindex-all") }}</button>
+      {% call ds::dialog("reindex-dialog", nlmx_i18n::t("indexing-reindex-title"), m.reindex_description) %}
+        <button type="button" class="btn btn-secondary" data-dialog-close autofocus>{{ nlmx_i18n::t("indexing-cancel") }}</button>
+        <button type="button" class="btn btn-primary" data-dialog-close data-command="reindex_all">{{ nlmx_i18n::t("indexing-reindex-confirm") }}</button>
       {% endcall %}
       {%- endif %}
     </div>
@@ -77,15 +77,15 @@
 
   {%- if !m.attention.is_empty() %}
   <section aria-labelledby="attention-heading">
-    <h2 class="section-heading" id="attention-heading">Precisa de atenção</h2>
-    {% call jobs(m.attention.as_slice(), "Precisa de atenção", m.running) %}{% endcall %}
+    <h2 class="section-heading" id="attention-heading">{{ nlmx_i18n::t("indexing-attention-heading") }}</h2>
+    {% call jobs(m.attention.as_slice(), nlmx_i18n::t("indexing-attention-heading"), m.running) %}{% endcall %}
   </section>
   {%- endif %}
 
   {%- if !m.recent.is_empty() %}
   <section aria-labelledby="recent-heading">
-    <h2 class="section-heading" id="recent-heading">Concluídos recentemente</h2>
-    {% call jobs(m.recent.as_slice(), "Concluídos recentemente", m.running) %}{% endcall %}
+    <h2 class="section-heading" id="recent-heading">{{ nlmx_i18n::t("indexing-recent-heading") }}</h2>
+    {% call jobs(m.recent.as_slice(), nlmx_i18n::t("indexing-recent-heading"), m.running) %}{% endcall %}
   </section>
   {%- endif %}
 {%- endif %}

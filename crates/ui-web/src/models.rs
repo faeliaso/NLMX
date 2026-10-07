@@ -8,6 +8,7 @@ use axum::{
 use http::{HeaderMap, StatusCode};
 use nlmx_application::ports::ModelProvider;
 use nlmx_domain::models::{DownloadPlan, ModelState, RuntimeInfo};
+use nlmx_i18n::{Arg, current, format_bytes, t, t_args};
 
 use crate::{
     AppState,
@@ -17,35 +18,45 @@ use crate::{
 };
 
 pub fn bytes(n: u64) -> String {
-    let gb = n as f64 / 1_000_000_000.0;
-    if gb >= 1.0 {
-        format!("{gb:.1} GB")
-    } else {
-        format!("{:.0} MB", n as f64 / 1_000_000.0)
-    }
+    format_bytes(current(), n)
+}
+
+fn s(v: &str) -> Arg {
+    Arg::Str(v.to_string())
 }
 
 pub struct PlanView {
     pub size: String,
-    pub required: String,
-    pub available: String,
     pub fits: bool,
     pub resume: String,
     pub replaces: String,
+    /// "required (available free)".
+    pub space: String,
+    /// The confirm button: "Download 640 MB".
+    pub download_label: String,
 }
 
 impl From<&DownloadPlan> for PlanView {
     fn from(p: &DownloadPlan) -> Self {
         Self {
             size: bytes(p.model.size),
-            required: bytes(p.required_bytes),
-            available: bytes(p.available_bytes),
             fits: p.fits_on_disk(),
             resume: if p.resume_from > 0 {
-                format!("Retoma de {} já baixados.", bytes(p.resume_from))
+                t_args("models-plan-resume", &[("size", s(&bytes(p.resume_from)))])
             } else {
                 String::new()
             },
+            space: t_args(
+                "models-plan-space-value",
+                &[
+                    ("required", s(&bytes(p.required_bytes))),
+                    ("available", s(&bytes(p.available_bytes))),
+                ],
+            ),
+            download_label: t_args(
+                "models-plan-download-size",
+                &[("size", s(&bytes(p.model.size)))],
+            ),
             replaces: p
                 .replaces
                 .clone()
@@ -59,8 +70,6 @@ pub struct ModelRow {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub size: String,
-    pub dimensions: u32,
     pub license_id: String,
     pub license_url: String,
     pub recommended: bool,
@@ -71,6 +80,12 @@ pub struct ModelRow {
     pub corrupted: bool,
     pub plan: Option<PlanView>,
     pub plan_is_update: bool,
+    /// "640 MB · 1024 dimensions".
+    pub size_dimensions: String,
+    pub progress_label: String,
+    pub more_actions_label: String,
+    pub remove_title: String,
+    pub plan_title: String,
 }
 
 pub struct Catalog {
@@ -88,23 +103,27 @@ async fn catalog(models: &dyn ModelProvider) -> Catalog {
             .unwrap_or(ModelState::NotInstalled);
         let is_active = active.as_deref() == Some(m.id.as_str());
         let (state_label, state_kind, installed, corrupted) = match &state {
-            ModelState::NotInstalled => ("Não instalado".to_string(), "neutral", false, false),
+            ModelState::NotInstalled => (t("models-state-not-installed"), "neutral", false, false),
             ModelState::PartiallyDownloaded { bytes: b, total } => (
-                format!("Download parcial ({} de {})", bytes(*b), bytes(*total)),
+                t_args(
+                    "models-state-partial",
+                    &[("done", s(&bytes(*b))), ("total", s(&bytes(*total)))],
+                ),
                 "warning",
                 false,
                 false,
             ),
             ModelState::Installed { .. } if is_active => {
-                ("Em uso".to_string(), "success", true, false)
+                (t("models-state-active"), "success", true, false)
             }
-            ModelState::Installed { .. } => ("Instalado".to_string(), "info", true, false),
-            ModelState::UpdateAvailable { .. } => {
-                ("Atualização disponível".to_string(), "accent", true, false)
-            }
-            ModelState::Corrupted { reason } => {
-                (format!("Corrompido: {reason}"), "danger", false, true)
-            }
+            ModelState::Installed { .. } => (t("models-state-installed"), "info", true, false),
+            ModelState::UpdateAvailable { .. } => (t("models-state-update"), "accent", true, false),
+            ModelState::Corrupted { reason } => (
+                t_args("models-state-corrupted", &[("reason", s(reason))]),
+                "danger",
+                false,
+                true,
+            ),
         };
         let (plan, plan_is_update) = match &state {
             ModelState::UpdateAvailable { .. } => (models.plan_update(&m.id).await.ok(), true),
@@ -115,8 +134,6 @@ async fn catalog(models: &dyn ModelProvider) -> Catalog {
             id: m.id.clone(),
             name: m.display_name.clone(),
             description: m.description.clone(),
-            size: bytes(m.size),
-            dimensions: m.dimensions,
             license_id: m.license.id.clone(),
             license_url: m.license.url.clone(),
             recommended: m.recommended,
@@ -127,16 +144,36 @@ async fn catalog(models: &dyn ModelProvider) -> Catalog {
             corrupted,
             plan: plan.as_ref().map(PlanView::from),
             plan_is_update,
+            size_dimensions: t_args(
+                "models-size-dimensions",
+                &[
+                    ("size", s(&bytes(m.size))),
+                    ("dimensions", s(&m.dimensions.to_string())),
+                ],
+            ),
+            progress_label: t_args("models-progress-aria", &[("name", s(&m.display_name))]),
+            more_actions_label: t_args("models-more-actions", &[("name", s(&m.display_name))]),
+            remove_title: t_args("models-remove-title", &[("name", s(&m.display_name))]),
+            plan_title: if plan_is_update {
+                t_args("models-plan-update-title", &[("name", s(&m.display_name))])
+            } else {
+                t_args(
+                    "models-plan-download-title",
+                    &[("name", s(&m.display_name))],
+                )
+            },
         });
     }
     let disk = models
         .disk()
         .await
         .map(|d| {
-            format!(
-                "{} em modelos · {} livres",
-                bytes(d.models_bytes),
-                bytes(d.available_bytes)
+            t_args(
+                "models-disk",
+                &[
+                    ("models", s(&bytes(d.models_bytes))),
+                    ("available", s(&bytes(d.available_bytes))),
+                ],
             )
         })
         .unwrap_or_default();

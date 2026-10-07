@@ -12,7 +12,10 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use http::{HeaderMap, StatusCode};
-use nlmx_application::use_cases::{ChatError, ChatService, describe_model_status};
+use nlmx_application::{
+    services::rag::context::NOT_FOUND_ANSWER,
+    use_cases::{ChatError, ChatService, describe_model_status},
+};
 use nlmx_domain::{
     chat::{
         AnswerGrounding, Conversation, ConversationScope, ConversationSummary, Message,
@@ -20,6 +23,7 @@ use nlmx_domain::{
     },
     ingestion::DocumentId,
 };
+use nlmx_i18n::{t, t_args, t_count};
 use serde::Deserialize;
 
 use crate::{
@@ -31,8 +35,11 @@ use crate::{
     status::LanguageModelView,
 };
 
-/// Suggestions shown in an empty conversation about the documents.
-const SUGGESTIONS: &[&str] = &["Explique este documento."];
+/// Suggestions shown in an empty conversation about the documents. Each one must be understood
+/// by `domain::rag_intent` in every interface language ("Explique…", "Explain…", "Explica…").
+fn suggestions() -> Vec<String> {
+    vec![t("chat-suggestion-explain")]
+}
 const RECENT_CONVERSATIONS: u32 = 15;
 const QUOTE_PREVIEW_CHARS: usize = 220;
 
@@ -56,6 +63,8 @@ pub struct SourceView {
     pub url: String,
     /// Only a PDF has a preview.
     pub previewable: bool,
+    /// Tooltip of the row: opens the PDF or the source information.
+    pub tooltip: String,
     pub n: u32,
     /// The file's name (the document's title for answers saved before names were kept).
     pub title: String,
@@ -81,6 +90,8 @@ pub struct AnswerView {
     pub error: String,
     pub cited: Vec<SourceView>,
     pub consulted: Vec<SourceView>,
+    /// Summary of the consulted passages ("Trechos encontrados (3)" / "+2 trechos consultados").
+    pub consulted_summary: String,
     pub copy_text: String,
 }
 
@@ -107,10 +118,11 @@ struct ChatPage {
     /// Value of the scope selector: free | all | document id.
     scope_value: String,
     documents: Vec<DocumentOption>,
-    scope_title: String,
     recent: Vec<RecentView>,
     turns: Vec<TurnView>,
-    suggestions: &'static [&'static str],
+    suggestions: Vec<String>,
+    /// Placeholder of the question box.
+    placeholder: String,
     /// Shown when the language model can't answer (license, Apple Intelligence off, ...).
     model_notice: Option<LanguageModelView>,
     /// The viewer, when the page opens with a document (`?view=`).
@@ -150,6 +162,14 @@ fn source_view(message_id: i64, s: &MessageSource) -> SourceView {
     SourceView {
         url: source_url(message_id, s),
         previewable: s.previewable(),
+        tooltip: t_args(
+            if s.previewable() {
+                "chat-source-open-title"
+            } else {
+                "chat-source-info-title"
+            },
+            &[("n", u64::from(s.n).into())],
+        ),
         n: s.n,
         title: if s.document_name.is_empty() {
             s.document_title.clone()
@@ -166,6 +186,20 @@ fn source_view(message_id: i64, s: &MessageSource) -> SourceView {
             String::new()
         },
         preview,
+    }
+}
+
+/// What an answer says: its stored text, except the fixed "not found" sentence, which is
+/// localized when shown.
+fn displayed_content(message: &Message) -> String {
+    let final_answer = !matches!(
+        message.status,
+        MessageStatus::Streaming | MessageStatus::Failed | MessageStatus::Cancelled
+    );
+    if final_answer && message.content.trim() == NOT_FOUND_ANSWER {
+        t("chat-not-found")
+    } else {
+        message.content.clone()
     }
 }
 
@@ -196,8 +230,11 @@ pub fn answer_view(message: &Message) -> AnswerView {
             .find(|r| r.page == p)
             .map(|r| format!("/viewer/{}?page={p}&ref={}-{p}", r.document_id, message.id))
     };
+    // The gate's "not found" answer is stored in Portuguese (also in messages saved before the
+    // interface was translated); it is shown in the interface language, the stored text stays.
+    let content = displayed_content(message);
     let html = markdown::render(
-        &message.content,
+        &content,
         &Citations {
             source: &source,
             page: &page,
@@ -206,9 +243,9 @@ pub fn answer_view(message: &Message) -> AnswerView {
     let (cited, consulted): (Vec<&MessageSource>, Vec<&MessageSource>) =
         message.sources.iter().partition(|s| s.cited);
     // The raw Markdown, not the rendered HTML or a stripped version.
-    let mut copy_text = message.content.trim().to_string();
+    let mut copy_text = content.trim().to_string();
     if !cited.is_empty() {
-        copy_text.push_str("\n\nFontes:\n");
+        copy_text.push_str(&format!("\n\n{}\n", t("chat-copy-sources-heading")));
         for s in &cited {
             copy_text.push_str(&format!("[{}] {}\n", s.n, s.label));
         }
@@ -222,6 +259,14 @@ pub fn answer_view(message: &Message) -> AnswerView {
         html,
         error: message.error.clone().unwrap_or_default(),
         cited: cited.iter().map(|s| source_view(message.id, s)).collect(),
+        consulted_summary: t_count(
+            if cited.is_empty() {
+                "chat-passages-found"
+            } else {
+                "chat-passages-consulted"
+            },
+            consulted.len() as i64,
+        ),
         consulted: consulted
             .iter()
             .map(|s| source_view(message.id, s))
@@ -248,7 +293,7 @@ fn turns(messages: &[Message]) -> Vec<TurnView> {
 fn chat_service(state: &AppState) -> Result<&Arc<ChatService>, UiError> {
     state.chat.as_ref().map_err(|reason| UiError {
         status: StatusCode::SERVICE_UNAVAILABLE,
-        title: "Chat indisponível".into(),
+        title: t("chat-unavailable-title"),
         message: reason.clone(),
     })
 }
@@ -259,7 +304,7 @@ fn ui_error(e: ChatError) -> UiError {
         ChatError::EmptyQuestion | ChatError::NotPending | ChatError::NotAnswerableFreely => {
             UiError {
                 status: StatusCode::UNPROCESSABLE_ENTITY,
-                title: "Não foi possível enviar".into(),
+                title: t("chat-send-failed-title"),
                 message: e.to_string(),
             }
         }
@@ -342,7 +387,7 @@ async fn render_page(
         .filter(|c: &ConversationSummary| c.messages > 0 || c.id == conversation.id)
         .map(|c| RecentView {
             current: c.id == conversation.id,
-            title: c.title.unwrap_or_else(|| "Nova conversa".into()),
+            title: c.title.unwrap_or_else(|| t("chat-new-conversation")),
             id: c.id,
         })
         .collect();
@@ -355,26 +400,34 @@ async fn render_page(
     let scope_title = documents
         .iter()
         .find(|d| d.selected)
-        .map_or_else(|| "Todos os documentos".to_string(), |d| d.title.clone());
+        .map_or_else(|| t("chat-scope-all"), |d| d.title.clone());
     let scope_value = match conversation.scope {
         ConversationScope::Free => "free".to_string(),
         ConversationScope::Library => "all".to_string(),
         ConversationScope::Document(id) => id.to_string(),
+    };
+    let placeholder = match conversation.scope {
+        ConversationScope::Free => t("chat-placeholder-free"),
+        ConversationScope::Library => t("chat-placeholder-library"),
+        ConversationScope::Document(_) => t_args(
+            "chat-placeholder-scope",
+            &[("scope", scope_title.as_str().into())],
+        ),
     };
     Ok(ChatPage {
         conversation_id: conversation.id,
         title: conversation
             .title
             .clone()
-            .unwrap_or_else(|| "Nova conversa".into()),
+            .unwrap_or_else(|| t("chat-new-conversation")),
         free: conversation.scope == ConversationScope::Free,
         library: conversation.scope == ConversationScope::Library,
         scope_value,
         documents,
-        scope_title,
         recent,
         turns: turns(&messages),
-        suggestions: SUGGESTIONS,
+        suggestions: suggestions(),
+        placeholder,
         model_notice,
         viewer_html: match panel {
             Panel::Viewer(document) => {
@@ -577,6 +630,7 @@ pub async fn answer_freely(State(state): State<AppState>, Path(id): Path<i64>) -
 #[cfg(test)]
 mod tests {
     use nlmx_domain::chat::{ConversationId, MessageId};
+    use nlmx_i18n::{Locale, tr};
 
     use super::*;
 
@@ -602,6 +656,22 @@ mod tests {
         assert_eq!(view.copy_text, md);
         assert!(view.html.contains("<strong>Arquitetura</strong>"));
         assert!(!view.copy_text.contains('<'));
+    }
+
+    #[test]
+    fn the_stored_not_found_sentence_is_shown_in_the_interface_language() {
+        // The pt-BR catalog keeps the sentinel's wording, so saved messages read the same.
+        assert_eq!(tr(Locale::PtBr, "chat-not-found"), NOT_FOUND_ANSWER);
+        let mut message = assistant(NOT_FOUND_ANSWER, MessageStatus::NotFound);
+        message.grounding = Some(AnswerGrounding::Documents);
+        let view = answer_view(&message);
+        let shown = t("chat-not-found");
+        assert!(view.html.contains(&shown));
+        assert_eq!(view.copy_text, shown);
+        assert!(view.answerable_freely);
+        // Other text is never replaced.
+        message.content = "Resposta qualquer.".into();
+        assert!(answer_view(&message).html.contains("Resposta qualquer."));
     }
 
     #[test]

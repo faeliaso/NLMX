@@ -237,3 +237,7 @@ Each one is a new adapter, with no change in `application`:
 | `fm serve` | llama.cpp generator, opt-in remote provider |
 | HTMX/Tailwind | another UI (only `ui-web`) |
 | Tauri | another shell (only `src-tauri`) |
+
+## Interface language
+
+`crates/i18n` holds the Fluent catalogs (pt-BR, en, es), locale normalization and resolution (saved choice → macOS language → English) and locale-aware number/size formatting. `ui-web` resolves the saved/system language before the first request (`language.rs`, setting `ui.language` in `app_settings`), renders text through `nlmx_i18n::t*`, and switches live through `POST /settings/language`. The answer language of the model is independent (`ResponseLanguage::Auto`). See ADR 0022.

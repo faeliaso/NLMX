@@ -1,15 +1,15 @@
 {% import "components/ds.html" as ds %}
 {#- Information about a source of any format: what it is and how it was indexed. A PDF also has a
     preview (the viewer); no other format does, so nothing here shows the file's content. -#}
-<section class="source-info" data-source-info data-document="{{ id }}" aria-label="Informações da fonte">
+<section class="source-info" data-source-info data-document="{{ id }}" aria-label="{{ nlmx_i18n::t("sources-info-title") }}">
   <header class="source-info-header">
     <span class="source-info-icon">{% call ds::icon(icon) %}{% endcall %}</span>
     <div class="viewer-heading">
       <h2 class="viewer-title" tabindex="-1" data-panel-title title="{{ title }}">{{ title }}</h2>
-      <p class="viewer-origin">Informações da fonte{% if !origin.is_empty() %} · {{ origin }}{% endif %}</p>
+      <p class="viewer-origin">{{ nlmx_i18n::t("sources-info-title") }}{% if !origin.is_empty() %} · {{ origin }}{% endif %}</p>
       <p class="source-info-kind">{{ description }}</p>
     </div>
-    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-close-panel aria-label="Fechar informações da fonte" title="Fechar">{% call ds::icon("x") %}{% endcall %}</button>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-close-panel aria-label="{{ nlmx_i18n::t("sources-close-aria") }}" title="{{ nlmx_i18n::t("common-close") }}">{% call ds::icon("x") %}{% endcall %}</button>
   </header>
   <div class="source-info-body">
     <div class="source-info-badges">
@@ -19,22 +19,22 @@
     {%- if !error.is_empty() %}<p class="field-error selectable">{{ error }}</p>{% endif %}
     {%- if let Some(c) = cited %}
     <div class="source-info-cited">
-      <p class="source-info-cited-label">Trecho citado · {{ c.location }}</p>
+      <p class="source-info-cited-label">{{ c.label }}</p>
       <blockquote class="source-info-quote selectable">{{ c.quote }}</blockquote>
     </div>
     {%- endif %}
     <dl class="source-info-list">
-      {%- if !is_note %}<div><dt>Arquivo</dt><dd class="selectable">{{ file_name }}</dd></div>{% endif %}
-      <div><dt>Trechos</dt><dd class="tabular">{{ chunks }}</dd></div>
-      {%- if let Some(p) = pages %}<div><dt>Páginas</dt><dd class="tabular">{{ p }}</dd></div>{% endif %}
-      {%- if let Some(n) = sheets %}<div><dt>Planilhas</dt><dd class="tabular">{{ n }}</dd></div>{% endif %}
-      {%- if !is_note %}<div><dt>Tamanho</dt><dd class="tabular">{{ size }}</dd></div>{% endif %}
-      <div><dt>Importado em</dt><dd class="tabular">{{ imported_on }}</dd></div>
-      <div><dt>Indexado em</dt><dd class="tabular">{% if let Some(d) = indexed_on %}{{ d }}{% else %}—{% endif %}</dd></div>
-      <div><dt>Usado em</dt><dd>{{ used_in }}</dd></div>
+      {%- if !is_note %}<div><dt>{{ nlmx_i18n::t("sources-file") }}</dt><dd class="selectable">{{ file_name }}</dd></div>{% endif %}
+      <div><dt>{{ nlmx_i18n::t("sources-chunks") }}</dt><dd class="tabular">{{ chunks }}</dd></div>
+      {%- if let Some(p) = pages %}<div><dt>{{ nlmx_i18n::t("sources-pages") }}</dt><dd class="tabular">{{ p }}</dd></div>{% endif %}
+      {%- if let Some(n) = sheets %}<div><dt>{{ nlmx_i18n::t("sources-sheets") }}</dt><dd class="tabular">{{ n }}</dd></div>{% endif %}
+      {%- if !is_note %}<div><dt>{{ nlmx_i18n::t("sources-size") }}</dt><dd class="tabular">{{ size }}</dd></div>{% endif %}
+      <div><dt>{{ nlmx_i18n::t("sources-imported") }}</dt><dd class="tabular">{{ imported_on }}</dd></div>
+      <div><dt>{{ nlmx_i18n::t("sources-indexed") }}</dt><dd class="tabular">{% if let Some(d) = indexed_on %}{{ d }}{% else %}—{% endif %}</dd></div>
+      <div><dt>{{ nlmx_i18n::t("sources-used-in") }}</dt><dd>{{ used_in }}</dd></div>
     </dl>
     {%- if previewable %}
-    <a class="btn btn-secondary btn-sm source-info-open" href="/chat?view={{ id }}" hx-get="/viewer/{{ id }}" hx-target="#viewer">{% call ds::icon("document") %}{% endcall %}Abrir no PDF</a>
+    <a class="btn btn-secondary btn-sm source-info-open" href="/chat?view={{ id }}" hx-get="/viewer/{{ id }}" hx-target="#viewer">{% call ds::icon("document") %}{% endcall %}{{ nlmx_i18n::t("sources-open-pdf") }}</a>
     {%- endif %}
   </div>
 </section>

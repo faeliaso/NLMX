@@ -365,6 +365,7 @@ async fn installed_app_end_to_end() {
         models: None,
         indexing: Err("indexação indisponível neste teste".into()),
         notes: None,
+        language: nlmx_ui_web::LanguageSettings::ephemeral(vec!["pt-BR".into()]),
     });
     let last = chat
         .messages(conversation.id)

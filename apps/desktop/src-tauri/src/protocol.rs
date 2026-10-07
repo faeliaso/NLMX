@@ -74,7 +74,7 @@ fn internal_error() -> Response<Vec<u8>> {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
         .header(CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(nlmx_ui_web::FALLBACK_ERROR_HTML.as_bytes().to_vec())
+        .body(nlmx_ui_web::fallback_error_html().into_bytes())
         .expect("valid error response")
 }
 
@@ -109,6 +109,7 @@ mod tests {
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
             notes: None,
+            language: nlmx_ui_web::LanguageSettings::ephemeral(vec!["pt-BR".into()]),
         })
     }
 
