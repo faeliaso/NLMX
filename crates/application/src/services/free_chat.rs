@@ -5,7 +5,7 @@
 use std::{sync::Arc, time::Instant};
 
 use nlmx_domain::{
-    generation::{ChatTurn, FinishReason, GenerationRequest, LlmError},
+    generation::{ChatTurn, FinishReason, GenerationRequest, GenerationUsage, LlmError},
     rag_intent::QueryIntent,
     retrieval::normalize_query,
     telemetry::Measurement,
@@ -82,8 +82,9 @@ impl FreeChat {
             first_token.get_or_init(|| ms(started));
             on_token(text);
         };
+        let usage: std::sync::OnceLock<GenerationUsage> = std::sync::OnceLock::new();
         let result = self
-            .generate(&question, history, options, &timed, cancel)
+            .generate(&question, history, options, &timed, cancel, &usage)
             .await;
         match &result {
             Ok((answer, prompt_tokens)) => record(&Measurement::Generated {
@@ -98,6 +99,9 @@ impl FreeChat {
                 first_token_ms: first_token.get().copied(),
                 output_chars: answer.answer.chars().count() as u32,
                 total_ms: ms(started),
+                turn: history.len() as u32 + 1,
+                reported_prompt_tokens: usage.get().map(|u| u.prompt_tokens),
+                completion_tokens: usage.get().map(|u| u.completion_tokens),
             }),
             Err(e) => record(&Measurement::GenerationFailed {
                 kind: failure_kind(e),
@@ -114,6 +118,7 @@ impl FreeChat {
         options: &RagOptions,
         on_token: &(dyn Fn(&str) + Send + Sync),
         cancel: CancelFlag,
+        usage: &std::sync::OnceLock<GenerationUsage>,
     ) -> Result<(FreeAnswer, u32), RagError> {
         let status = self.llm.status().await;
         if !status.is_available() {
@@ -166,6 +171,9 @@ impl FreeChat {
             }
             Err(e) => return Err(RagError::Generation(e)),
         };
+        if let Some(measured) = generation.usage {
+            let _ = usage.set(measured);
+        }
         let status = match generation.finish {
             FinishReason::Cancelled => AnswerStatus::Cancelled,
             FinishReason::Length => {

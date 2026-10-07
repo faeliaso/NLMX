@@ -21,7 +21,8 @@ use nlmx_domain::{
         RenderedPage, TextSpan,
     },
     generation::{
-        FinishReason, Generation, GenerationRequest, LanguageModelStatus, LlmCapabilities, LlmError,
+        FinishReason, Generation, GenerationRequest, GenerationUsage, LanguageModelStatus,
+        LlmCapabilities, LlmError,
     },
 };
 
@@ -35,6 +36,8 @@ pub struct FakeLlmProvider {
     token_counts: Mutex<Vec<u32>>,
     /// Cancel after this many streamed pieces.
     cancel_after: Option<usize>,
+    /// What a completed generation reports as its usage (none by default).
+    usage: Option<GenerationUsage>,
     requests: Mutex<Vec<GenerationRequest>>,
     counted: Mutex<usize>,
 }
@@ -48,6 +51,7 @@ impl FakeLlmProvider {
             answer: Ok(String::new()),
             token_counts: Mutex::new(Vec::new()),
             cancel_after: None,
+            usage: None,
             requests: Mutex::new(Vec::new()),
             counted: Mutex::new(0),
         }
@@ -75,6 +79,12 @@ impl FakeLlmProvider {
     /// Successive `count_tokens` results (then back to the estimate).
     pub fn token_counts(self, counts: Vec<u32>) -> Self {
         *self.token_counts.lock().unwrap() = counts;
+        self
+    }
+
+    /// Completed generations report this usage (a cancelled one never does).
+    pub fn reporting(mut self, usage: GenerationUsage) -> Self {
+        self.usage = Some(usage);
         self
     }
 
@@ -150,17 +160,14 @@ impl LlmProvider for FakeLlmProvider {
                     cancel.cancel();
                 }
                 if cancel.is_cancelled() {
-                    return Ok(Generation {
-                        text,
-                        finish: FinishReason::Cancelled,
-                    });
+                    return Ok(Generation::new(text, FinishReason::Cancelled));
                 }
                 on_token(piece);
                 text.push_str(piece);
             }
             Ok(Generation {
-                text,
-                finish: FinishReason::Completed,
+                usage: self.usage,
+                ..Generation::new(text, FinishReason::Completed)
             })
         })
     }

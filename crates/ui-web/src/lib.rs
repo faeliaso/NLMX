@@ -23,6 +23,7 @@ mod sections;
 mod shell;
 mod sources;
 mod status;
+mod token_usage;
 mod viewer;
 
 use std::sync::Arc;
@@ -95,6 +96,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(sections::settings))
         .route("/settings/language", post(language::set))
         .route("/fragments/status", get(status::fragment))
+        .route("/fragments/token-usage", get(token_usage::fragment))
         .route("/fragments/fm-setup", get(fm_setup::fragment))
         .route("/fragments/fm-setup/recheck", post(fm_setup::recheck))
         .route("/fragments/documents", get(sections::documents_fragment))

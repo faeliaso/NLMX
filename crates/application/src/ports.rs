@@ -17,7 +17,10 @@ use nlmx_domain::{
         RenderedPage, TextSpan,
     },
     document_type::DocumentType,
-    generation::{Generation, GenerationRequest, LanguageModelStatus, LlmCapabilities, LlmError},
+    generation::{
+        Generation, GenerationRequest, LanguageModelStatus, LastGeneration, LlmCapabilities,
+        LlmError,
+    },
     parsed::{
         ChunkContext, ChunkMetadata as ParsedChunkMetadata, DocumentChunk,
         DocumentMetadata as ParsedMetadata, ParseError, ParsedDocument, SectionKind,
@@ -824,6 +827,8 @@ pub struct DiagnosticsSnapshot {
     pub embeddings: u64,
     pub embeddings_per_second: Option<f64>,
     pub first_token_p50_ms: Option<u64>,
+    /// The latest generation whose tokens could be counted (session only).
+    pub last_generation: Option<LastGeneration>,
     pub resources: Option<ResourceUsage>,
     pub storage: Option<StorageUsage>,
 }

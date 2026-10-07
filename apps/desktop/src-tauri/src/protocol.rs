@@ -94,6 +94,13 @@ mod tests {
     }
 
     fn router_with(llm: Arc<FakeLlmProvider>) -> Router {
+        router_diagnosed(llm, None)
+    }
+
+    fn router_diagnosed(
+        llm: Arc<FakeLlmProvider>,
+        diagnostics: Option<Arc<dyn nlmx_application::ports::Diagnostics>>,
+    ) -> Router {
         nlmx_ui_web::router(AppState {
             system_status: Arc::new(GetSystemStatus::new(
                 llm,
@@ -105,7 +112,7 @@ mod tests {
             chat: Err("não usado neste teste".into()),
             viewer: Err("não usado neste teste".into()),
             remover: Err("remoção indisponível neste teste".into()),
-            diagnostics: None,
+            diagnostics,
             models: None,
             indexing: Err("indexação indisponível neste teste".into()),
             notes: None,
@@ -121,6 +128,83 @@ mod tests {
         let response = dispatch(router(), request).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(String::from_utf8_lossy(response.body()).contains("Disponível"));
+    }
+
+    /// A session whose latest answer (turn 1) used 101 prompt tokens and produced 19.
+    struct CountedSession;
+
+    impl nlmx_application::ports::Diagnostics for CountedSession {
+        fn snapshot(&self) -> nlmx_application::ports::DiagnosticsSnapshot {
+            nlmx_application::ports::DiagnosticsSnapshot {
+                last_generation: Some(nlmx_domain::generation::LastGeneration {
+                    turn: 1,
+                    usage: nlmx_domain::generation::GenerationUsage {
+                        prompt_tokens: 101,
+                        completion_tokens: 19,
+                    },
+                }),
+                ..Default::default()
+            }
+        }
+
+        fn sample(&self) -> nlmx_application::ports::BoxFuture<'_, ()> {
+            Box::pin(async {})
+        }
+    }
+
+    const USAGE: &str = "/fragments/token-usage";
+
+    #[tokio::test]
+    async fn usage_is_a_dash_before_the_first_answer() {
+        let html = body_of(&router(), "GET", USAGE).await;
+        assert!(html.contains("data-usage=\"idle\""), "{html}");
+        assert!(html.contains(">—<"), "{html}");
+        assert!(!html.contains("8.192"), "{html}");
+        assert!(html.contains("Contado pelo modelo neste Mac"), "{html}");
+    }
+
+    #[tokio::test]
+    async fn usage_fragment_is_never_cached() {
+        let request = Request::get("nlmx://localhost/fragments/token-usage")
+            .body(Vec::new())
+            .unwrap();
+        let response = dispatch(router(), request).await;
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+
+    #[tokio::test]
+    async fn usage_is_calculating_while_an_answer_is_generated() {
+        let counted = router_diagnosed(
+            Arc::new(FakeLlmProvider::available()),
+            Some(Arc::new(CountedSession)),
+        );
+        let html = body_of(&counted, "GET", &format!("{USAGE}?busy=1")).await;
+        assert!(html.contains("data-usage=\"calculating\""), "{html}");
+        assert!(html.contains("Calculando…"), "{html}");
+        assert!(!html.contains("101"), "no stale counts: {html}");
+    }
+
+    #[tokio::test]
+    async fn usage_shows_the_counts_of_the_last_answer() {
+        let counted = router_diagnosed(
+            Arc::new(FakeLlmProvider::available()),
+            Some(Arc::new(CountedSession)),
+        );
+        let html = body_of(&counted, "GET", USAGE).await;
+        assert!(html.contains("data-usage=\"counted\""), "{html}");
+        assert!(
+            html.contains("system · turno 1 · ↑ 101 · ↓ 19 · 120 / 8.192 (1% usado)"),
+            "{html}"
+        );
+        assert!(html.contains("Uso de tokens da última resposta"), "{html}");
+    }
+
+    #[tokio::test]
+    async fn the_status_bar_hosts_the_usage_before_the_model_status() {
+        let html = body_of(&router(), "GET", "/settings").await;
+        let usage = html.find("id=\"token-usage\"").expect("usage slot");
+        let model = html.find("id=\"system-status\"").expect("model slot");
+        assert!(usage < model);
     }
 
     async fn body_of(router: &Router, method: &str, path: &str) -> String {

@@ -157,10 +157,10 @@ done ─► GET /chat/messages/{id} (final HTML)      cancel_answer ─► Cance
 `RagEngine::ask` (`application::services::rag`):
 
 1. **Intent** (`domain::rag_intent`): ordinary question → search; "Explique este documento." → `Overview` (first passage of each section of the document in scope); "seção N" (section N) → `Section(N)` (passages of the section and its subsections, complemented by search; with no matching heading, regular search). With history, the follow-up is rewritten as a standalone question by a short LLM call.
-2. **Retriever** + **relevance gate**: best score < `min_relevance` (0.35) ⇒ `NotFound` **without calling the model**, showing the best passages. (Overview and Section skip the gate.)
-3. **`ContextBuilder`** (`rag/context.rs`, pure): budget = min(1,800, 4,096 window − instructions − question − 700 answer reserve − 10% margin); passages numbered in `<trecho>` blocks, documents by relevance and pages in order; duplicates and contained passages dropped.
+2. **Retriever** + **relevance gate**: best score < `min_relevance` (0.28) ⇒ `NotFound` **without calling the model**, showing the best passages. (Overview and Section skip the gate.)
+3. **`ContextBuilder`** (`rag/context.rs`, pure): budget = min(3,500, 8,192 window − instructions − question − 700 answer reserve − 10% margin); passages numbered in `<trecho>` blocks, documents by relevance and pages in order; duplicates and contained passages dropped.
 4. **Isolation**: fixed instructions only in `system`; document text and question only in `user`, passed through `context::neutralize` (`<`/`>` → `‹`/`›`, no control characters).
-5. **Exact count** with `count_tokens` (`fm count-tokens`); above the limit, it removes the weakest passage and recomputes. `fm serve` does not reject a long prompt — it degenerates — so the limit is enforced here.
+5. **Exact count** with `count_tokens` (`fm count-tokens`); above the limit, it removes the weakest passage and recomputes. `fm serve` fails a prompt above the window with HTTP 500 ("transcript exceeded the model's context size"), so the limit is enforced here before calling it.
 6. **Generation** with streaming; guardrail refusal ⇒ `Refused` with the passages.
 7. **`CitationEngine`** (`rag/citations.rs`, pure): `[n]`, `[1, 3]`, `[2–3]` → document/chunk/pages/bboxes; invalid numbers removed; `[página N]` (page N) resolved to the source that covers the page. All the sources sent are kept in `citations` (`cited` marks the cited ones); page references in `message_page_refs`.
 

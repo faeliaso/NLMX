@@ -20,7 +20,7 @@ FoundationModels is a Swift API. Integrating it would require a Swift↔Rust bri
 - Requires child process management (lazy start, health check, restart with backoff, shutdown, orphan cleanup).
 
 ## Implementation notes (2026-10-02)
-- `fm serve` always responds in SSE (even without `"stream": true`), with no `usage`; guardrail refusals arrive as `event: error` in the middle of the stream with HTTP 200.
-- A prompt above the window (4096 tokens) does not raise an error: the model produces degenerate output. The app enforces the limit with `fm count-tokens`.
+- `fm serve` always responds in SSE (even without `"stream": true`), with `usage` (`prompt_tokens`, `completion_tokens`) only when the request sets `stream_options.include_usage`; guardrail refusals arrive as `event: error` in the middle of the stream with HTTP 200.
+- A prompt above the window does not degenerate silently on the current macOS: it fails with HTTP 500 "transcript exceeded the model's context size" (measured 2026-10-07: the window is 8,192 tokens; earlier notes said 4,096 and degenerate output). The app still enforces the limit with `fm count-tokens`.
 - Implemented as `FoundationModelsProvider` (`crates/adapters/llm-fm`): compatibility (macOS 27+, native Apple Silicon, `fm` present) is checked first; status is classified (`Incompatible`, `LicenseRequired`, `Unavailable{AppleIntelligenceDisabled | DeviceNotEligible | ModelNotReady | Other}`) with a 30 s cache; **`fm respond --stream` fallback** (instructions in `-i`) when `fm serve` fails to start or drops before answering — `fm respond` writes plain text to stdout and, on a guardrail refusal, exits with code 1 and "Error: …guardrails…" on stderr.
 - Swift/Objective-C remain unnecessary: `fm` covers availability, counting, separate instructions, streaming and cancellation.

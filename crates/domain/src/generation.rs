@@ -126,6 +126,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn usage_adds_the_prompt_and_the_answer() {
+        let usage = GenerationUsage {
+            prompt_tokens: 101,
+            completion_tokens: 19,
+        };
+        assert_eq!(usage.total(), 120);
+        assert!((usage.context_ratio() - 120.0 / 8192.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn usage_does_not_overflow_with_extreme_values() {
+        let usage = GenerationUsage {
+            prompt_tokens: u32::MAX,
+            completion_tokens: u32::MAX,
+        };
+        assert_eq!(usage.total(), u64::from(u32::MAX) * 2);
+        assert!(usage.context_ratio().is_finite());
+    }
+
+    #[test]
     fn flat_user_writes_the_history_before_the_message() {
         let mut request = GenerationRequest {
             system: "s".into(),
@@ -158,6 +178,50 @@ pub enum FinishReason {
 pub struct Generation {
     pub text: String,
     pub finish: FinishReason,
+    /// Token counts of the generation; `None` when cancelled or when they are unavailable.
+    pub usage: Option<GenerationUsage>,
+}
+
+impl Generation {
+    pub fn new(text: String, finish: FinishReason) -> Self {
+        Self {
+            text,
+            finish,
+            usage: None,
+        }
+    }
+}
+
+/// The on-device model's context window, measured on `fm serve` (prompts of ~8.1k tokens answer
+/// correctly, ~8.5k fail with "transcript exceeded the model's context size") and shown by
+/// `fm chat` as "… / 8.192". Single source for the RAG budget and for the status bar.
+pub const MODEL_CONTEXT_WINDOW: u32 = 8192;
+
+/// Tokens of one generation as the model counts them: everything it was given (instructions,
+/// earlier turns, question) and what it produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenerationUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+}
+
+impl GenerationUsage {
+    pub fn total(&self) -> u64 {
+        u64::from(self.prompt_tokens) + u64::from(self.completion_tokens)
+    }
+
+    /// Share of the model's context window used (`0.01` = 1%).
+    pub fn context_ratio(&self) -> f64 {
+        self.total() as f64 / f64::from(MODEL_CONTEXT_WINDOW)
+    }
+}
+
+/// The latest generation measured in the session: the conversation turn it answered and its usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LastGeneration {
+    /// 1-based position of the answer in its conversation.
+    pub turn: u32,
+    pub usage: GenerationUsage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

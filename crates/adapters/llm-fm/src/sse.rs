@@ -7,6 +7,11 @@ pub enum SseEvent {
     Delta(String),
     /// `finish_reason` of the last chunk ("stop", "length", ...).
     Finish(String),
+    /// Final `usage` chunk (requested with `stream_options.include_usage`).
+    Usage {
+        prompt_tokens: u32,
+        completion_tokens: u32,
+    },
     /// `event: error` — e.g. the safety guardrails were triggered.
     Error(String),
     Done,
@@ -22,6 +27,13 @@ struct Chunk {
     #[serde(default)]
     choices: Vec<Choice>,
     error: Option<ErrorBody>,
+    usage: Option<Usage>,
+}
+
+#[derive(Deserialize)]
+struct Usage {
+    prompt_tokens: Option<u32>,
+    completion_tokens: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -105,6 +117,16 @@ fn parse_event(text: &str) -> Result<Vec<SseEvent>, String> {
             events.push(SseEvent::Finish(reason));
         }
     }
+    if let Some(Usage {
+        prompt_tokens: Some(prompt_tokens),
+        completion_tokens: Some(completion_tokens),
+    }) = chunk.usage
+    {
+        events.push(SseEvent::Usage {
+            prompt_tokens,
+            completion_tokens,
+        });
+    }
     Ok(events)
 }
 
@@ -135,6 +157,26 @@ mod tests {
                 SseEvent::Done
             ]
         );
+    }
+
+    #[test]
+    fn usage_chunk_reports_prompt_and_completion_tokens() {
+        let mut parser = SseParser::default();
+        let events = parser
+            .push(b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":121,\"total_tokens\":185}}\n\n")
+            .unwrap();
+        assert_eq!(
+            events,
+            [SseEvent::Usage {
+                prompt_tokens: 64,
+                completion_tokens: 121
+            }]
+        );
+        // A usage object missing a count is ignored rather than completed with a guess.
+        let events = parser
+            .push(b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":64}}\n\n")
+            .unwrap();
+        assert!(events.is_empty());
     }
 
     #[test]

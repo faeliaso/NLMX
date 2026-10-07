@@ -16,12 +16,12 @@
     else delete root.dataset.busy;
   }
   document.addEventListener("htmx:before:request", (event) => {
-    if (event.target.closest?.("#system-status, [data-poll]")) return; // background polling stays silent
+    if (event.target.closest?.("#system-status, #token-usage, [data-poll]")) return; // background polling stays silent
     inFlight += 1;
     updateBusy();
   });
   document.addEventListener("htmx:finally:request", (event) => {
-    if (event.target.closest?.("#system-status, [data-poll]")) return;
+    if (event.target.closest?.("#system-status, #token-usage, [data-poll]")) return;
     inFlight = Math.max(0, inFlight - 1);
     updateBusy();
   });
@@ -286,6 +286,17 @@
     window.htmx.ajax("GET", `/chat/messages/${id}`, { target, swap: "outerHTML" });
   }
 
+  // Status bar token usage: "calculating" while an answer is generated, its counts after.
+  function refreshUsage(busy) {
+    if (!window.htmx || !document.getElementById("token-usage")) return;
+    // The timestamp keeps every request unique, so no earlier response is ever reused.
+    const query = `${busy ? "busy=1&" : ""}t=${Date.now()}`;
+    window.htmx.ajax("GET", `/fragments/token-usage?${query}`, {
+      target: "#token-usage",
+      swap: "innerHTML",
+    });
+  }
+
   function startAnswer(el) {
     el.dataset.started = "";
     const id = Number(el.dataset.answer);
@@ -296,6 +307,7 @@
     }
     const output = el.querySelector("[data-answer-stream]");
     const channel = new Channel();
+    refreshUsage(true);
     channel.onmessage = (event) => {
       if (event.kind === "token" && output) {
         const log = chatLog();
@@ -305,15 +317,18 @@
         if (follow) log.scrollTop = log.scrollHeight;
       } else if (event.kind === "done") {
         refreshAnswer(id);
+        refreshUsage(false);
       }
     };
     invoke("answer_message", { messageId: id, onEvent: channel }).catch((error) => {
       if (error?.code === "running") {
         // Being generated elsewhere (e.g. before navigating away): check again shortly.
         setTimeout(() => refreshAnswer(id), 1500);
+        refreshUsage(false);
       } else {
         window.DS?.toast("danger", error?.message || String(error));
         refreshAnswer(id);
+        refreshUsage(false);
       }
     });
   }
