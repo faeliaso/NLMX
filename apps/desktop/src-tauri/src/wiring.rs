@@ -528,7 +528,15 @@ mod tests {
         assert!(dir.join(DATABASE_FILE).exists());
         let page = settings_page(router).await;
         assert!(page.contains(DATABASE_FILE));
-        assert!(page.contains(&format!("{0} de {0}", nlmx_store_sqlite::LATEST_VERSION)));
+        let latest = nlmx_store_sqlite::LATEST_VERSION.to_string();
+        // Worded in whatever language this machine resolved to ("N de N", "N of N"…).
+        assert!(page.contains(&nlmx_i18n::t_args(
+            "status-schema-version",
+            &[
+                ("current", latest.as_str().into()),
+                ("latest", latest.as_str().into())
+            ],
+        )));
     }
 
     #[tokio::test]
