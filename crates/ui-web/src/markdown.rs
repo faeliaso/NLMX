@@ -7,6 +7,7 @@
 //! into buttons, only in running text (never inside code or links).
 
 use crate::highlight::{self, Lang};
+use nlmx_i18n::{t, t_args};
 use pulldown_cmark::{
     Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd, TextMergeStream,
 };
@@ -96,6 +97,7 @@ fn language(info: &str) -> (Option<Lang>, String) {
         .take(20)
         .collect();
     match Lang::from_name(&raw) {
+        Some(Lang::Text) => (Some(Lang::Text), t("chat-code-plain")),
         Some(lang) => (Some(lang), lang.label().to_string()),
         None => (None, raw),
     }
@@ -160,10 +162,16 @@ impl Renderer {
             Event::SoftBreak | Event::HardBreak => self.out.push_str("<br>"),
             Event::Rule => self.out.push_str("<hr>"),
             Event::TaskListMarker(done) => {
-                self.out.push_str(if done {
-                    r#"<input type="checkbox" disabled checked aria-label="Concluído"> "#
+                self.out.push_str(&if done {
+                    format!(
+                        r#"<input type="checkbox" disabled checked aria-label="{}"> "#,
+                        escape(&t("chat-task-done"))
+                    )
                 } else {
-                    r#"<input type="checkbox" disabled aria-label="Pendente"> "#
+                    format!(
+                        r#"<input type="checkbox" disabled aria-label="{}"> "#,
+                        escape(&t("chat-task-pending"))
+                    )
                 });
             }
             _ => {}
@@ -213,9 +221,10 @@ impl Renderer {
             Tag::Table(aligns) => {
                 self.aligns = aligns;
                 self.body_open = false;
-                self.out.push_str(
-                    r#"<div class="table-scroll" role="region" tabindex="0" aria-label="Tabela"><table>"#,
-                );
+                self.out.push_str(&format!(
+                    r#"<div class="table-scroll" role="region" tabindex="0" aria-label="{}"><table>"#,
+                    escape(&t("chat-table"))
+                ));
             }
             Tag::TableHead => {
                 self.in_head = true;
@@ -295,9 +304,14 @@ impl Renderer {
     }
 
     fn code_block(&mut self, lang: Option<Lang>, label: &str, code: &str) {
+        let copy = escape(&t("chat-code-copy"));
+        let copy_aria = escape(&t_args(
+            "chat-code-copy-aria",
+            &[("language", label.into())],
+        ));
         let label = escape(label);
         self.out.push_str(&format!(
-            r#"<figure class="code-block"><figcaption><span class="code-lang">{label}</span><button type="button" class="btn btn-ghost btn-sm" data-copy-code aria-label="Copiar código ({label})">Copiar</button></figcaption><pre tabindex="0"><code>"#
+            r#"<figure class="code-block"><figcaption><span class="code-lang">{label}</span><button type="button" class="btn btn-ghost btn-sm" data-copy-code aria-label="{copy_aria}">{copy}</button></figcaption><pre tabindex="0"><code>"#
         ));
         match lang {
             Some(lang) => {
@@ -347,12 +361,20 @@ fn citation_button(inner: &str, citations: &Citations<'_>) -> Option<String> {
     if let Ok(n) = inner.parse::<usize>() {
         return (citations.source)(n).map(|link| {
             let (what, tip) = if link.previewable {
-                (format!("Abrir a fonte {n} no PDF"), "Abrir no PDF")
+                (
+                    t_args("chat-source-open-title", &[("n", n.into())]),
+                    t("chat-source-open-pdf"),
+                )
             } else {
-                (format!("Ver informações da fonte {n}"), "Ver informações da fonte")
+                (
+                    t_args("chat-source-info-title", &[("n", n.into())]),
+                    t("chat-source-info-tip"),
+                )
             };
             format!(
                 r##"<button type="button" class="citation" hx-get="{url}" hx-target="#viewer" aria-label="{what}: {label}" title="{tip} · {label}">{n}</button>"##,
+                what = escape(&what),
+                tip = escape(&tip),
                 url = escape(&link.url),
                 label = escape(&link.label),
             )
@@ -360,8 +382,10 @@ fn citation_button(inner: &str, citations: &Citations<'_>) -> Option<String> {
     }
     let page = inner.strip_prefix("página ")?.parse::<u32>().ok()?;
     (citations.page)(page).map(|url| {
+        let open = escape(&t_args("chat-page-open", &[("page", u64::from(page).into())]));
+        let text = escape(&t_args("chat-page-ref", &[("page", u64::from(page).into())]));
         format!(
-            r##"<button type="button" class="page-ref" hx-get="{url}" hx-target="#viewer" aria-label="Abrir a página {page} no PDF" title="Abrir a página {page} no PDF">página {page}</button>"##,
+            r##"<button type="button" class="page-ref" hx-get="{url}" hx-target="#viewer" aria-label="{open}" title="{open}">{text}</button>"##,
             url = escape(&url),
         )
     })
@@ -545,11 +569,12 @@ mod tests {
 
     #[test]
     fn unknown_or_missing_language_works() {
-        assert!(md("```\nx\n```").contains(r#"<span class="code-lang">Texto</span>"#));
-        assert!(md("```text\nx\n```").contains("Texto"));
+        let plain = t("chat-code-plain");
+        assert!(md("```\nx\n```").contains(&format!(r#"<span class="code-lang">{plain}</span>"#)));
+        assert!(md("```text\nx\n```").contains(&plain));
         assert!(md("```brainfuck\n+\n```").contains(">brainfuck<"));
         assert!(md("```<script>\nx\n```").contains(">script<"));
-        assert!(md("    indentado\n").contains("Texto"));
+        assert!(md("    indentado\n").contains(&plain));
     }
 
     #[test]

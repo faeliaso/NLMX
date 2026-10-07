@@ -1,0 +1,13 @@
+js-load-failed = Could not load the content. Try again.
+js-unexpected-error = An unexpected error occurred in the interface.
+js-native-unavailable = Native commands are unavailable outside the app.
+js-invalid-command = Invalid command.
+js-answers-app-only = Generating answers only works inside the app.
+js-copied = Copied.
+js-copy-failed = Could not copy.
+js-stop-answer = Stop answer
+js-send-question = Send question
+js-answer-copied = Answer copied.
+js-copied-short = Copied
+js-copy-short = Copy
+js-download-progress = { $received } of { $total } ({ $percent }%)

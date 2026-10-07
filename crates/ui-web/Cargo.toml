@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 nlmx-application.workspace = true
 nlmx-domain.workspace = true
+nlmx-i18n.workspace = true
 askama.workspace = true
 axum.workspace = true
 http.workspace = true

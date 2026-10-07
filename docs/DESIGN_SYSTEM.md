@@ -63,3 +63,7 @@ Interactive gallery (debug builds only): **Configurações › Sobre › Design 
 | Empty | `ds::empty_state(icon, title, description)` with the primary action in the body |
 | Error | `ds::alert("danger", …)` (`role="alert"`) with a recovery action; failures with no response become an error toast |
 | Success | `ds::alert("success", …)` or `DS.toast("success", msg)` (`role="status"`, disappears after 5 s). A server response requests the toast with a marker `<p hidden data-toast-on-load="KIND" data-toast-message="…"></p>` (`app.js` turns it into a toast and removes it) |
+
+## Text and localization
+
+No user-visible text is hardcoded in templates, macros or scripts: every label, `aria-label`, `title`, `placeholder`, empty state and toast comes from the Fluent catalogs (`crates/i18n/locales`, ADR 0022). Reuse `common-*` ids for shared words, use plural selectors instead of concatenation, and leave room in layouts for text that is 30–40% longer in other languages. `<html lang>` follows the active language.

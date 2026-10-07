@@ -7,6 +7,8 @@
   const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
   const WIDTHS = [400, 600, 900, 1200, 1600, 2000, 2400];
   const PX_PER_PT = 96 / 72;
+  // Interface strings come from the page's i18n block (`window.nlmxT`, defined in app.js).
+  const tr = (key, fallback) => (typeof window.nlmxT === "function" ? window.nlmxT(key) : "") || fallback;
   const store = {
     get(key) {
       try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -190,7 +192,7 @@
       root.querySelectorAll(`.viewer-hit[data-hit="${state.hit}"]`).forEach((h) => h.classList.add("is-current"));
       const hit = state.hits[state.hit];
       goTo(hit.page, { anchor: hit.boxes[0]?.top ?? null });
-      if (searchCount) searchCount.textContent = `${state.hit + 1} de ${state.hits.length}${state.truncated ? "+" : ""}`;
+      if (searchCount) searchCount.textContent = `${state.hit + 1} ${tr("js-viewer-of", "of")} ${state.hits.length}${state.truncated ? "+" : ""}`;
     }
     async function search(query, direction) {
       if (!query) {
@@ -205,7 +207,7 @@
         return;
       }
       state.query = query;
-      if (searchCount) searchCount.textContent = "Buscando…";
+      if (searchCount) searchCount.textContent = tr("js-viewer-searching", "Searching…");
       try {
         const response = await fetch(`/viewer/${doc}/search?q=${encodeURIComponent(query)}`);
         const results = response.ok ? await response.json() : { hits: [] };
@@ -230,7 +232,7 @@
         const start = state.hits.findIndex((h) => h.page >= state.current);
         showHit(start < 0 ? 0 : start);
       } else if (searchCount) {
-        searchCount.textContent = "Nenhum";
+        searchCount.textContent = tr("js-viewer-none", "None");
       }
     }
 

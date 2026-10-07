@@ -39,6 +39,10 @@ Extração, indexação, busca e geração das respostas acontecem no próprio d
 
 Foi feito para quem lida com muitos documentos (normas, contratos, manuais, artigos, documentação técnica) e não pode ou não quer enviar esse conteúdo para a nuvem.
 
+<p align="center">
+  <img src="docs/images/screenshot.png" width="900" alt="NLMX em conversa livre com o modelo no dispositivo: a interface em inglês e as respostas no idioma de cada pergunta (português, espanhol)">
+</p>
+
 ## Por que o NLMX?
 
 ### O problema

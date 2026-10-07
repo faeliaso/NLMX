@@ -11,14 +11,14 @@
   </aside>
 
   <div class="main">
-    <div class="global-loading" aria-hidden="true">{% call ds::progress_indeterminate("Carregando") %}{% endcall %}</div>
+    <div class="global-loading" aria-hidden="true">{% call ds::progress_indeterminate(nlmx_i18n::t("common-loading")) %}{% endcall %}</div>
     <main class="content" id="content" tabindex="-1">{{ content|safe }}</main>
-    <footer class="statusbar" aria-label="Status">
-      <span class="statusbar-item activity-idle">{% call ds::icon("check") %}{% endcall %}Pronto</span>
-      <span class="statusbar-item activity-busy" role="status">{% call ds::spinner("Carregando", "sm") %}{% endcall %}Carregando…</span>
+    <footer class="statusbar" aria-label="{{ nlmx_i18n::t("nav-statusbar") }}">
+      <span class="statusbar-item activity-idle">{% call ds::icon("check") %}{% endcall %}{{ nlmx_i18n::t("common-ready") }}</span>
+      <span class="statusbar-item activity-busy" role="status">{% call ds::spinner(nlmx_i18n::t("common-loading"), "sm") %}{% endcall %}{{ nlmx_i18n::t("common-loading-ellipsis") }}</span>
       <span class="statusbar-spacer"></span>
       <span id="system-status" hx-get="/fragments/status" hx-trigger="load, every 60s, fm-setup-done from:body" hx-swap="innerHTML">
-        {% call ds::spinner("Verificando status", "sm") %}{% endcall %}
+        {% call ds::spinner(nlmx_i18n::t("nav-checking-status"), "sm") %}{% endcall %}
       </span>
     </footer>
   </div>

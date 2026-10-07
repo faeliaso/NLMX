@@ -13,6 +13,9 @@ mod formats;
 mod gallery;
 mod highlight;
 mod indexing;
+mod js_catalog;
+mod language;
+pub use language::LanguageSettings;
 mod markdown;
 pub use markdown::is_safe_url;
 mod models;
@@ -33,7 +36,7 @@ use nlmx_application::{
     },
 };
 
-pub use error::FALLBACK_ERROR_HTML;
+pub use error::fallback_error_html;
 
 /// Where new versions are published (set at build time; no automatic update check).
 pub const DOWNLOAD_URL: Option<&str> = option_env!("NLMX_DOWNLOAD_URL");
@@ -61,6 +64,8 @@ pub struct AppState {
     pub indexing: Result<Arc<Indexing>, String>,
     /// Adds pasted notes to the import queue (`None` hides "Adicionar nota").
     pub notes: Option<Arc<dyn NoteSubmitter>>,
+    /// Interface language: saved choice, macOS language, switch at runtime.
+    pub language: LanguageSettings,
 }
 
 /// Builds the UI router served under the app's custom scheme.
@@ -88,6 +93,7 @@ pub fn router(state: AppState) -> Router {
         .route("/indexing", get(indexing::page))
         .route("/models", get(models::page))
         .route("/settings", get(sections::settings))
+        .route("/settings/language", post(language::set))
         .route("/fragments/status", get(status::fragment))
         .route("/fragments/fm-setup", get(fm_setup::fragment))
         .route("/fragments/fm-setup/recheck", post(fm_setup::recheck))
@@ -106,6 +112,10 @@ pub fn router(state: AppState) -> Router {
     router
         .fallback(sections::not_found)
         .layer(middleware::map_response(add_security_headers))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            language::load_before_request,
+        ))
         .with_state(state)
 }
 

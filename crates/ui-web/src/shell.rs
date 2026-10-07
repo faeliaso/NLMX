@@ -4,7 +4,7 @@ use askama::Template;
 use axum::response::{Html, IntoResponse, Response};
 use http::{HeaderMap, StatusCode};
 
-use crate::error::{FALLBACK_ERROR_HTML, UiError};
+use crate::error::{UiError, fallback_error_html};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
@@ -35,14 +35,15 @@ impl Section {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Chat => "Chat",
-            Self::Documents => "Documentos",
-            Self::Indexing => "Indexação",
-            Self::Models => "Modelos",
-            Self::Settings => "Configurações",
-        }
+    /// The section's name in the active language.
+    pub fn label(self) -> String {
+        nlmx_i18n::t(match self {
+            Self::Chat => "nav-chat",
+            Self::Documents => "nav-documents",
+            Self::Indexing => "nav-indexing",
+            Self::Models => "nav-models",
+            Self::Settings => "nav-settings",
+        })
     }
 
     fn icon(self) -> &'static str {
@@ -58,7 +59,7 @@ impl Section {
 
 pub struct NavItem {
     pub path: &'static str,
-    pub label: &'static str,
+    pub label: String,
     pub icon: &'static str,
     pub current: bool,
 }
@@ -121,7 +122,7 @@ pub fn page(
     let (status, title, content) = match content {
         Ok(html) => (
             StatusCode::OK,
-            section.map_or("NLMX", Section::label).to_string(),
+            section.map_or_else(|| "NLMX".to_string(), Section::label),
             html,
         ),
         Err(err) => {
@@ -130,7 +131,7 @@ pub fn page(
                 message: &err.message,
             }
             .render()
-            .unwrap_or_else(|_| FALLBACK_ERROR_HTML.to_string());
+            .unwrap_or_else(|_| fallback_error_html());
             (err.status, err.title, html)
         }
     };
@@ -152,6 +153,10 @@ pub fn page(
 
     match rendered {
         Ok(html) => (status, Html(html)).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Html(FALLBACK_ERROR_HTML)).into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Html(fallback_error_html()),
+        )
+            .into_response(),
     }
 }

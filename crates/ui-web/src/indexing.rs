@@ -11,6 +11,7 @@ use nlmx_domain::{
     indexing::IndexJob,
     ingestion::{DocumentId, DocumentStatus},
 };
+use nlmx_i18n::{Arg, t, t_args, t_count};
 
 use crate::{
     AppState,
@@ -28,7 +29,7 @@ pub struct Action {
     pub command: &'static str,
     /// The command's `id` argument.
     pub document_id: DocumentId,
-    pub label: &'static str,
+    pub label: String,
 }
 
 pub struct JobRow {
@@ -36,7 +37,7 @@ pub struct JobRow {
     /// The format's icon and short label (see `formats`).
     pub icon: &'static str,
     pub format: &'static str,
-    pub label: &'static str,
+    pub label: String,
     pub kind: &'static str,
     /// The error, or what the state means.
     pub detail: String,
@@ -45,7 +46,7 @@ pub struct JobRow {
 }
 
 pub struct Stat {
-    pub label: &'static str,
+    pub label: String,
     pub value: String,
 }
 
@@ -79,33 +80,38 @@ struct IndexingBody {
     state: Result<IndexingModel, String>,
 }
 
-fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
-
 pub fn duration(ms: u64) -> String {
     let seconds = ms / 1000;
     match seconds {
-        0 => "menos de 1 s".into(),
-        1..60 => format!("{seconds} s"),
-        _ => format!("{} min {} s", seconds / 60, seconds % 60),
+        0 => t("indexing-duration-under-second"),
+        1..60 => t_args(
+            "indexing-duration-seconds",
+            &[("seconds", Arg::Str(seconds.to_string()))],
+        ),
+        _ => t_args(
+            "indexing-duration-minutes",
+            &[
+                ("minutes", Arg::Str((seconds / 60).to_string())),
+                ("seconds", Arg::Str((seconds % 60).to_string())),
+            ],
+        ),
     }
 }
 
-fn chunks(n: u32) -> String {
-    plural(n as usize, "trecho", "trechos")
+fn chunks(count: u32) -> String {
+    t_count("indexing-chunks-count", count as i64)
 }
 
 fn retry(id: DocumentId) -> Option<Action> {
     Some(Action {
         command: "retry_document",
         document_id: id,
-        label: "Tentar novamente",
+        label: t("indexing-retry"),
     })
 }
 
 fn attempts(job: &IndexJob) -> String {
-    plural(job.attempts as usize, "tentativa", "tentativas")
+    t_count("indexing-attempts-count", job.attempts as i64)
 }
 
 impl IndexingModel {
@@ -114,7 +120,7 @@ impl IndexingModel {
         let has_model = report.model_id.is_some();
         let (mut attention, mut done) = (Vec::new(), Vec::new());
         for job in &snapshot.jobs {
-            let row = |label, kind, detail: String, meta: String, action| JobRow {
+            let row = |label: String, kind, detail: String, meta: String, action| JobRow {
                 title: job.title.clone(),
                 icon: format_view(job.document_type).icon,
                 format: format_view(job.document_type).label,
@@ -136,15 +142,10 @@ impl IndexingModel {
                 DocumentStatus::Embedding => {
                     let (detail, action) = match (&job.error, has_model) {
                         (Some(error), true) => (error.clone(), retry(job.document_id)),
-                        (_, false) => (
-                            "Aguardando um modelo de embeddings para entrar na busca semântica."
-                                .to_string(),
-                            None,
-                        ),
-                        (None, true) => (
-                            "Os embeddings ainda não foram gerados.".to_string(),
-                            retry(job.document_id),
-                        ),
+                        (_, false) => (t("indexing-detail-waiting-model"), None),
+                        (None, true) => {
+                            (t("indexing-detail-no-embeddings"), retry(job.document_id))
+                        }
                     };
                     let (label, kind) = status_badge(job.status);
                     attention.push(row(label, kind, detail, chunks(job.chunks), action));
@@ -168,8 +169,7 @@ impl IndexingModel {
                     attention.push(row(
                         label,
                         kind,
-                        "Nenhuma página tem texto selecionável. O reconhecimento de texto (OCR) ainda não está disponível."
-                            .into(),
+                        t("indexing-detail-needs-ocr"),
                         String::new(),
                         None,
                     ));
@@ -207,45 +207,48 @@ impl IndexingModel {
 
         let indexed = snapshot.count(DocumentStatus::Indexed);
         let failed = snapshot.count(DocumentStatus::Failed);
-        let mut documents = vec![plural(indexed, "indexado", "indexados")];
-        for (n, one, many) in [
-            (snapshot.reading(), "em leitura", "em leitura"),
-            (
-                snapshot.count(DocumentStatus::Embedding),
-                "aguardando embeddings",
-                "aguardando embeddings",
-            ),
-            (
-                snapshot.count(DocumentStatus::NeedsOcr),
-                "sem texto",
-                "sem texto",
-            ),
-            (failed, "com falha", "com falha"),
-        ] {
-            if n > 0 {
-                documents.push(plural(n, one, many));
-            }
+        let mut documents = vec![t_count("indexing-docs-indexed", indexed as i64)];
+        let reading = snapshot.reading();
+        let awaiting = snapshot.count(DocumentStatus::Embedding);
+        let no_text = snapshot.count(DocumentStatus::NeedsOcr);
+        if reading > 0 {
+            documents.push(t_count("indexing-docs-reading", reading as i64));
         }
-        let mut chunk_stats = vec![format!("{} no total", snapshot.chunks)];
+        if awaiting > 0 {
+            documents.push(t_count("indexing-docs-awaiting", awaiting as i64));
+        }
+        if no_text > 0 {
+            documents.push(t_count("indexing-docs-no-text", no_text as i64));
+        }
+        if failed > 0 {
+            documents.push(t_count("indexing-docs-failed", failed as i64));
+        }
+        let mut chunk_stats = vec![t_count("indexing-chunks-total", snapshot.chunks as i64)];
         if has_model {
-            chunk_stats.push(format!("{} com vetores", snapshot.embedded_chunks()));
+            chunk_stats.push(t_count(
+                "indexing-chunks-embedded",
+                snapshot.embedded_chunks() as i64,
+            ));
         }
         if snapshot.pending_chunks() > 0 {
-            chunk_stats.push(format!("{} aguardando", snapshot.pending_chunks()));
+            chunk_stats.push(t_count(
+                "indexing-chunks-pending",
+                snapshot.pending_chunks() as i64,
+            ));
         }
         let mut stats = vec![
             Stat {
-                label: "Documentos",
+                label: t("indexing-stat-documents"),
                 value: documents.join(" · "),
             },
             Stat {
-                label: "Trechos",
+                label: t("indexing-stat-chunks"),
                 value: chunk_stats.join(" · "),
             },
         ];
         if let Some(model) = &snapshot.model {
             stats.push(Stat {
-                label: "Dimensões dos vetores",
+                label: t("indexing-stat-dimensions"),
                 value: model.dimensions.to_string(),
             });
         }
@@ -265,10 +268,15 @@ impl IndexingModel {
             embed_pending: has_model && snapshot.count(DocumentStatus::Embedding) > 0,
             retry_failed: can_reread && failed > 0,
             reindex: has_model && indexed > 0,
-            reindex_description: format!(
-                "Os vetores de {} ({}) serão gerados de novo com o modelo ativo. A busca continua funcionando enquanto isso.",
-                plural(indexed, "documento", "documentos"),
-                chunks(indexed_chunks),
+            reindex_description: t_args(
+                "indexing-reindex-description",
+                &[
+                    (
+                        "documents",
+                        Arg::Str(t_count("indexing-documents-count", indexed as i64)),
+                    ),
+                    ("chunks", Arg::Str(chunks(indexed_chunks))),
+                ],
             ),
             empty: snapshot.jobs.is_empty(),
         }

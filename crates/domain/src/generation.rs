@@ -47,6 +47,34 @@ impl LanguageModelStatus {
     }
 }
 
+/// The language block as a literal, for `concat!` in prompt constants.
+#[macro_export]
+macro_rules! response_language_auto {
+    () => {
+        "RESPONSE LANGUAGE: AUTO — Respond primarily in the same language the user wrote the question in."
+    };
+}
+
+/// The single language block of every prompt, shared as a literal so prompt constants can embed it.
+pub const RESPONSE_LANGUAGE_AUTO: &str = response_language_auto!();
+
+/// Which language the model answers in. Independent of the interface language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResponseLanguage {
+    /// The language of the user's question.
+    #[default]
+    Auto,
+}
+
+impl ResponseLanguage {
+    /// The language block to include once in each prompt's instructions.
+    pub fn instruction(self) -> &'static str {
+        match self {
+            Self::Auto => RESPONSE_LANGUAGE_AUTO,
+        }
+    }
+}
+
 /// What the model can take. The context window covers instructions, prompt and answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LlmCapabilities {

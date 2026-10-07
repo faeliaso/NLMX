@@ -152,10 +152,16 @@ pub struct HistoryTurn {
     pub answer: String,
 }
 
-const REWRITE_INSTRUCTIONS: &str = "\
+const REWRITE_INSTRUCTIONS: &str = concat!(
+    "\
 Reescreva a última pergunta do usuário como uma pergunta completa e independente, que possa ser \
-entendida sem a conversa, no mesmo idioma. Responda somente com a pergunta reescrita. Se ela já \
-for independente, repita-a.";
+entendida sem a conversa. Responda somente com a pergunta reescrita. Se ela já \
+for independente, repita-a.
+",
+    nlmx_domain::response_language_auto!()
+);
+#[cfg(test)]
+pub(crate) const REWRITE_INSTRUCTIONS_FOR_TESTS: &str = REWRITE_INSTRUCTIONS;
 /// Previous turns considered when rewriting a follow-up question.
 const REWRITE_TURNS: usize = 3;
 

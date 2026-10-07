@@ -1,11 +1,11 @@
 {% import "components/ds.html" as ds %}
 {% import "components/page.html" as page %}
 <div class="page">
-  {% call page::header(title, "Algo não saiu como esperado.") %}{% endcall %}
+  {% call page::header(title, nlmx_i18n::t("errors-unexpected-description")) %}{% endcall %}
   <div class="page-body">
     {% call ds::alert("danger", title, message) %}
       <div class="alert-actions">
-        <a class="btn btn-secondary btn-sm" href="/chat" hx-get="/chat" hx-target="#content" hx-push-url="true">Voltar ao Chat</a>
+        <a class="btn btn-secondary btn-sm" href="/chat" hx-get="/chat" hx-target="#content" hx-push-url="true">{{ nlmx_i18n::t("errors-back-to-chat") }}</a>
       </div>
     {% endcall %}
   </div>

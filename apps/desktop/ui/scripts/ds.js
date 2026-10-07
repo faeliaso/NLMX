@@ -11,6 +11,22 @@
     set(key, value) { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } },
   };
 
+  // ── Interface strings: `<script type="application/json" id="i18n-js">` (the `js-*` catalog ids
+  // of the active language, rendered by the server). Variables are `{name}` placeholders.
+  let strings = null;
+  function nlmxT(key, args) {
+    if (!strings) {
+      const node = document.getElementById("i18n-js");
+      if (!node) return "";
+      try { strings = JSON.parse(node.textContent || "{}"); } catch { strings = {}; }
+    }
+    let text = strings[key] ?? "";
+    if (args) for (const [name, value] of Object.entries(args)) text = text.split(`{${name}}`).join(String(value));
+    return text;
+  }
+  nlmxT.reload = () => { strings = null; };
+  window.nlmxT = nlmxT;
+
   // ── Theme: "system" | "light" | "dark" ──────────────────────────────────
   function applyTheme(theme) {
     if (theme === "light" || theme === "dark") root.dataset.theme = theme;

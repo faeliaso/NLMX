@@ -10,15 +10,13 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use http::StatusCode;
-use nlmx_application::use_cases::describe_model_status;
 use nlmx_domain::generation::{LanguageModelStatus, UnavailableKind};
+use nlmx_i18n::{t, t_args};
 
-use crate::AppState;
+use crate::{AppState, status::LanguageModelView};
 
 /// The command the user is asked to run. Copied verbatim, never executed by the app.
 pub const LICENSE_COMMAND: &str = "sudo fm license";
-
-const NOT_INSTALLED_HINT: &str = "Verifique se sua versão do macOS e os componentes necessários para o Apple Foundation Models estão disponíveis.";
 
 /// What the dialog shows for a status. `None` when the model is ready.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +24,7 @@ pub enum Stage {
     /// The license is pending: steps, command and password help.
     License,
     /// `fm` is missing or this Mac can't run it: no `sudo fm license` here.
-    Unavailable { detail: String, hint: &'static str },
+    Unavailable { detail: String, hint: String },
     /// The check itself failed: friendly message and "Tentar novamente".
     Problem,
     /// Authorized.
@@ -39,20 +37,20 @@ impl Stage {
             LanguageModelStatus::Available => Self::Ready,
             LanguageModelStatus::LicenseRequired => Self::License,
             LanguageModelStatus::NotInstalled => Self::Unavailable {
-                detail: "O NLMX não encontrou o fm neste Mac.".into(),
-                hint: NOT_INSTALLED_HINT,
+                detail: t("status-lm-not-installed-detail"),
+                hint: t("fm-not-installed-hint"),
             },
             LanguageModelStatus::Incompatible { reason } => Self::Unavailable {
                 detail: reason.clone(),
-                hint: NOT_INSTALLED_HINT,
+                hint: t("fm-not-installed-hint"),
             },
             LanguageModelStatus::Unavailable {
                 kind: UnavailableKind::Other,
                 ..
             } => Self::Problem,
             LanguageModelStatus::Unavailable { .. } => Self::Unavailable {
-                detail: describe_model_status(status),
-                hint: "",
+                detail: LanguageModelView::from(status).detail,
+                hint: String::new(),
             },
         }
     }
@@ -65,6 +63,19 @@ struct Body {
     command: &'static str,
     /// The user asked to check again and the state did not change.
     rechecked: bool,
+}
+
+impl Body {
+    fn recheck_message(&self) -> String {
+        t_args(
+            "fm-recheck-warning-message",
+            &[("command", self.command.into())],
+        )
+    }
+
+    fn copy_label(&self) -> String {
+        t_args("fm-copy-command-aria", &[("command", self.command.into())])
+    }
 }
 
 #[derive(Template)]

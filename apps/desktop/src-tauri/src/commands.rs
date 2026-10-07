@@ -1,6 +1,7 @@
 //! Tauri commands: native operations the HTML UI cannot do over the custom protocol.
 //! Errors are serialized as `{ code, message }` so `app.js` can show them.
 
+use nlmx_i18n::{t, t_args, t_count};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -57,7 +58,7 @@ pub fn open_logs_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), CommandError> 
 pub fn open_download_page() -> Result<(), CommandError> {
     let url = nlmx_ui_web::DOWNLOAD_URL
         .filter(|u| u.starts_with("https://"))
-        .ok_or_else(|| CommandError::new("open", "Nenhuma página de downloads configurada."))?;
+        .ok_or_else(|| CommandError::new("open", t("errors-no-download-page")))?;
     open(url)
 }
 
@@ -69,7 +70,13 @@ fn data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<std::path::PathBuf, Comman
 
 fn reveal(dir: &std::path::Path) -> Result<(), CommandError> {
     std::fs::create_dir_all(dir).map_err(|err| {
-        CommandError::new("data_dir", format!("Não foi possível criar a pasta: {err}"))
+        CommandError::new(
+            "data_dir",
+            t_args(
+                "errors-create-folder",
+                &[("reason", err.to_string().into())],
+            ),
+        )
     })?;
     open(dir)
 }
@@ -78,12 +85,17 @@ fn open(target: impl AsRef<std::ffi::OsStr>) -> Result<(), CommandError> {
     std::process::Command::new("/usr/bin/open")
         .arg(target)
         .status()
-        .map_err(|err| CommandError::new("open", format!("Não foi possível abrir: {err}")))
+        .map_err(|err| {
+            CommandError::new(
+                "open",
+                t_args("errors-open-failed", &[("reason", err.to_string().into())]),
+            )
+        })
         .and_then(|status| {
             status
                 .success()
                 .then_some(())
-                .ok_or_else(|| CommandError::new("open", "O macOS não abriu o destino."))
+                .ok_or_else(|| CommandError::new("open", t("errors-open-denied")))
         })
 }
 
@@ -135,8 +147,8 @@ pub async fn import_documents<R: Runtime>(
     let mut dialog = app
         .dialog()
         .file()
-        .set_title("Importar documentos")
-        .add_filter("Documentos", &extensions);
+        .set_title(t("documents-picker-title"))
+        .add_filter(t("documents-picker-filter"), &extensions);
     for kind in &kinds {
         dialog = dialog.add_filter(kind.display_name(), kind.extensions());
     }
@@ -157,10 +169,7 @@ pub async fn import_documents<R: Runtime>(
         .filter_map(|file| file.into_path().ok())
         .collect();
     if paths.is_empty() {
-        return Err(CommandError::new(
-            "invalid",
-            "Não foi possível ler o caminho dos arquivos escolhidos.",
-        ));
+        return Err(CommandError::new("invalid", t("errors-invalid-paths")));
     }
     let count = paths.len();
     let queued = app
@@ -171,15 +180,12 @@ pub async fn import_documents<R: Runtime>(
     if !queued {
         return Err(CommandError::new(
             "unavailable",
-            "A fila de importação não está disponível.",
+            t("errors-import-queue-unavailable"),
         ));
     }
     Ok(CommandOutcome {
         kind: "info",
-        message: match count {
-            1 => "Importando 1 arquivo…".to_string(),
-            n => format!("Importando {n} arquivos…"),
-        },
+        message: t_count("documents-import-started", count as i64),
         refresh: Some("documents-changed"),
     })
 }
@@ -192,7 +198,7 @@ const INDEXING_CHANGED: Option<&str> = Some("indexing-changed");
 /// page refreshes now (showing the work) and again when it ends (`indexing-changed` event).
 fn start_indexing<R, F, Fut>(
     app: &AppHandle<R>,
-    message: &str,
+    message: String,
     action: F,
 ) -> Result<CommandOutcome, CommandError>
 where
@@ -219,7 +225,7 @@ where
     });
     Ok(CommandOutcome {
         kind: "info",
-        message: message.into(),
+        message,
         refresh: INDEXING_CHANGED,
     })
 }
@@ -232,7 +238,7 @@ pub fn retry_document<R: Runtime>(
 ) -> Result<CommandOutcome, CommandError> {
     start_indexing(
         &app,
-        "Processando o documento novamente…",
+        t("common-toast-retry-document"),
         move |indexing| async move {
             match indexing.retry(id).await {
                 Ok(outcome) => tracing::info!(document_id = id, ?outcome, "document retried"),
@@ -246,7 +252,7 @@ pub fn retry_document<R: Runtime>(
 pub fn retry_failed<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, CommandError> {
     start_indexing(
         &app,
-        "Processando novamente os documentos com falha…",
+        t("common-toast-retry-failed"),
         |indexing| async move {
             match indexing.retry_failed().await {
                 Ok(outcomes) => tracing::info!(count = outcomes.len(), "failed documents retried"),
@@ -260,7 +266,7 @@ pub fn retry_failed<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, Com
 pub fn embed_pending_now<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, CommandError> {
     start_indexing(
         &app,
-        "Gerando os embeddings pendentes…",
+        t("common-toast-embed-pending"),
         |indexing| async move {
             let outcomes = indexing.embed_pending().await;
             tracing::info!(count = outcomes.len(), "pending documents embedded");
@@ -271,12 +277,16 @@ pub fn embed_pending_now<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome
 /// Embeds every indexed document again with the active model (confirmed in a dialog).
 #[tauri::command]
 pub fn reindex_all<R: Runtime>(app: AppHandle<R>) -> Result<CommandOutcome, CommandError> {
-    start_indexing(&app, "Reindexação iniciada.", |indexing| async move {
-        match indexing.reindex_all().await {
-            Ok(outcomes) => tracing::info!(count = outcomes.len(), "documents reindexed"),
-            Err(err) => tracing::warn!("reindexing not started: {err}"),
-        }
-    })
+    start_indexing(
+        &app,
+        t("common-toast-reindex-started"),
+        |indexing| async move {
+            match indexing.reindex_all().await {
+                Ok(outcomes) => tracing::info!(count = outcomes.len(), "documents reindexed"),
+                Err(err) => tracing::warn!("reindexing not started: {err}"),
+            }
+        },
+    )
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────
@@ -289,6 +299,11 @@ struct DownloadProgressEvent {
     received: u64,
     total: u64,
     bytes_per_second: f64,
+}
+
+/// A toast message that only names a model (`{ $name }`).
+fn name_message(id: &str, name: &str) -> String {
+    t_args(id, &[("name", name.into())])
 }
 
 fn model_error(err: nlmx_domain::models::ModelError) -> CommandError {
@@ -370,13 +385,13 @@ pub async fn download_model<R: Runtime>(
             after_model_change(&app).await;
             Ok(CommandOutcome {
                 kind: "success",
-                message: format!("{name} instalado e verificado."),
+                message: name_message("common-toast-model-installed", &name),
                 refresh: MODELS_CHANGED,
             })
         }
         Err(ModelError::Cancelled) => Ok(CommandOutcome {
             kind: "info",
-            message: "Download cancelado. Ele pode ser retomado depois.".into(),
+            message: t("common-toast-download-cancelled"),
             refresh: MODELS_CHANGED,
         }),
         Err(err) => Err(model_error(err)),
@@ -394,14 +409,11 @@ pub fn cancel_download<R: Runtime>(
             flag.cancel();
             Ok(CommandOutcome {
                 kind: "info",
-                message: "Cancelando o download…".into(),
+                message: t("common-toast-download-cancelling"),
                 refresh: None,
             })
         }
-        None => Err(CommandError::new(
-            "model",
-            "Nenhum download em andamento para este modelo.",
-        )),
+        None => Err(CommandError::new("model", t("errors-no-download-running"))),
     }
 }
 
@@ -416,10 +428,7 @@ pub async fn activate_model<R: Runtime>(
     after_model_change(&app).await;
     Ok(CommandOutcome {
         kind: "success",
-        message: format!(
-            "{} em uso. Os documentos serão reindexados em segundo plano.",
-            model_name(&models, &id)
-        ),
+        message: name_message("common-toast-model-active", &model_name(&models, &id)),
         refresh: MODELS_CHANGED,
     })
 }
@@ -451,7 +460,7 @@ pub async fn remove_model<R: Runtime>(
     }
     Ok(CommandOutcome {
         kind: "success",
-        message: format!("{} removido.", model_name(&models, &id)),
+        message: name_message("common-toast-model-removed", &model_name(&models, &id)),
         refresh: MODELS_CHANGED,
     })
 }
@@ -468,13 +477,13 @@ pub async fn verify_model<R: Runtime>(
     Ok(if report.ok {
         CommandOutcome {
             kind: "success",
-            message: format!("{name}: arquivo íntegro (SHA-256 conferido)."),
+            message: name_message("common-toast-model-verified", &name),
             refresh: MODELS_CHANGED,
         }
     } else {
         CommandOutcome {
             kind: "danger",
-            message: format!("{name}: o arquivo está corrompido. Remova e baixe novamente."),
+            message: name_message("common-toast-model-corrupt", &name),
             refresh: MODELS_CHANGED,
         }
     })
@@ -518,10 +527,7 @@ pub(crate) async fn run_answer(
     let cancel = {
         let mut running = chat.running.lock().unwrap();
         if running.contains_key(&message_id) {
-            return Err(CommandError::new(
-                "running",
-                "Esta resposta já está sendo gerada.",
-            ));
+            return Err(CommandError::new("running", t("errors-answer-running")));
         }
         let flag = nlmx_application::ports::CancelFlag::default();
         running.insert(message_id, flag.clone());
@@ -564,10 +570,7 @@ pub(crate) fn run_cancel(chat: &crate::wiring::Chat, message_id: i64) -> Result<
             flag.cancel();
             Ok(())
         }
-        None => Err(CommandError::new(
-            "chat",
-            "Esta resposta não está sendo gerada.",
-        )),
+        None => Err(CommandError::new("chat", t("errors-answer-not-running"))),
     }
 }
 
@@ -589,12 +592,9 @@ pub(crate) fn run_open_external(
     open: &dyn Fn(&str) -> std::io::Result<()>,
 ) -> Result<(), CommandError> {
     if !nlmx_ui_web::is_safe_url(url) {
-        return Err(CommandError::new(
-            "link",
-            "Este tipo de link não pode ser aberto.",
-        ));
+        return Err(CommandError::new("link", t("errors-link-unsafe")));
     }
-    open(url.trim()).map_err(|_| CommandError::new("link", "Não foi possível abrir o link."))
+    open(url.trim()).map_err(|_| CommandError::new("link", t("errors-link-open-failed")))
 }
 
 #[cfg(test)]

@@ -1,51 +1,66 @@
 {% import "components/ds.html" as ds %}
 {% import "components/page.html" as page %}
 <div class="page">
-  {% call page::header("Configurações", "Preferências do aplicativo.") %}{% endcall %}
+  {% call page::header(nlmx_i18n::t("settings-title"), nlmx_i18n::t("settings-description")) %}{% endcall %}
   <div class="page-body">
-    <section aria-labelledby="appearance-heading">
-      <h2 class="section-heading" id="appearance-heading">Aparência</h2>
+    <section aria-labelledby="language-heading">
+      <h2 class="section-heading" id="language-heading">{{ nlmx_i18n::t("settings-language") }}</h2>
+      <p class="section-help">{{ nlmx_i18n::t("settings-language-help") }}</p>
       <div class="list">
         <div class="list-row">
-          <span class="list-row-title" id="theme-label">Tema</span>
+          <span class="list-row-title" id="language-label">{{ nlmx_i18n::t("settings-language-label") }}</span>
+          <div class="segmented" role="group" aria-labelledby="language-label">
+            {%- for (tag, name, selected) in languages %}
+            <button type="button" hx-post="/settings/language" hx-vals='{"language":"{{ tag }}"}' hx-swap="none" aria-pressed="{% if selected %}true{% else %}false{% endif %}" lang="{{ tag }}">{{ name }}</button>
+            {%- endfor %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="appearance-heading">
+      <h2 class="section-heading" id="appearance-heading">{{ nlmx_i18n::t("settings-appearance") }}</h2>
+      <div class="list">
+        <div class="list-row">
+          <span class="list-row-title" id="theme-label">{{ nlmx_i18n::t("settings-theme") }}</span>
           <div class="segmented" role="group" aria-labelledby="theme-label">
-            <button type="button" data-theme-set="system" aria-pressed="false">Sistema</button>
-            <button type="button" data-theme-set="light" aria-pressed="false">{% call ds::icon("sun") %}{% endcall %}Claro</button>
-            <button type="button" data-theme-set="dark" aria-pressed="false">{% call ds::icon("moon") %}{% endcall %}Escuro</button>
+            <button type="button" data-theme-set="system" aria-pressed="false">{{ nlmx_i18n::t("settings-theme-system") }}</button>
+            <button type="button" data-theme-set="light" aria-pressed="false">{% call ds::icon("sun") %}{% endcall %}{{ nlmx_i18n::t("settings-theme-light") }}</button>
+            <button type="button" data-theme-set="dark" aria-pressed="false">{% call ds::icon("moon") %}{% endcall %}{{ nlmx_i18n::t("settings-theme-dark") }}</button>
           </div>
         </div>
       </div>
     </section>
 
     <section aria-labelledby="data-heading">
-      <h2 class="section-heading" id="data-heading">Dados</h2>
+      <h2 class="section-heading" id="data-heading">{{ nlmx_i18n::t("settings-data") }}</h2>
       <div class="list">
         <div class="list-row">
           <div class="list-row-title">
-            <p>Pasta de dados</p>
-            <p class="list-row-meta">Biblioteca, índices e modelos ficam somente neste Mac.</p>
+            <p>{{ nlmx_i18n::t("settings-data-dir") }}</p>
+            <p class="list-row-meta">{{ nlmx_i18n::t("settings-data-dir-help") }}</p>
           </div>
-          <button type="button" class="btn btn-secondary" data-command="open_data_dir">Mostrar no Finder</button>
+          <button type="button" class="btn btn-secondary" data-command="open_data_dir">{{ nlmx_i18n::t("settings-show-in-finder") }}</button>
         </div>
         <div class="list-row">
           <div class="list-row-title">
-            <p>Logs</p>
-            <p class="list-row-meta">Registros técnicos, sem conteúdo dos documentos — úteis para relatar problemas.</p>
+            <p>{{ nlmx_i18n::t("settings-logs") }}</p>
+            <p class="list-row-meta">{{ nlmx_i18n::t("settings-logs-help") }}</p>
           </div>
-          <button type="button" class="btn btn-secondary" data-command="open_logs_dir">Mostrar logs no Finder</button>
+          <button type="button" class="btn btn-secondary" data-command="open_logs_dir">{{ nlmx_i18n::t("settings-show-logs") }}</button>
         </div>
         {%- if storage.ok %}
         <div class="list-row">
-          <span class="list-row-title">Banco de dados</span>
+          <span class="list-row-title">{{ nlmx_i18n::t("settings-database") }}</span>
           <span class="list-row-meta selectable" style="overflow-wrap: anywhere; text-align: right">{{ storage.path }}</span>
         </div>
-        <div class="list-row"><span class="list-row-title">Versão do esquema</span><span class="list-row-meta tabular">{{ storage.schema }}</span></div>
+        <div class="list-row"><span class="list-row-title">{{ nlmx_i18n::t("settings-schema-version") }}</span><span class="list-row-meta tabular">{{ storage.schema }}</span></div>
         <div class="list-row"><span class="list-row-title">SQLite · sqlite-vec</span><span class="list-row-meta tabular selectable">{{ storage.sqlite_version }} · {{ storage.vector_version }}</span></div>
         {%- endif %}
       </div>
       {%- if !storage.ok %}
       <div style="margin-top: 0.75rem">
-        {% call ds::alert("danger", "Banco de dados indisponível", storage.error) %}{% endcall %}
+        {% call ds::alert("danger", nlmx_i18n::t("settings-database-unavailable"), storage.error) %}{% endcall %}
       </div>
       {%- endif %}
     </section>
@@ -53,19 +68,19 @@
     {%- match diagnostics %}{% when Some(d) %}
     <section aria-labelledby="diagnostics-heading">
       <div class="section-heading-row">
-        <h2 class="section-heading" id="diagnostics-heading">Diagnóstico</h2>
-        <button type="button" class="btn btn-ghost btn-sm" data-copy-from="diagnostics-json">{% call ds::icon("copy") %}{% endcall %}Copiar diagnóstico</button>
+        <h2 class="section-heading" id="diagnostics-heading">{{ nlmx_i18n::t("diagnostics-title") }}</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-copy-from="diagnostics-json" data-copy-message="{{ nlmx_i18n::t("diagnostics-copied") }}">{% call ds::icon("copy") %}{% endcall %}{{ nlmx_i18n::t("diagnostics-copy") }}</button>
       </div>
-      <p class="section-help">Medições desta sessão ({{ d.uptime }}), calculadas só neste Mac. Não incluem conteúdo dos documentos.</p>
+      <p class="section-help">{{ d.help }}</p>
       <div class="list">
-        <div class="list-row"><span class="list-row-title">Documentos importados</span><span class="list-row-meta tabular">{{ d.documents }} · {{ d.pages }} páginas · {{ d.chunks }} trechos</span></div>
-        <div class="list-row"><span class="list-row-title">Páginas processadas por segundo</span><span class="list-row-meta tabular">{{ d.pages_per_second }}</span></div>
-        <div class="list-row"><span class="list-row-title">Embeddings por segundo</span><span class="list-row-meta tabular">{{ d.embeddings_per_second }} ({{ d.embeddings }} no total)</span></div>
-        <div class="list-row"><span class="list-row-title">Primeiro token da resposta (mediana)</span><span class="list-row-meta tabular">{{ d.first_token }}</span></div>
+        <div class="list-row"><span class="list-row-title">{{ nlmx_i18n::t("diagnostics-documents-imported") }}</span><span class="list-row-meta tabular">{{ d.documents_summary }}</span></div>
+        <div class="list-row"><span class="list-row-title">{{ nlmx_i18n::t("diagnostics-pages-per-second") }}</span><span class="list-row-meta tabular">{{ d.pages_per_second }}</span></div>
+        <div class="list-row"><span class="list-row-title">{{ nlmx_i18n::t("diagnostics-embeddings-per-second") }}</span><span class="list-row-meta tabular">{{ d.embeddings_rate }}</span></div>
+        <div class="list-row"><span class="list-row-title">{{ nlmx_i18n::t("diagnostics-first-token") }}</span><span class="list-row-meta tabular">{{ d.first_token }}</span></div>
       </div>
       <table class="metrics-table">
-        <caption class="sr-only">Tempo e taxa de erro por operação</caption>
-        <thead><tr><th scope="col">Operação</th><th scope="col">Total</th><th scope="col">Falhas</th><th scope="col">Taxa de erro</th><th scope="col">Mediana</th><th scope="col">p95</th></tr></thead>
+        <caption class="sr-only">{{ nlmx_i18n::t("diagnostics-table-caption") }}</caption>
+        <thead><tr><th scope="col">{{ nlmx_i18n::t("diagnostics-col-operation") }}</th><th scope="col">{{ nlmx_i18n::t("diagnostics-col-total") }}</th><th scope="col">{{ nlmx_i18n::t("diagnostics-col-failed") }}</th><th scope="col">{{ nlmx_i18n::t("diagnostics-col-error-rate") }}</th><th scope="col">{{ nlmx_i18n::t("diagnostics-col-median") }}</th><th scope="col">{{ nlmx_i18n::t("diagnostics-col-p95") }}</th></tr></thead>
         <tbody>
           {%- for o in d.operations %}
           <tr><th scope="row">{{ o.label }}</th><td>{{ o.total }}</td><td>{{ o.failed }}</td><td>{{ o.error_rate }}</td><td>{{ o.p50 }}</td><td>{{ o.p95 }}</td></tr>
@@ -73,13 +88,13 @@
         </tbody>
       </table>
       {%- if !d.memory.is_empty() %}
-      <h3 class="section-subheading">Memória</h3>
+      <h3 class="section-subheading">{{ nlmx_i18n::t("diagnostics-memory") }}</h3>
       <div class="list">
         {%- for (name, value) in d.memory %}<div class="list-row"><span class="list-row-title">{{ name }}</span><span class="list-row-meta tabular">{{ value }}</span></div>{% endfor %}
       </div>
       {%- endif %}
       {%- if !d.storage.is_empty() %}
-      <h3 class="section-subheading">Armazenamento</h3>
+      <h3 class="section-subheading">{{ nlmx_i18n::t("diagnostics-storage") }}</h3>
       <div class="list">
         {%- for (name, value) in d.storage %}<div class="list-row"><span class="list-row-title">{{ name }}</span><span class="list-row-meta tabular">{{ value }}</span></div>{% endfor %}
       </div>
@@ -89,36 +104,36 @@
     {%- when None %}{% endmatch %}
 
     <section aria-labelledby="about-heading">
-      <h2 class="section-heading" id="about-heading">Sobre</h2>
+      <h2 class="section-heading" id="about-heading">{{ nlmx_i18n::t("settings-about") }}</h2>
       <div class="list">
         <div class="list-row">
           <div class="list-row-title">
-            <p>Versão</p>
-            <p class="list-row-meta">Para atualizar, instale o DMG novo: documentos, conversas e modelos são mantidos.</p>
+            <p>{{ nlmx_i18n::t("settings-version") }}</p>
+            <p class="list-row-meta">{{ nlmx_i18n::t("settings-version-help") }}</p>
           </div>
           <span class="list-row-meta selectable tabular">{{ version }}</span>
           {%- match download_url %}{% when Some(_) %}
-          <button type="button" class="btn btn-secondary btn-sm" data-command="open_download_page">Página de downloads</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-command="open_download_page">{{ nlmx_i18n::t("settings-downloads-page") }}</button>
           {%- when None %}{% endmatch %}
         </div>
         <div class="list-row">
-          <span class="list-row-title">Motor de PDF</span>
+          <span class="list-row-title">{{ nlmx_i18n::t("settings-pdf-engine") }}</span>
           {%- match pdf_engine %}
-          {%- when Ok(build) %}<span class="list-row-meta tabular">PDFium {{ build }}</span>{% call ds::badge("Carregado", "success", true) %}{% endcall %}
-          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge("Indisponível", "danger", true) %}{% endcall %}
+          {%- when Ok(build) %}<span class="list-row-meta tabular">PDFium {{ build }}</span>{% call ds::badge(nlmx_i18n::t("settings-loaded"), "success", true) %}{% endcall %}
+          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge(nlmx_i18n::t("common-unavailable"), "danger", true) %}{% endcall %}
           {%- endmatch %}
         </div>
         <div class="list-row">
-          <span class="list-row-title">Runtime de embeddings</span>
+          <span class="list-row-title">{{ nlmx_i18n::t("settings-embeddings-runtime") }}</span>
           {%- match runtime %}
-          {%- when Ok(rt) %}<span class="list-row-meta tabular" title="{{ rt.path }}">{{ rt.name }} {{ rt.build }}</span>{% if rt.bundled %}{% call ds::badge("Incluído no app", "success", true) %}{% endcall %}{% else %}{% call ds::badge("Desenvolvimento", "info", true) %}{% endcall %}{% endif %}
-          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge("Indisponível", "danger", true) %}{% endcall %}
+          {%- when Ok(rt) %}<span class="list-row-meta tabular" title="{{ rt.path }}">{{ rt.name }} {{ rt.build }}</span>{% if rt.bundled %}{% call ds::badge(nlmx_i18n::t("settings-bundled"), "success", true) %}{% endcall %}{% else %}{% call ds::badge(nlmx_i18n::t("settings-development"), "info", true) %}{% endcall %}{% endif %}
+          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge(nlmx_i18n::t("common-unavailable"), "danger", true) %}{% endcall %}
           {%- endmatch %}
         </div>
         {%- if debug %}
         <div class="list-row">
-          <span class="list-row-title">Design System</span>
-          <a class="btn btn-ghost btn-sm" href="/design-system">Abrir galeria</a>
+          <span class="list-row-title">{{ nlmx_i18n::t("settings-design-system") }}</span>
+          <a class="btn btn-ghost btn-sm" href="/design-system">{{ nlmx_i18n::t("settings-open-gallery") }}</a>
         </div>
         {%- endif %}
       </div>
