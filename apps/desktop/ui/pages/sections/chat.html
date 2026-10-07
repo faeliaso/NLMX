@@ -3,16 +3,16 @@
   <header class="page-header chat-header" data-tauri-drag-region>
     <div class="page-heading" data-tauri-drag-region>
       <h1 class="page-title chat-title" tabindex="-1" data-page-title title="{{ title }}">{{ title }}</h1>
-      <p class="page-description" title="{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}">{% if free %}Conversa livre com o modelo do Apple Intelligence, neste Mac.{% else %}Respostas com citações dos seus documentos.{% endif %}</p>
+      <p class="page-description" title="{% if free %}{{ nlmx_i18n::t("chat-description-free") }}{% else %}{{ nlmx_i18n::t("chat-description-documents") }}{% endif %}">{% if free %}{{ nlmx_i18n::t("chat-description-free") }}{% else %}{{ nlmx_i18n::t("chat-description-documents") }}{% endif %}</p>
     </div>
     <div class="page-actions chat-actions">
       <form class="chat-scope" hx-post="/chat/{{ conversation_id }}/scope" hx-trigger="change" hx-target="#content">
-        <label class="sr-only" for="chat-scope">Sobre o que é a conversa</label>
-        <select class="select" id="chat-scope" name="scope" title="Sobre o que é a conversa">
-          <option value="free"{% if free %} selected{% endif %}>Conversa livre</option>
+        <label class="sr-only" for="chat-scope">{{ nlmx_i18n::t("chat-scope-label") }}</label>
+        <select class="select" id="chat-scope" name="scope" title="{{ nlmx_i18n::t("chat-scope-label") }}">
+          <option value="free"{% if free %} selected{% endif %}>{{ nlmx_i18n::t("chat-scope-free") }}</option>
           {%- if !documents.is_empty() || !free %}
-          <optgroup label="Documentos">
-            <option value="all"{% if library %} selected{% endif %}>Todos os documentos</option>
+          <optgroup label="{{ nlmx_i18n::t("chat-scope-documents") }}">
+            <option value="all"{% if library %} selected{% endif %}>{{ nlmx_i18n::t("chat-scope-all") }}</option>
             {%- for d in documents %}
             <option value="{{ d.id }}"{% if d.selected %} selected{% endif %}>{{ d.title }} · {{ d.format }}</option>
             {%- endfor %}
@@ -20,18 +20,18 @@
           {%- endif %}
         </select>
       </form>
-      <button type="button" class="btn btn-secondary btn-icon" popovertarget="chat-recent" aria-label="Conversas recentes" title="Conversas recentes">{% call ds::icon("clock") %}{% endcall %}</button>
-      <div popover class="menu chat-recent" id="chat-recent" role="menu" aria-label="Conversas recentes">
-        <p class="menu-label">Conversas recentes</p>
+      <button type="button" class="btn btn-secondary btn-icon" popovertarget="chat-recent" aria-label="{{ nlmx_i18n::t("chat-recent") }}" title="{{ nlmx_i18n::t("chat-recent") }}">{% call ds::icon("clock") %}{% endcall %}</button>
+      <div popover class="menu chat-recent" id="chat-recent" role="menu" aria-label="{{ nlmx_i18n::t("chat-recent") }}">
+        <p class="menu-label">{{ nlmx_i18n::t("chat-recent") }}</p>
         {%- for c in recent %}
         <a class="menu-item{% if c.current %} is-current{% endif %}" role="menuitem" tabindex="-1" href="/chat/{{ c.id }}" hx-get="/chat/{{ c.id }}" hx-target="#content" hx-push-url="true"{% if c.current %} aria-current="true"{% endif %}><span class="truncate">{{ c.title }}</span></a>
         {%- endfor %}
         <div class="menu-separator" role="separator"></div>
-        <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="delete-conversation">{% call ds::icon("trash") %}{% endcall %}<span>Excluir esta conversa</span></button>
+        <button type="button" class="menu-item" role="menuitem" tabindex="-1" data-destructive data-dialog-open="delete-conversation">{% call ds::icon("trash") %}{% endcall %}<span>{{ nlmx_i18n::t("chat-delete-menu") }}</span></button>
       </div>
       <form hx-post="/chat/new" hx-target="#content">
         <input type="hidden" name="scope" value="{{ scope_value }}">
-        <button type="submit" class="btn btn-secondary">{% call ds::icon("plus") %}{% endcall %}Nova conversa</button>
+        <button type="submit" class="btn btn-secondary">{% call ds::icon("plus") %}{% endcall %}{{ nlmx_i18n::t("chat-new-conversation") }}</button>
       </form>
     </div>
   </header>
@@ -41,12 +41,12 @@
   {%- when None %}{% endmatch %}
 
   <div class="chat-main">
-    <div class="chat-log" id="chat-log" role="log" aria-label="Conversa">
+    <div class="chat-log" id="chat-log" role="log" aria-label="{{ nlmx_i18n::t("chat-log-label") }}">
       <div class="chat-log-inner" id="chat-turns">
         {%- if turns.is_empty() %}
         <div class="chat-empty" data-chat-empty>
           {%- if !free %}
-          {% call ds::empty_state("chat", "Pergunte sobre seus documentos", "As respostas citam os trechos e as páginas de origem. Se a informação não estiver nos documentos, a resposta avisa.") %}
+          {% call ds::empty_state("chat", nlmx_i18n::t("chat-empty-documents-title"), nlmx_i18n::t("chat-empty-documents-detail")) %}
           <div class="chat-suggestions">
             {%- for s in suggestions %}
             <button type="button" class="btn btn-secondary btn-sm" data-fill-question="{{ s }}">{{ s }}</button>
@@ -54,11 +54,11 @@
           </div>
           {% endcall %}
           {%- elif documents.is_empty() %}
-          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac. Para perguntar sobre seus documentos, com citações, importe-os em Documentos.") %}
-            <a class="btn btn-secondary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{% call ds::icon("document") %}{% endcall %}Ir para Documentos</a>
+          {% call ds::empty_state("chat", nlmx_i18n::t("chat-empty-free-title"), nlmx_i18n::t("chat-empty-free-no-documents-detail")) %}
+            <a class="btn btn-secondary" href="/documents" hx-get="/documents" hx-target="#content" hx-push-url="true">{% call ds::icon("document") %}{% endcall %}{{ nlmx_i18n::t("chat-go-to-documents") }}</a>
           {% endcall %}
           {%- else %}
-          {% call ds::empty_state("chat", "Converse livremente", "As respostas vêm do modelo do Apple Intelligence, neste Mac, sem consultar seus documentos. Para respostas com citações, escolha um documento ou “Todos os documentos” acima.") %}{% endcall %}
+          {% call ds::empty_state("chat", nlmx_i18n::t("chat-empty-free-title"), nlmx_i18n::t("chat-empty-free-detail")) %}{% endcall %}
           {%- endif %}
         </div>
         {%- endif %}
@@ -67,22 +67,22 @@
         {%- endfor %}
       </div>
     </div>
-    <div class="viewer-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar o documento" tabindex="0" data-viewer-resizer></div>
-    <aside class="viewer-pane" id="viewer" aria-label="Documento" tabindex="-1">{{ viewer_html|safe }}</aside>
+    <div class="viewer-resizer" role="separator" aria-orientation="vertical" aria-label="{{ nlmx_i18n::t("chat-resize-viewer") }}" tabindex="0" data-viewer-resizer></div>
+    <aside class="viewer-pane" id="viewer" aria-label="{{ nlmx_i18n::t("chat-viewer-pane") }}" tabindex="-1">{{ viewer_html|safe }}</aside>
   </div>
 
-  <form class="composer" aria-label="Nova pergunta" id="chat-form" hx-post="/chat/{{ conversation_id }}/messages" hx-target="#chat-turns" hx-swap="beforeend">
+  <form class="composer" aria-label="{{ nlmx_i18n::t("chat-composer-label") }}" id="chat-form" hx-post="/chat/{{ conversation_id }}/messages" hx-target="#chat-turns" hx-swap="beforeend">
     <div class="composer-box">
-      <label class="sr-only" for="question">Pergunta</label>
+      <label class="sr-only" for="question">{{ nlmx_i18n::t("chat-question-label") }}</label>
       <textarea class="textarea" id="question" name="q" rows="1" required data-submit-on-enter data-autogrow
-                placeholder="{% if free %}Pergunte qualquer coisa{% elif library %}Pergunte algo sobre seus documentos{% else %}Pergunte algo sobre {{ scope_title }}{% endif %}…"></textarea>
-      <button type="submit" class="btn btn-primary btn-icon composer-action" aria-label="Enviar pergunta" title="Enviar pergunta">{% call ds::icon("send") %}{% endcall %}{% call ds::icon("stop") %}{% endcall %}</button>
+                placeholder="{{ placeholder }}"></textarea>
+      <button type="submit" class="btn btn-primary btn-icon composer-action" aria-label="{{ nlmx_i18n::t("chat-send-question") }}" title="{{ nlmx_i18n::t("chat-send-question") }}">{% call ds::icon("send") %}{% endcall %}{% call ds::icon("stop") %}{% endcall %}</button>
     </div>
-    <p class="composer-hint">Enter envia · Shift+Enter quebra a linha</p>
+    <p class="composer-hint">{{ nlmx_i18n::t("chat-composer-hint") }}</p>
   </form>
 
-  {% call ds::dialog("delete-conversation", "Excluir esta conversa?", "As perguntas, respostas e citações desta conversa serão removidas. Os documentos não são afetados.", true) %}
-    <button type="button" class="btn btn-secondary" data-dialog-close>Cancelar</button>
-    <button type="button" class="btn btn-destructive" data-dialog-close hx-post="/chat/{{ conversation_id }}/delete" hx-target="#content">Excluir</button>
+  {% call ds::dialog("delete-conversation", nlmx_i18n::t("chat-delete-title"), nlmx_i18n::t("chat-delete-detail"), true) %}
+    <button type="button" class="btn btn-secondary" data-dialog-close>{{ nlmx_i18n::t("chat-cancel") }}</button>
+    <button type="button" class="btn btn-destructive" data-dialog-close hx-post="/chat/{{ conversation_id }}/delete" hx-target="#content">{{ nlmx_i18n::t("chat-delete") }}</button>
   {% endcall %}
 </div>

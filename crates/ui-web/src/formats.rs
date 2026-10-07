@@ -3,14 +3,14 @@
 //! never described twice.
 
 use nlmx_domain::document_type::DocumentType;
+use nlmx_i18n::{Locale, t};
 
-/// The icon (an entry of `ds::icon`), the short label ("DOCX") and what the format is called in
-/// full ("Documento do Microsoft Word") for the source panel.
+/// The icon (an entry of `ds::icon`) and the short label ("DOCX"). What a format is called in
+/// full ("Microsoft Word document") for the source panel is [`format_description`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatView {
     pub icon: &'static str,
     pub label: &'static str,
-    pub description: &'static str,
 }
 
 pub fn format_view(kind: DocumentType) -> FormatView {
@@ -18,42 +18,52 @@ pub fn format_view(kind: DocumentType) -> FormatView {
         DocumentType::Pdf => FormatView {
             icon: "format-pdf",
             label: "PDF",
-            description: "Documento PDF",
         },
         DocumentType::Markdown => FormatView {
             icon: "format-markdown",
             label: "Markdown",
-            description: "Documento Markdown",
         },
         DocumentType::Text => FormatView {
             icon: "format-text",
             label: "TXT",
-            description: "Arquivo de texto",
         },
         DocumentType::Csv => FormatView {
             icon: "format-csv",
             label: "CSV",
-            description: "Tabela CSV/TSV (valores separados)",
         },
         DocumentType::Epub => FormatView {
             icon: "format-epub",
             label: "EPUB",
-            description: "Livro digital EPUB",
         },
         DocumentType::Docx => FormatView {
             icon: "format-docx",
             label: "DOCX",
-            description: "Documento do Microsoft Word",
         },
         DocumentType::Xlsx => FormatView {
             icon: "format-xlsx",
             label: "XLSX",
-            description: "Planilha do Microsoft Excel",
         },
         DocumentType::Note => FormatView {
             icon: "format-note",
-            label: "Nota",
-            description: "Texto colado como fonte",
+            // The only label that is a word and not a product or file type.
+            label: match nlmx_i18n::current() {
+                Locale::En => "Note",
+                Locale::PtBr | Locale::Es => "Nota",
+            },
         },
     }
+}
+
+/// What the format is called in full, in the interface language ("Documento do Microsoft Word").
+pub fn format_description(kind: DocumentType) -> String {
+    t(match kind {
+        DocumentType::Pdf => "sources-format-pdf",
+        DocumentType::Markdown => "sources-format-markdown",
+        DocumentType::Text => "sources-format-text",
+        DocumentType::Csv => "sources-format-csv",
+        DocumentType::Epub => "sources-format-epub",
+        DocumentType::Docx => "sources-format-docx",
+        DocumentType::Xlsx => "sources-format-xlsx",
+        DocumentType::Note => "sources-format-note",
+    })
 }

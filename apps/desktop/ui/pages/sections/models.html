@@ -1,17 +1,17 @@
 {% import "components/ds.html" as ds %}
 {% import "components/page.html" as page %}
 <div class="page">
-  {% call page::header("Modelos", "Modelos locais usados para buscar e responder.") %}
-    <button type="button" class="btn btn-secondary" hx-get="/models" hx-target="#content">{% call ds::icon("refresh") %}{% endcall %}Verificar novamente</button>
+  {% call page::header(nlmx_i18n::t("models-title"), nlmx_i18n::t("models-subtitle")) %}
+    <button type="button" class="btn btn-secondary" hx-get="/models" hx-target="#content">{% call ds::icon("refresh") %}{% endcall %}{{ nlmx_i18n::t("models-recheck") }}</button>
   {% endcall %}
   <div class="page-body">
     <section aria-labelledby="gen-heading">
-      <h2 class="section-heading" id="gen-heading">Geração de respostas</h2>
+      <h2 class="section-heading" id="gen-heading">{{ nlmx_i18n::t("models-generation-heading") }}</h2>
       <div class="card">
         <div class="card-header">
           <div>
             <p class="card-title">Apple Foundation Models</p>
-            <p class="card-subtitle">Modelo on-device do sistema · fornecido pelo macOS</p>
+            <p class="card-subtitle">{{ nlmx_i18n::t("models-fm-subtitle") }}</p>
           </div>
           {% call ds::badge(lm.label, lm.kind, true) %}{% endcall %}
         </div>
@@ -20,13 +20,13 @@
     </section>
 
     <section aria-labelledby="emb-heading">
-      <h2 class="section-heading" id="emb-heading">Embeddings</h2>
+      <h2 class="section-heading" id="emb-heading">{{ nlmx_i18n::t("models-embeddings-heading") }}</h2>
       <div class="list" style="margin-bottom: 0.75rem">
         <div class="list-row">
-          <span class="list-row-title">Runtime</span>
+          <span class="list-row-title">{{ nlmx_i18n::t("models-runtime") }}</span>
           {%- match runtime %}
-          {%- when Ok(rt) %}<span class="list-row-meta tabular">{{ rt.name }} {{ rt.build }}</span>{% if rt.bundled %}{% call ds::badge("Incluído no app", "success", true) %}{% endcall %}{% else %}{% call ds::badge("Desenvolvimento", "info", true) %}{% endcall %}{% endif %}
-          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge("Indisponível", "danger", true) %}{% endcall %}
+          {%- when Ok(rt) %}<span class="list-row-meta tabular">{{ rt.name }} {{ rt.build }}</span>{% if rt.bundled %}{% call ds::badge(nlmx_i18n::t("models-runtime-bundled"), "success", true) %}{% endcall %}{% else %}{% call ds::badge(nlmx_i18n::t("models-runtime-dev"), "info", true) %}{% endcall %}{% endif %}
+          {%- when Err(reason) %}<span class="list-row-meta selectable">{{ reason }}</span>{% call ds::badge(nlmx_i18n::t("status-unavailable"), "danger", true) %}{% endcall %}
           {%- endmatch %}
         </div>
       </div>

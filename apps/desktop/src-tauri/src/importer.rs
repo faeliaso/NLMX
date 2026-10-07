@@ -12,6 +12,7 @@ use nlmx_application::{
     use_cases::{ActivityGuard, DocumentIngestion, Enqueued, IndexingActivity},
 };
 use nlmx_domain::{ingestion::ImportOutcome, note::clean_note_text};
+use nlmx_i18n::{Locale, t, tr_args};
 use serde::Serialize;
 use tauri::{Emitter, Manager, Runtime};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -37,25 +38,33 @@ pub fn summarize(
     duplicates: usize,
     failures: &[String],
 ) -> (&'static str, String) {
-    let plural =
-        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    summarize_in(nlmx_i18n::current(), imported, duplicates, failures)
+}
+
+pub fn summarize_in(
+    locale: Locale,
+    imported: usize,
+    duplicates: usize,
+    failures: &[String],
+) -> (&'static str, String) {
+    let count = |id: &str, n: usize| tr_args(locale, id, &[("count", n.into())]);
     let mut parts = Vec::new();
     if imported > 0 {
-        parts.push(plural(imported, "importado", "importados"));
+        parts.push(count("documents-import-imported", imported));
     }
     if duplicates > 0 {
-        parts.push(plural(
-            duplicates,
-            "já estava na biblioteca",
-            "já estavam na biblioteca",
-        ));
+        parts.push(count("documents-import-duplicates", duplicates));
     }
     if !failures.is_empty() {
-        parts.push(plural(failures.len(), "com falha", "com falha"));
+        parts.push(count("documents-import-failed", failures.len()));
     }
     let mut message = parts.join(" · ");
     if let Some(first) = failures.first() {
-        message.push_str(&format!(" — {first}"));
+        message = tr_args(
+            locale,
+            "documents-import-summary-failure",
+            &[("summary", message.into()), ("first", first.clone().into())],
+        );
     }
     (
         if failures.is_empty() {
@@ -94,7 +103,7 @@ pub async fn register_batch(
         };
         let enqueued = task.await.unwrap_or_else(|_| Enqueued::Failed {
             id: None,
-            reason: "falha interna ao registrar o arquivo".to_string(),
+            reason: t("documents-import-internal-register"),
         });
         notify.documents_changed();
         items.push((name, enqueued));
@@ -117,7 +126,7 @@ pub async fn process_batch(
         };
         let outcome = task.await.unwrap_or_else(|_| ImportOutcome::Failed {
             id: None,
-            reason: "falha interna ao processar o arquivo".to_string(),
+            reason: t("documents-import-internal-process"),
         });
         match outcome {
             ImportOutcome::Imported { .. } => imported += 1,
@@ -214,12 +223,12 @@ impl ImportQueue {
             };
             let enqueued = task.await.unwrap_or_else(|_| Enqueued::Failed {
                 id: None,
-                reason: "falha interna ao registrar a nota".to_string(),
+                reason: t("documents-import-internal-note"),
             });
             notify.documents_changed();
             let _ = tx.send(Waiting {
                 batch: Batch {
-                    items: vec![("Nota".to_string(), enqueued)],
+                    items: vec![(t("documents-note-name"), enqueued)],
                 },
                 _running: running,
             });
@@ -301,24 +310,39 @@ mod tests {
 
     #[test]
     fn summaries_read_naturally() {
-        assert_eq!(summarize(1, 0, &[]), ("success", "1 importado".to_string()));
+        let pt = |i, d, f: &[String]| summarize_in(Locale::PtBr, i, d, f);
+        assert_eq!(pt(1, 0, &[]), ("success", "1 importado".to_string()));
         assert_eq!(
-            summarize(3, 2, &[]),
+            pt(3, 2, &[]),
             (
                 "success",
                 "3 importados · 2 já estavam na biblioteca".to_string()
             )
         );
         assert_eq!(
-            summarize(0, 1, &[]),
+            pt(0, 1, &[]),
             ("success", "1 já estava na biblioteca".to_string())
         );
         let failures = ["a.pdf: PDF inválido".to_string(), "b.md: vazio".to_string()];
         assert_eq!(
-            summarize(1, 0, &failures),
+            pt(1, 0, &failures),
             (
                 "danger",
                 "1 importado · 2 com falha — a.pdf: PDF inválido".to_string()
+            )
+        );
+        assert_eq!(
+            summarize_in(Locale::En, 3, 1, &[]),
+            (
+                "success",
+                "3 imported · 1 was already in the library".to_string()
+            )
+        );
+        assert_eq!(
+            summarize_in(Locale::Es, 1, 2, &[]),
+            (
+                "success",
+                "1 importado · 2 ya estaban en la biblioteca".to_string()
             )
         );
     }
@@ -392,7 +416,9 @@ mod tests {
         );
 
         let (kind, message) = process_batch(&ingestion, first, &notify).await;
-        assert_eq!((kind, message.as_str()), ("success", "3 importados"));
+        // The language is process-wide (other tests switch it): only its facts are checked.
+        assert_eq!(kind, "success");
+        assert!(message.starts_with("3 "), "{message}");
         assert_eq!(
             documents.row(4).status,
             DocumentStatus::Queued,
@@ -415,11 +441,9 @@ mod tests {
         assert_eq!(documents.len(), 1, "only the first copy is registered");
         let (kind, message) = process_batch(&ingestion, batch, &notify).await;
         assert_eq!(kind, "danger");
-        assert!(
-            message
-                .starts_with("1 importado · 1 já estava na biblioteca · 1 com falha — ausente.pdf"),
-            "{message}"
-        );
+        // Whatever the language: three parts, the first failure named at the end.
+        assert_eq!(message.matches(" · ").count(), 2, "{message}");
+        assert!(message.contains(" — ausente.pdf"), "{message}");
     }
 
     #[tokio::test]
@@ -442,12 +466,10 @@ mod tests {
         }
         let finished = recorder.finished.lock().unwrap().clone();
         assert_eq!(
-            finished,
-            [
-                ("success", "1 importado".to_string()),
-                ("success", "1 importado".to_string())
-            ]
+            finished.iter().map(|f| f.0).collect::<Vec<_>>(),
+            ["success", "success"]
         );
+        assert!(finished[0].1.starts_with("1 "), "{}", finished[0].1);
         assert_eq!(documents.len(), 2);
         assert!(!activity.is_running(), "the activity ends with the queue");
     }

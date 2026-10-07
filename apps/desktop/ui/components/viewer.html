@@ -1,47 +1,47 @@
 {% import "components/ds.html" as ds %}
 <div class="viewer" data-viewer data-document="{{ document_id }}" data-target-page="{{ page }}" data-anchor="{{ anchor }}"{% if has_highlights %} data-has-highlights{% endif %} data-page-count="{{ page_count() }}">
-  <header class="viewer-toolbar" role="toolbar" aria-label="Visualizador de PDF">
-    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-thumbs aria-pressed="true" aria-label="Miniaturas" title="Miniaturas">{% call ds::icon("sidebar") %}{% endcall %}</button>
+  <header class="viewer-toolbar" role="toolbar" aria-label="{{ nlmx_i18n::t("viewer-toolbar-label") }}">
+    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-thumbs aria-pressed="true" aria-label="{{ nlmx_i18n::t("viewer-thumbs") }}" title="{{ nlmx_i18n::t("viewer-thumbs") }}">{% call ds::icon("sidebar") %}{% endcall %}</button>
     <div class="viewer-heading">
       <h2 class="viewer-title" tabindex="-1" data-panel-title title="{{ title }}">{{ title }}</h2>
       {%- if !origin.is_empty() %}<p class="viewer-origin">{{ origin }}</p>{% endif %}
     </div>
-    <div class="viewer-group" role="group" aria-label="Página">
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-prev aria-label="Página anterior">{% call ds::icon("chevron-left") %}{% endcall %}</button>
-      <input class="input viewer-page-input tabular" type="text" inputmode="numeric" value="{{ page }}" data-viewer-page autocomplete="off" aria-label="Página atual">
-      <span class="viewer-page-count tabular">de {{ page_count() }}</span>
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-next aria-label="Próxima página">{% call ds::icon("chevron-right") %}{% endcall %}</button>
+    <div class="viewer-group" role="group" aria-label="{{ nlmx_i18n::t("viewer-page-group") }}">
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-prev aria-label="{{ nlmx_i18n::t("viewer-prev-page") }}">{% call ds::icon("chevron-left") %}{% endcall %}</button>
+      <input class="input viewer-page-input tabular" type="text" inputmode="numeric" value="{{ page }}" data-viewer-page autocomplete="off" aria-label="{{ nlmx_i18n::t("viewer-current-page") }}">
+      <span class="viewer-page-count tabular">{{ total_label }}</span>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-next aria-label="{{ nlmx_i18n::t("viewer-next-page") }}">{% call ds::icon("chevron-right") %}{% endcall %}</button>
     </div>
-    <div class="viewer-group" role="group" aria-label="Zoom">
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-zoom="-1" aria-label="Diminuir zoom">{% call ds::icon("minus") %}{% endcall %}</button>
-      <button type="button" class="btn btn-ghost btn-sm viewer-zoom-label tabular" data-viewer-zoom="0" aria-label="Zoom 100%" title="Tamanho real">100%</button>
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-zoom="1" aria-label="Aumentar zoom">{% call ds::icon("plus") %}{% endcall %}</button>
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-fit aria-pressed="false" aria-label="Ajustar à largura" title="Ajustar à largura">{% call ds::icon("fit-width") %}{% endcall %}</button>
+    <div class="viewer-group" role="group" aria-label="{{ nlmx_i18n::t("viewer-zoom-group") }}">
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-zoom="-1" aria-label="{{ nlmx_i18n::t("viewer-zoom-out") }}">{% call ds::icon("minus") %}{% endcall %}</button>
+      <button type="button" class="btn btn-ghost btn-sm viewer-zoom-label tabular" data-viewer-zoom="0" aria-label="{{ nlmx_i18n::t("viewer-zoom-reset") }}" title="{{ nlmx_i18n::t("viewer-actual-size") }}">100%</button>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-zoom="1" aria-label="{{ nlmx_i18n::t("viewer-zoom-in") }}">{% call ds::icon("plus") %}{% endcall %}</button>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-fit aria-pressed="false" aria-label="{{ nlmx_i18n::t("viewer-fit-width") }}" title="{{ nlmx_i18n::t("viewer-fit-width") }}">{% call ds::icon("fit-width") %}{% endcall %}</button>
     </div>
     <form class="viewer-search" role="search" data-viewer-search>
-      <input class="input" type="search" placeholder="Buscar" autocomplete="off" data-viewer-search-input aria-label="Buscar no documento">
+      <input class="input" type="search" placeholder="{{ nlmx_i18n::t("viewer-search-placeholder") }}" autocomplete="off" data-viewer-search-input aria-label="{{ nlmx_i18n::t("viewer-search-label") }}">
       <span class="viewer-search-count tabular" data-viewer-search-count aria-live="polite"></span>
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-hit="-1" aria-label="Resultado anterior">{% call ds::icon("chevron-up") %}{% endcall %}</button>
-      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-hit="1" aria-label="Próximo resultado">{% call ds::icon("chevron-down") %}{% endcall %}</button>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-hit="-1" aria-label="{{ nlmx_i18n::t("viewer-prev-hit") }}">{% call ds::icon("chevron-up") %}{% endcall %}</button>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-hit="1" aria-label="{{ nlmx_i18n::t("viewer-next-hit") }}">{% call ds::icon("chevron-down") %}{% endcall %}</button>
     </form>
-    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-expand aria-pressed="false" aria-label="Tela cheia" title="Tela cheia">{% call ds::icon("expand") %}{% endcall %}</button>
-    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-close-panel aria-label="Fechar documento" title="Fechar">{% call ds::icon("x") %}{% endcall %}</button>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-viewer-expand aria-pressed="false" aria-label="{{ nlmx_i18n::t("viewer-fullscreen") }}" title="{{ nlmx_i18n::t("viewer-fullscreen") }}">{% call ds::icon("expand") %}{% endcall %}</button>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm" data-close-panel aria-label="{{ nlmx_i18n::t("viewer-close") }}" title="{{ nlmx_i18n::t("common-close") }}">{% call ds::icon("x") %}{% endcall %}</button>
   </header>
   <div class="viewer-body">
-    <nav class="viewer-thumbs" aria-label="Miniaturas" data-viewer-thumb-list>
+    <nav class="viewer-thumbs" aria-label="{{ nlmx_i18n::t("viewer-thumbs") }}" data-viewer-thumb-list>
       {%- for p in pages %}
-      <button type="button" class="viewer-thumb" data-goto-page="{{ p.number }}" aria-label="Página {{ p.number }}"{% if p.number == page %} aria-current="page"{% endif %}>
+      <button type="button" class="viewer-thumb" data-goto-page="{{ p.number }}" aria-label="{{ p.label }}"{% if p.number == page %} aria-current="page"{% endif %}>
         <span class="viewer-thumb-page" style="aspect-ratio: {{ p.width }} / {{ p.height }}"><img data-thumb-src="/documents/{{ document_id }}/pages/{{ p.number }}.png?v={{ version }}&amp;w=160" alt=""></span>
         <span class="viewer-thumb-number tabular">{{ p.number }}</span>
       </button>
       {%- endfor %}
     </nav>
-    <div class="viewer-scroll" data-viewer-scroll tabindex="0" aria-label="Páginas de {{ title }}">
+    <div class="viewer-scroll" data-viewer-scroll tabindex="0" aria-label="{{ pages_label }}">
       <div class="viewer-pages" data-viewer-pages>
         {%- for p in pages %}
-        <section class="viewer-page" data-page="{{ p.number }}" data-width="{{ p.width }}" data-height="{{ p.height }}" style="--page-w: {{ p.width }}; --page-h: {{ p.height }}" aria-label="Página {{ p.number }}">
+        <section class="viewer-page" data-page="{{ p.number }}" data-width="{{ p.width }}" data-height="{{ p.height }}" style="--page-w: {{ p.width }}; --page-h: {{ p.height }}" aria-label="{{ p.label }}">
           <img class="viewer-page-image" alt="" data-src-base="/documents/{{ document_id }}/pages/{{ p.number }}.png?v={{ version }}" decoding="async">
-          <p class="viewer-page-failed" hidden>Não foi possível exibir esta página. <button type="button" class="btn btn-secondary btn-sm" data-viewer-retry>Tentar de novo</button></p>
+          <p class="viewer-page-failed" hidden>{{ nlmx_i18n::t("viewer-page-failed") }} <button type="button" class="btn btn-secondary btn-sm" data-viewer-retry>{{ nlmx_i18n::t("viewer-retry") }}</button></p>
           <div class="viewer-text" data-text-src="/viewer/{{ document_id }}/pages/{{ p.number }}/text"></div>
           <div class="viewer-marks" data-viewer-marks>
             {%- for h in p.highlights %}

@@ -64,6 +64,14 @@ struct SettingsView {
     runtime: Result<nlmx_domain::models::RuntimeInfo, String>,
     diagnostics: Option<crate::diagnostics::DiagnosticsView>,
     download_url: Option<&'static str>,
+    languages: Vec<(&'static str, &'static str, bool)>,
+}
+
+fn remove_failed(reason: &dyn std::fmt::Display) -> String {
+    nlmx_i18n::t_args(
+        "documents-notice-remove-failed",
+        &[("reason", reason.to_string().into())],
+    )
 }
 
 fn render(template: impl Template) -> Result<String, UiError> {
@@ -88,18 +96,16 @@ pub async fn remove_document(
     let notice = match &state.remover {
         Err(reason) => Notice {
             kind: "danger",
-            message: format!("Não foi possível remover o documento: {reason}"),
+            message: remove_failed(reason),
         },
         Ok(remover) => match remover.remove(id).await {
             Ok(_) => Notice {
                 kind: "success",
-                message:
-                    "Documento removido. Ele e tudo o que derivava dele foram apagados deste Mac."
-                        .into(),
+                message: nlmx_i18n::t("documents-notice-removed"),
             },
             Err(err) => Notice {
                 kind: "danger",
-                message: format!("Não foi possível remover o documento: {err}"),
+                message: remove_failed(&err),
             },
         },
     };
@@ -127,12 +133,12 @@ pub async fn add_note(
     let notice = match &state.notes {
         None => Notice {
             kind: "danger",
-            message: "Não foi possível adicionar a nota: a importação não está disponível.".into(),
+            message: nlmx_i18n::t("documents-notice-note-unavailable"),
         },
         Some(notes) => match notes.submit(&form.text) {
             Ok(()) => Notice {
                 kind: "info",
-                message: "Nota adicionada. Ela é indexada em segundo plano.".into(),
+                message: nlmx_i18n::t("documents-notice-note-added"),
             },
             Err(err) => Notice {
                 kind: "danger",
@@ -166,6 +172,7 @@ pub async fn settings(State(state): State<AppState>, headers: HeaderMap) -> Resp
         pdf_engine: status.document_engine,
         runtime: status.runtime,
         download_url: crate::DOWNLOAD_URL,
+        languages: crate::language::options(),
         diagnostics: match &state.diagnostics {
             Some(d) => {
                 d.sample().await;

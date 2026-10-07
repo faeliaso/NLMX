@@ -1,6 +1,6 @@
 {% import "components/ds.html" as ds %}
 <!doctype html>
-<html lang="pt-BR"{% block html_attrs %}{% endblock %}>
+<html lang="{{ nlmx_i18n::current().tag() }}"{% block html_attrs %}{% endblock %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,9 +14,11 @@
 <body>
   {% block body %}{% endblock %}
 
+  <script type="application/json" id="i18n-js">{{ crate::js_catalog::catalog_json()|safe }}</script>
+
   <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
-  <template id="toast-template-success"><div class="toast toast-success" data-dismissible>{% call ds::icon("check-circle") %}{% endcall %}<p data-toast-message></p><button type="button" class="btn btn-ghost btn-sm btn-icon" data-dismiss aria-label="Fechar">{% call ds::icon("x") %}{% endcall %}</button></div></template>
-  <template id="toast-template-danger"><div class="toast toast-danger" role="alert" data-dismissible>{% call ds::icon("alert-circle") %}{% endcall %}<p data-toast-message></p><button type="button" class="btn btn-ghost btn-sm btn-icon" data-dismiss aria-label="Fechar">{% call ds::icon("x") %}{% endcall %}</button></div></template>
-  <template id="toast-template-info"><div class="toast toast-info" data-dismissible>{% call ds::icon("info") %}{% endcall %}<p data-toast-message></p><button type="button" class="btn btn-ghost btn-sm btn-icon" data-dismiss aria-label="Fechar">{% call ds::icon("x") %}{% endcall %}</button></div></template>
+  <template id="toast-template-success"><div class="toast toast-success" data-dismissible>{% call ds::icon("check-circle") %}{% endcall %}<p data-toast-message></p><button type="button" class="btn btn-ghost btn-sm btn-icon" data-dismiss aria-label="{{ nlmx_i18n::t("common-close") }}">{% call ds::icon("x") %}{% endcall %}</button></div></template>
+  <template id="toast-template-danger"><div class="toast toast-danger" role="alert" data-dismissible>{% call ds::icon("alert-circle") %}{% endcall %}<p data-toast-message></p><button type="button" class="btn btn-ghost btn-sm btn-icon" data-dismiss aria-label="{{ nlmx_i18n::t("common-close") }}">{% call ds::icon("x") %}{% endcall %}</button></div></template>
+  <template id="toast-template-info"><div class="toast toast-info" data-dismissible>{% call ds::icon("info") %}{% endcall %}<p data-toast-message></p><button type="button" class="btn btn-ghost btn-sm btn-icon" data-dismiss aria-label="{{ nlmx_i18n::t("common-close") }}">{% call ds::icon("x") %}{% endcall %}</button></div></template>
 </body>
 </html>

@@ -107,7 +107,7 @@
 {%- endmacro %}
 
 {#- Card-shaped skeleton for list/card placeholders. -#}
-{% macro skeleton_card(label = "Carregando…") -%}
+{% macro skeleton_card(label = nlmx_i18n::t("common-loading-ellipsis")) -%}
 <div class="card card-body skeleton-stack" aria-busy="true">
   <span class="sr-only">{{ label }}</span>
   <span class="skeleton skeleton-title"></span>

@@ -1,23 +1,23 @@
 {% import "components/ds.html" as ds %}
-<section class="chat-answer" id="answer-{{ answer.id }}" data-answer="{{ answer.id }}" data-status="{{ answer.status }}"{% if answer.streaming() %} aria-busy="true"{% endif %} aria-label="Resposta">
+<section class="chat-answer" id="answer-{{ answer.id }}" data-answer="{{ answer.id }}" data-status="{{ answer.status }}"{% if answer.streaming() %} aria-busy="true"{% endif %} aria-label="{{ nlmx_i18n::t("chat-answer-label") }}">
   {%- if answer.streaming() %}
-  <p class="answer-progress" data-answer-progress>{% call ds::spinner("Gerando resposta", "sm") %}{% endcall %}<span>{% if answer.free %}Gerando resposta…{% else %}Buscando nos documentos…{% endif %}</span></p>
+  <p class="answer-progress" data-answer-progress>{% call ds::spinner(nlmx_i18n::t("chat-generating-label"), "sm") %}{% endcall %}<span>{% if answer.free %}{{ nlmx_i18n::t("chat-generating") }}{% else %}{{ nlmx_i18n::t("chat-searching-documents") }}{% endif %}</span></p>
   <div class="answer-text answer-stream selectable" data-answer-stream></div>
   {%- else %}
   {%- if answer.status == "failed" %}
-  {% call ds::alert("danger", "Não foi possível gerar a resposta", answer.error) %}{% endcall %}
+  {% call ds::alert("danger", nlmx_i18n::t("chat-failed-title"), answer.error) %}{% endcall %}
   {%- elif answer.status == "refused" %}
-  {% call ds::alert("warning", "O modelo não respondeu a esta pergunta", "As proteções do Apple Foundation Models recusaram o pedido. Veja abaixo os trechos encontrados ou reformule a pergunta.") %}{% endcall %}
+  {% call ds::alert("warning", nlmx_i18n::t("chat-refused-title"), nlmx_i18n::t("chat-refused-detail")) %}{% endcall %}
   {%- else %}
   {%- if answer.html.is_empty() %}
-  <p class="answer-text answer-muted">O modelo devolveu uma resposta vazia.</p>
+  <p class="answer-text answer-muted">{{ nlmx_i18n::t("chat-empty-answer") }}</p>
   {%- else %}
   <div class="answer-text selectable{% if answer.status == "not_found" %} answer-muted{% endif %}">{{ answer.html|safe }}</div>
   {%- endif %}
   {%- if answer.status == "cancelled" || answer.free %}
   <p class="answer-flag">
-    {%- if answer.free %}<span class="answer-free-flag" title="Resposta do modelo, sem consultar os documentos">{% call ds::badge("Sem documentos", "neutral") %}{% endcall %}</span>{% endif %}
-    {%- if answer.status == "cancelled" %}{% call ds::badge("Interrompida", "neutral") %}{% endcall %}{% endif %}
+    {%- if answer.free %}<span class="answer-free-flag" title="{{ nlmx_i18n::t("chat-free-tooltip") }}">{% call ds::badge(nlmx_i18n::t("chat-free-badge"), "neutral") %}{% endcall %}</span>{% endif %}
+    {%- if answer.status == "cancelled" %}{% call ds::badge(nlmx_i18n::t("chat-cancelled-badge"), "neutral") %}{% endcall %}{% endif %}
   </p>
   {%- endif %}
   {%- endif %}
@@ -25,14 +25,14 @@
   {%- if !answer.cited.is_empty() || !answer.consulted.is_empty() %}
   <div class="answer-sources">
     {%- if !answer.cited.is_empty() %}
-    <h3 class="answer-sources-title">Fontes</h3>
+    <h3 class="answer-sources-title">{{ nlmx_i18n::t("chat-sources-title") }}</h3>
     <ol class="source-list">
       {%- for s in answer.cited %}{% include "components/chat_source.html" %}{% endfor %}
     </ol>
     {%- endif %}
     {%- if !answer.consulted.is_empty() %}
     <details class="source-more"{% if answer.cited.is_empty() %} open{% endif %}>
-      <summary>{% if answer.cited.is_empty() %}Trechos encontrados ({{ answer.consulted.len() }}){% else %}+{{ answer.consulted.len() }} {% if answer.consulted.len() == 1 %}trecho consultado{% else %}trechos consultados{% endif %}{% endif %}</summary>
+      <summary>{{ answer.consulted_summary }}</summary>
       <ol class="source-list">
         {%- for s in answer.consulted %}{% include "components/chat_source.html" %}{% endfor %}
       </ol>
@@ -43,12 +43,12 @@
 
   <div class="answer-actions">
     {%- if answer.answerable_freely %}
-    <button type="button" class="btn btn-secondary btn-sm" hx-post="/chat/messages/{{ answer.id }}/free" hx-target="#answer-{{ answer.id }}" hx-swap="outerHTML">{% call ds::icon("chat") %}{% endcall %}Responder sem os documentos</button>
+    <button type="button" class="btn btn-secondary btn-sm" hx-post="/chat/messages/{{ answer.id }}/free" hx-target="#answer-{{ answer.id }}" hx-swap="outerHTML">{% call ds::icon("chat") %}{% endcall %}{{ nlmx_i18n::t("chat-answer-freely") }}</button>
     {%- endif %}
     {%- if answer.status != "failed" %}
-    <button type="button" class="btn btn-ghost btn-sm" data-copy-answer>{% call ds::icon("copy") %}{% endcall %}Copiar</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-copy-answer>{% call ds::icon("copy") %}{% endcall %}{{ nlmx_i18n::t("chat-copy") }}</button>
     {%- endif %}
-    <button type="button" class="btn btn-ghost btn-sm" hx-post="/chat/messages/{{ answer.id }}/regenerate" hx-target="#answer-{{ answer.id }}" hx-swap="outerHTML">{% call ds::icon("refresh") %}{% endcall %}{% if answer.status == "failed" %}Tentar novamente{% else %}Regenerar{% endif %}</button>
+    <button type="button" class="btn btn-ghost btn-sm" hx-post="/chat/messages/{{ answer.id }}/regenerate" hx-target="#answer-{{ answer.id }}" hx-swap="outerHTML">{% call ds::icon("refresh") %}{% endcall %}{% if answer.status == "failed" %}{{ nlmx_i18n::t("chat-retry") }}{% else %}{{ nlmx_i18n::t("chat-regenerate") }}{% endif %}</button>
   </div>
   <template data-copy-text>{{ answer.copy_text }}</template>
   {%- endif %}

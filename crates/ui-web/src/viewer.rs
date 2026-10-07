@@ -17,6 +17,7 @@ use nlmx_application::use_cases::{DocumentOutline, PageError, ViewDocument};
 use nlmx_domain::{
     document::BoundingBox, ingestion::DocumentId, ingestion::PageBox, viewer::ViewerTarget,
 };
+use nlmx_i18n::{t, t_args};
 use serde::{Deserialize, Serialize};
 
 use crate::{AppState, error::UiError, markdown::escape};
@@ -46,6 +47,8 @@ pub fn percent(b: &BoundingBox, width: f32, height: f32) -> PercentBox {
 
 pub struct PageView {
     pub number: u32,
+    /// "Página 3" (accessible name).
+    pub label: String,
     pub width: f32,
     pub height: f32,
     pub highlights: Vec<PercentBox>,
@@ -65,6 +68,10 @@ pub struct ViewerView {
     pub has_highlights: bool,
     /// What opened it, for the toolbar ("Fonte 3").
     pub origin: String,
+    /// "de 12" (after the page box).
+    pub total_label: String,
+    /// "Páginas de <título>" (name of the scrolling region).
+    pub pages_label: String,
 }
 
 impl ViewerView {
@@ -81,6 +88,7 @@ pub fn view(outline: DocumentOutline, target: &ViewerTarget, origin: String) -> 
         .iter()
         .map(|p| PageView {
             number: p.number,
+            label: t_args("viewer-page-n", &[("page", u64::from(p.number).into())]),
             width: p.width,
             height: p.height,
             highlights: target
@@ -98,6 +106,11 @@ pub fn view(outline: DocumentOutline, target: &ViewerTarget, origin: String) -> 
         .map(|t| t.to_string())
         .unwrap_or_default();
     ViewerView {
+        total_label: t_args("viewer-page-count", &[("total", pages.len().into())]),
+        pages_label: t_args(
+            "viewer-pages-of",
+            &[("title", outline.title.clone().into())],
+        ),
         document_id: outline.document_id,
         version: outline.version,
         title: outline.title,
@@ -112,7 +125,7 @@ pub fn view(outline: DocumentOutline, target: &ViewerTarget, origin: String) -> 
 fn viewer_service(state: &AppState) -> Result<&Arc<ViewDocument>, UiError> {
     state.viewer.as_ref().map_err(|reason| UiError {
         status: StatusCode::SERVICE_UNAVAILABLE,
-        title: "Visualizador indisponível".into(),
+        title: t("viewer-unavailable-title"),
         message: reason.clone(),
     })
 }
@@ -122,7 +135,7 @@ fn page_error(e: PageError) -> UiError {
         PageError::NotFound => UiError::not_found(),
         PageError::Failed(m) => UiError {
             status: StatusCode::UNPROCESSABLE_ENTITY,
-            title: "Não foi possível abrir o documento".into(),
+            title: t("viewer-open-failed-title"),
             message: m,
         },
     }
@@ -130,9 +143,10 @@ fn page_error(e: PageError) -> UiError {
 
 fn error_fragment(e: UiError) -> Response {
     let html = format!(
-        r#"<div class="viewer-error"><div class="alert alert-danger" role="alert"><div class="alert-content"><p class="alert-title">{}</p><p>{}</p></div></div><button type="button" class="btn btn-secondary btn-sm" data-close-panel>Fechar</button></div>"#,
+        r#"<div class="viewer-error"><div class="alert alert-danger" role="alert"><div class="alert-content"><p class="alert-title">{}</p><p>{}</p></div></div><button type="button" class="btn btn-secondary btn-sm" data-close-panel>{}</button></div>"#,
         escape(&e.title),
-        escape(&e.message)
+        escape(&e.message),
+        escape(&t("common-close"))
     );
     (e.status, Html(html)).into_response()
 }
@@ -179,7 +193,7 @@ async fn target(
                         page: query.page.unwrap_or(s.page_start),
                         highlights: s.bboxes.clone(),
                     },
-                    format!("Fonte {n}"),
+                    t_args("viewer-origin-source", &[("n", u64::from(n).into())]),
                 );
             }
         }
@@ -208,7 +222,7 @@ async fn target(
                         page,
                         highlights,
                     },
-                    format!("Página {page}"),
+                    t_args("viewer-origin-page", &[("page", u64::from(page).into())]),
                 );
             }
         }

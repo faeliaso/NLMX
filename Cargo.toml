@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "apps/desktop/src-tauri",
     "crates/domain",
+    "crates/i18n",
     "crates/application",
     "crates/ui-web",
     "crates/testing",
@@ -21,6 +22,7 @@ publish = false
 # Internal crates
 nlmx-domain = { path = "crates/domain" }
 nlmx-application = { path = "crates/application" }
+nlmx-i18n = { path = "crates/i18n" }
 nlmx-ui-web = { path = "crates/ui-web" }
 nlmx-testing = { path = "crates/testing" }
 nlmx-pdf-pdfium = { path = "crates/adapters/pdf-pdfium" }
@@ -67,6 +69,9 @@ encoding_rs_io = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 quick-xml = "0.38"
 unicode-normalization = "0.1"
+fluent-bundle = "0.16"
+unic-langid = "0.9"
+sys-locale = "0.3"
 
 [workspace.lints.rust]
 # `deny`, not `forbid`: the sqlite-vec FFI registration in store-sqlite/src/vector.rs is the one allowed exception.

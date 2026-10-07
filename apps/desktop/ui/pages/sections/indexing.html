@@ -1,5 +1,5 @@
 {% import "components/page.html" as page %}
 <div class="page">
-  {% call page::header("Indexação", "Extração, divisão em trechos e embeddings, em segundo plano.") %}{% endcall %}
+  {% call page::header(nlmx_i18n::t("indexing-title"), nlmx_i18n::t("indexing-subtitle")) %}{% endcall %}
   {% include "components/indexing_body.html" %}
 </div>

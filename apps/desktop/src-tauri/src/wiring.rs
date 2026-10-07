@@ -256,7 +256,7 @@ pub fn build(
             db.clone(),
             db.clone(),
         ))))),
-        None => Err("Banco de dados indisponível".to_string()),
+        None => Err("Database unavailable".to_string()),
     };
 
     let engine: Result<Arc<dyn DocumentEngine>, String> = engine
@@ -264,8 +264,8 @@ pub fn build(
         .map_err(|e| e.to_string());
     let viewer = match (&db, &engine) {
         (Some(db), Ok(engine)) => Ok(Arc::new(ViewDocument::new(engine.clone(), db.clone()))),
-        (None, _) => Err("Banco de dados indisponível".to_string()),
-        (_, Err(err)) => Err(format!("Motor de PDF indisponível: {err}")),
+        (None, _) => Err("Database unavailable".to_string()),
+        (_, Err(err)) => Err(format!("PDF engine unavailable: {err}")),
     };
     let library = Arc::new(FsLibrary::new(data_dir.join(LIBRARY_DIR)));
     let remover = match &db {
@@ -274,7 +274,7 @@ pub fn build(
             files: library.clone(),
             viewer: viewer.as_ref().ok().cloned(),
         })),
-        None => Err("Banco de dados indisponível".to_string()),
+        None => Err("Database unavailable".to_string()),
     };
     let ingestion = match (database, engine) {
         (Ok(db), Ok(engine)) => {
@@ -313,8 +313,8 @@ pub fn build(
                 embedder: embedder.clone(),
             }))
         }
-        (Err(err), _) => Err(format!("Banco de dados indisponível: {err}")),
-        (_, Err(err)) => Err(format!("Motor de PDF indisponível: {err}")),
+        (Err(err), _) => Err(format!("Database unavailable: {err}")),
+        (_, Err(err)) => Err(format!("PDF engine unavailable: {err}")),
     };
 
     let activity = Arc::new(IndexingActivity::default());
@@ -327,7 +327,7 @@ pub fn build(
             ingestion: ingestion.clone(),
             activity: activity.clone(),
         })),
-        _ => Err("Banco de dados indisponível".to_string()),
+        _ => Err("Database unavailable".to_string()),
     };
 
     let models = Arc::new(LocalModelProvider::in_data_dir(data_dir));
@@ -345,7 +345,7 @@ pub fn build(
                 options: RagOptions::default(),
             })),
             (Err(e), _) => Err(e.clone()),
-            (_, None) => Err("Banco de dados indisponível".to_string()),
+            (_, None) => Err("Database unavailable".to_string()),
         },
         running: Mutex::new(HashMap::new()),
         llm: language_model.clone(),
@@ -366,6 +366,11 @@ pub fn build(
         models: Some(models.clone() as Arc<dyn ModelProvider>),
         indexing: indexing.clone(),
         notes: Some(notes.clone()),
+        language: nlmx_ui_web::LanguageSettings::new(
+            db.clone()
+                .map(|db| db as Arc<dyn nlmx_application::ports::SettingsRepository>),
+            sys_locale::get_locales().collect(),
+        ),
     }));
     Services {
         ui,
@@ -462,7 +467,7 @@ pub async fn report_models(models: &dyn ModelProvider) {
 fn open_database(data_dir: &Path) -> Result<Database, StorageError> {
     std::fs::create_dir_all(data_dir).map_err(|err| {
         StorageError::new(format!(
-            "Não foi possível criar a pasta de dados {}: {err}",
+            "Could not create the data folder {}: {err}",
             data_dir.display()
         ))
     })?;
@@ -533,6 +538,7 @@ mod tests {
             ..
         } = build(Path::new("/dev/null/nlmx"), None);
         let page = settings_page(router).await;
-        assert!(page.contains("Banco de dados indisponível"));
+        // The heading follows whatever language this machine resolved to.
+        assert!(page.contains(&nlmx_i18n::t("settings-database-unavailable")));
     }
 }

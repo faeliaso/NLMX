@@ -10,13 +10,14 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use nlmx_domain::ingestion::DocumentId;
+use nlmx_i18n::{current, format_bytes, t, t_args, t_count};
 use serde::Deserialize;
 
 use crate::{
     AppState,
     documents::{date_label, status_badge},
     error::UiError,
-    formats::format_view,
+    formats::{format_description, format_view},
     markdown::escape,
     viewer::pair,
 };
@@ -25,7 +26,8 @@ use crate::{
 const QUOTE_CHARS: usize = 700;
 
 pub struct CitedView {
-    pub location: String,
+    /// "Trecho citado · p. 3".
+    pub label: String,
     pub quote: String,
 }
 
@@ -36,12 +38,12 @@ pub struct SourceInfoView {
     pub icon: &'static str,
     pub format: &'static str,
     /// What the format is called in full ("Planilha do Microsoft Excel").
-    pub description: &'static str,
+    pub description: String,
     pub title: String,
     /// A note has no file name or size.
     pub is_note: bool,
     pub file_name: String,
-    pub status_label: &'static str,
+    pub status_label: String,
     pub status_kind: &'static str,
     pub error: String,
     pub chunks: String,
@@ -65,22 +67,6 @@ pub struct SourceQuery {
     pub cite: Option<String>,
 }
 
-fn size_label(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    let b = bytes as f64;
-    if b < KB {
-        format!("{bytes} B")
-    } else if b < KB * KB {
-        format!("{:.0} KB", b / KB)
-    } else {
-        format!("{:.1} MB", b / (KB * KB)).replace('.', ",")
-    }
-}
-
-fn plural(n: u32, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
-
 /// The passage of an answer's source `n` in `document`, when the request came from a citation.
 async fn cited(
     state: &AppState,
@@ -100,7 +86,10 @@ async fn cited(
     Some((
         n,
         CitedView {
-            location: source.reference.location.label(),
+            label: t_args(
+                "sources-cited-label",
+                &[("location", source.reference.location.label().into())],
+            ),
             quote,
         },
     ))
@@ -126,7 +115,7 @@ pub async fn render(
         id,
         icon: format.icon,
         format: format.label,
-        description: format.description,
+        description: format_description(details.document_type),
         title: if details.document_type.is_note() {
             details.title.clone()
         } else {
@@ -137,20 +126,24 @@ pub async fn render(
         status_label,
         status_kind,
         error: details.error.unwrap_or_default(),
-        chunks: plural(details.chunks, "trecho", "trechos"),
-        size: size_label(details.file_size),
-        pages: details.page_count.map(|n| plural(n, "página", "páginas")),
-        sheets: details.sheets.map(|n| plural(n, "planilha", "planilhas")),
+        chunks: t_count("sources-chunk-count", i64::from(details.chunks)),
+        size: format_bytes(current(), details.file_size),
+        pages: details
+            .page_count
+            .map(|n| t_count("sources-page-count", i64::from(n))),
+        sheets: details
+            .sheets
+            .map(|n| t_count("sources-sheet-count", i64::from(n))),
         imported_on: date_label(&details.imported_at),
         indexed_on: details.indexed_at.as_deref().map(date_label),
         used_in: match details.conversations {
-            0 => "Ainda não usado em conversas".to_string(),
-            n => plural(n, "conversa", "conversas"),
+            0 => t("sources-not-used"),
+            n => t_count("sources-conversation-count", i64::from(n)),
         },
         previewable: details.document_type.previewable(),
-        origin: from_answer
-            .as_ref()
-            .map_or_else(String::new, |(n, _)| format!("Fonte {n}")),
+        origin: from_answer.as_ref().map_or_else(String::new, |(n, _)| {
+            t_args("sources-origin", &[("n", u64::from(*n).into())])
+        }),
         cited: from_answer.map(|(_, c)| c),
     };
     Ok(view.render()?)
@@ -158,9 +151,10 @@ pub async fn render(
 
 fn error_fragment(e: UiError) -> Response {
     let html = format!(
-        r#"<div class="viewer-error"><div class="alert alert-danger" role="alert"><div class="alert-content"><p class="alert-title">{}</p><p>{}</p></div></div><button type="button" class="btn btn-secondary btn-sm" data-close-panel>Fechar</button></div>"#,
+        r#"<div class="viewer-error"><div class="alert alert-danger" role="alert"><div class="alert-content"><p class="alert-title">{}</p><p>{}</p></div></div><button type="button" class="btn btn-secondary btn-sm" data-close-panel>{}</button></div>"#,
         escape(&e.title),
-        escape(&e.message)
+        escape(&e.message),
+        escape(&t("common-close"))
     );
     (e.status, Html(html)).into_response()
 }

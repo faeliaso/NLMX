@@ -4,6 +4,7 @@
 
   const root = document.documentElement;
   const invoke = window.__TAURI__?.core?.invoke;
+  const T = (key, args) => window.nlmxT(key, args);
 
   // ── Global loading: html[data-busy] while any HTMX request is in flight ─────
   // Shown after a short delay so fast responses don't flash the indicator.
@@ -44,11 +45,14 @@
   // ── "Ative a IA local": opened when the server renders it (Apple FM not authorized) ──
   // The server decides from the real `fm` state; here we only show it, move focus after each
   // re-check and close it a moment after the success state appears.
-  const fmSetup = document.getElementById("fm-setup");
-  if (fmSetup) {
+  let fmSetupObserver = null;
+  function bindFmSetup() {
+    fmSetupObserver?.disconnect();
+    const fmSetup = document.getElementById("fm-setup");
+    if (!fmSetup) return;
     let closing = false;
     const focusTarget = (dialog) => dialog.querySelector("[data-fm-focus]")?.focus({ preventScroll: true });
-    new MutationObserver(() => {
+    fmSetupObserver = new MutationObserver(() => {
       const dialog = fmSetup.querySelector("dialog");
       if (!dialog) return;
       if (!dialog.open) {
@@ -65,14 +69,16 @@
           document.body.dispatchEvent(new CustomEvent("fm-setup-done"));
         }, 1500);
       }
-    }).observe(fmSetup, { childList: true, subtree: true });
+    });
+    fmSetupObserver.observe(fmSetup, { childList: true, subtree: true });
   }
+  bindFmSetup();
 
   // ── Errors ──────────────────────────────────────────────────────────────────
   // HTTP errors arrive as rendered error fragments (HTMX 4 swaps 4xx/5xx). Network or
   // protocol failures have no response to swap, so they surface as a toast.
   document.addEventListener("htmx:error", () => {
-    window.DS?.toast("danger", "Não foi possível carregar o conteúdo. Tente novamente.");
+    window.DS?.toast("danger", T("js-load-failed"));
   });
 
   function reportError(message, source) {
@@ -80,7 +86,7 @@
   }
   window.addEventListener("error", (event) => {
     reportError(event.message, `${event.filename}:${event.lineno}`);
-    window.DS?.toast("danger", "Ocorreu um erro inesperado na interface.");
+    window.DS?.toast("danger", T("js-unexpected-error"));
   });
   window.addEventListener("unhandledrejection", (event) => {
     reportError(event.reason?.message || event.reason, "unhandledrejection");
@@ -91,14 +97,14 @@
     const button = event.target.closest?.("[data-command]");
     if (!button) return;
     if (!invoke) {
-      window.DS?.toast("danger", "Comandos nativos indisponíveis fora do aplicativo.");
+      window.DS?.toast("danger", T("js-native-unavailable"));
       return;
     }
     let args = {};
     try {
       args = button.dataset.commandArgs ? JSON.parse(button.dataset.commandArgs) : {};
     } catch {
-      window.DS?.toast("danger", "Comando inválido.");
+      window.DS?.toast("danger", T("js-invalid-command"));
       return;
     }
     if (button.dataset.command === "download_model") showDownload(args.id);
@@ -155,7 +161,13 @@
     bar?.querySelector(".progress-bar")?.style.setProperty("--value", `${percent}%`);
     const speed = payload.bytes_per_second > 0 ? ` · ${megabytes(payload.bytes_per_second)}/s` : "";
     const label = box.querySelector("[data-download-label]");
-    if (label) label.textContent = `${megabytes(payload.received)} de ${megabytes(payload.total)} (${percent}%)${speed}`;
+    if (label) {
+      label.textContent = T("js-download-progress", {
+        received: megabytes(payload.received),
+        total: megabytes(payload.total),
+        percent,
+      }) + speed;
+    }
   });
 
   // ── Chat ────────────────────────────────────────────────────────────────────
@@ -214,7 +226,7 @@
     form.toggleAttribute("data-locked", Boolean(answer));
     const button = form.querySelector(".composer-action");
     if (!button || form.querySelector("textarea")?.disabled) return;
-    const label = answer ? "Parar resposta" : "Enviar pergunta";
+    const label = answer ? T("js-stop-answer") : T("js-send-question");
     button.type = answer ? "button" : "submit";
     button.setAttribute("aria-label", label);
     button.title = label;
@@ -279,7 +291,7 @@
     const id = Number(el.dataset.answer);
     const Channel = window.__TAURI__?.core?.Channel;
     if (!invoke || !Channel) {
-      window.DS?.toast("danger", "A geração de respostas só funciona dentro do aplicativo.");
+      window.DS?.toast("danger", T("js-answers-app-only"));
       return;
     }
     const output = el.querySelector("[data-answer-stream]");
@@ -349,16 +361,16 @@
     if (!button) return;
     const text = document.getElementById(button.dataset.copyFrom)?.content?.textContent;
     if (!text) return;
-    if (await copyText(text)) window.DS?.toast("success", button.dataset.copyMessage || "Copiado.");
-    else window.DS?.toast("danger", "Não foi possível copiar.");
+    if (await copyText(text)) window.DS?.toast("success", button.dataset.copyMessage || T("js-copied"));
+    else window.DS?.toast("danger", T("js-copy-failed"));
   });
   document.addEventListener("click", async (event) => {
     const button = event.target.closest?.("[data-copy-answer]");
     if (!button) return;
     const text = button.closest("[data-answer]")?.querySelector("template[data-copy-text]")?.content.textContent;
     if (!text) return;
-    if (await copyText(text)) window.DS?.toast("success", "Resposta copiada.");
-    else window.DS?.toast("danger", "Não foi possível copiar.");
+    if (await copyText(text)) window.DS?.toast("success", T("js-answer-copied"));
+    else window.DS?.toast("danger", T("js-copy-failed"));
   });
 
   // Code blocks (rendered by the server): "Copiar" copies the code text, never the HTML.
@@ -368,15 +380,15 @@
     const text = button.closest(".code-block")?.querySelector("code")?.textContent ?? "";
     if (await copyText(text)) {
       const label = button.textContent;
-      button.textContent = "Copiado";
+      button.textContent = T("js-copied-short");
       button.setAttribute("role", "status");
       clearTimeout(button.copyTimer);
       button.copyTimer = setTimeout(() => {
-        button.textContent = label === "Copiado" ? "Copiar" : label;
+        button.textContent = label === T("js-copied-short") ? T("js-copy-short") : label;
         button.removeAttribute("role");
       }, 1500);
     } else {
-      window.DS?.toast("danger", "Não foi possível copiar.");
+      window.DS?.toast("danger", T("js-copy-failed"));
     }
   });
 
@@ -395,15 +407,59 @@
 
   // ── Navigation: focus the new page title after a section swap (screen readers) ─
   // (HTMX 4 fires swap events on the clicked element, so watch #content itself.)
-  const content = document.getElementById("content");
-  if (content) {
-    new MutationObserver((mutations) => {
+  let contentObserver = null;
+  function bindContent() {
+    contentObserver?.disconnect();
+    const content = document.getElementById("content");
+    if (!content) return;
+    contentObserver = new MutationObserver((mutations) => {
       if (!mutations.some((m) => m.target === content)) return;
       const heading = content.querySelector("[data-page-title]");
       heading?.focus({ preventScroll: true });
       if (heading?.textContent) document.title = `${heading.textContent.trim()} · NLMX`;
-    }).observe(content, { childList: true });
+    });
+    contentObserver.observe(content, { childList: true });
   }
+  bindContent();
+
+  // ── Interface language: switch without reloading the window ──────────────────
+  // The server answers POST /settings/language and the app then fetches the current URL again
+  // as a full page (no HX-Request header), swaps the body and <html lang>, and rebinds what
+  // watched the old elements. (HTMX 4 ignores the HX-Trigger header, so the end of the request
+  // itself is the signal; "language-changed" is accepted as well.)
+  let languageReload = null;
+  async function applyLanguage() {
+    if (languageReload) return languageReload;
+    languageReload = (async () => {
+      try {
+        const response = await fetch(location.href, { cache: "no-store" });
+        if (!response.ok) return;
+        const next = new DOMParser().parseFromString(await response.text(), "text/html");
+        root.lang = next.documentElement.lang || root.lang;
+        window.nlmxT.reload();
+        window.htmx?.clearHistoryCache?.();
+        document.body.replaceChildren(...[...next.body.childNodes].map((node) => document.importNode(node, true)));
+        window.htmx?.process?.(document.body);
+        bindFmSetup();
+        bindContent();
+        const heading = document.querySelector("[data-page-title]");
+        if (heading?.textContent) document.title = `${heading.textContent.trim()} · NLMX`;
+        // Same signal a swap gives: theme controls, composer labels, pending answers…
+        document.dispatchEvent(new CustomEvent("htmx:after:settle"));
+        document.dispatchEvent(new CustomEvent("nlmx:language-applied"));
+        showMarkedToasts(document.body);
+      } catch {
+        window.DS?.toast("danger", T("js-load-failed"));
+      } finally {
+        languageReload = null;
+      }
+    })();
+    return languageReload;
+  }
+  document.addEventListener("language-changed", applyLanguage);
+  document.addEventListener("htmx:finally:request", (event) => {
+    if (event.target?.closest?.('[hx-post="/settings/language"]')) applyLanguage();
+  });
 
   // ── Shortcuts: ⌘1…⌘5 switch sections ─────────────────────────────────────────
   document.addEventListener("keydown", (event) => {
