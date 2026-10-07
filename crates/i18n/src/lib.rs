@@ -14,7 +14,7 @@ mod format;
 mod locale;
 
 pub use catalog::{Arg, catalog_source, message_ids, namespaces, tr, tr_args};
-pub use format::{format_bytes, format_number, format_percent};
+pub use format::{format_bytes, format_integer, format_number, format_percent};
 pub use locale::{Locale, current, resolve, set_current};
 
 /// Translates `key` in the active locale.

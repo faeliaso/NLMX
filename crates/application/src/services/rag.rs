@@ -7,7 +7,7 @@ pub mod context;
 use std::{sync::Arc, time::Instant};
 
 use nlmx_domain::{
-    generation::{FinishReason, GenerationRequest, LanguageModelStatus, LlmError},
+    generation::{FinishReason, GenerationRequest, GenerationUsage, LanguageModelStatus, LlmError},
     ingestion::DocumentId,
     rag_intent::{QueryIntent, section_matches},
     retrieval::normalize_query,
@@ -51,7 +51,7 @@ impl Default for RagOptions {
         let budget = ContextBudget::default();
         Self {
             retriever: RetrieverOptions::default(),
-            min_relevance: 0.35,
+            min_relevance: 0.28,
             max_context_tokens: budget.max_context_tokens,
             answer_tokens: budget.answer_tokens,
             max_passage_tokens: budget.max_passage_tokens,
@@ -296,8 +296,15 @@ impl RagEngine {
             options.temperature,
         );
         builder.task = selection.task;
-        self.generate(question, selection, &builder, on_token, cancel)
-            .await
+        self.generate(
+            question,
+            selection,
+            &builder,
+            on_token,
+            cancel,
+            history.len() as u32 + 1,
+        )
+        .await
     }
 
     /// Regular question: hybrid search + relevance gate.
@@ -503,16 +510,25 @@ impl RagEngine {
         builder: &ContextBuilder,
         on_token: &(dyn Fn(&str) + Send + Sync),
         cancel: CancelFlag,
+        turn: u32,
     ) -> Result<RagAnswer, RagError> {
         let started = Instant::now();
         let first_token: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
         let prompt_tokens = std::sync::atomic::AtomicU32::new(0);
+        let usage: std::sync::OnceLock<GenerationUsage> = std::sync::OnceLock::new();
         let timed = |text: &str| {
             first_token.get_or_init(|| ms(started));
             on_token(text);
         };
         let result = self
-            .generate_inner(question, selection, builder, &timed, cancel, &prompt_tokens)
+            .generate_inner(
+                question,
+                selection,
+                builder,
+                &timed,
+                cancel,
+                (&prompt_tokens, &usage),
+            )
             .await;
         match &result {
             Ok(answer) => record(&Measurement::Generated {
@@ -531,6 +547,9 @@ impl RagEngine {
                 first_token_ms: first_token.get().copied(),
                 output_chars: answer.answer.chars().count() as u32,
                 total_ms: ms(started),
+                turn,
+                reported_prompt_tokens: usage.get().map(|u| u.prompt_tokens),
+                completion_tokens: usage.get().map(|u| u.completion_tokens),
             }),
             Err(e) => record(&Measurement::GenerationFailed {
                 kind: failure_kind(e),
@@ -547,7 +566,10 @@ impl RagEngine {
         builder: &ContextBuilder,
         on_token: &(dyn Fn(&str) + Send + Sync),
         cancel: CancelFlag,
-        prompt_tokens: &std::sync::atomic::AtomicU32,
+        (prompt_tokens, usage): (
+            &std::sync::atomic::AtomicU32,
+            &std::sync::OnceLock<GenerationUsage>,
+        ),
     ) -> Result<RagAnswer, RagError> {
         let Selection {
             question: prompt_question,
@@ -602,6 +624,9 @@ impl RagEngine {
             }
             Err(e) => return Err(RagError::Generation(e)),
         };
+        if let Some(measured) = generation.usage {
+            let _ = usage.set(measured);
+        }
         let cited = CitationEngine::resolve(&generation.text, &built.sources);
         if !cited.invalid.is_empty() {
             let list: Vec<String> = cited.invalid.iter().map(|n| format!("[{n}]")).collect();

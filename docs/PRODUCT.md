@@ -84,7 +84,7 @@ Also done, outside the original list: the "Explique este documento." and "seçã
 
 | Risk | Current mitigation |
 |---|---|
-| The Apple FM window (4,096 tokens) limits broad questions | Context budget of ~1,800 tokens, exact counting with `fm count-tokens` |
+| The Apple FM window (8,192 tokens) limits broad questions | Context budget of ~3,500 tokens (passages up to 1,200), exact counting with `fm count-tokens` |
 | FM guardrails refuse legitimate content | Refusal shown together with the retrieved passages |
 | The `fm` interface changes with macOS updates | Classified status, `fm respond` fallback, contract tests |
 | Extraction quality (columns, tables, scans) | Fixtures + golden set; OCR pending |

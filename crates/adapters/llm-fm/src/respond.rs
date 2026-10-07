@@ -49,10 +49,10 @@ pub async fn generate(
     loop {
         if cancel.is_cancelled() {
             let _ = child.kill().await;
-            return Ok(Generation {
-                text: text.trim_end().to_string(),
-                finish: FinishReason::Cancelled,
-            });
+            return Ok(Generation::new(
+                text.trim_end().to_string(),
+                FinishReason::Cancelled,
+            ));
         }
         let n = match tokio::time::timeout(CANCEL_POLL, stdout.read(&mut buf)).await {
             Err(_) => {
@@ -88,8 +88,8 @@ pub async fn generate(
     if !status.success() {
         return Err(errors::from_exit(status.code(), &stderr));
     }
-    Ok(Generation {
-        text: text.trim_end().to_string(),
-        finish: FinishReason::Completed,
-    })
+    Ok(Generation::new(
+        text.trim_end().to_string(),
+        FinishReason::Completed,
+    ))
 }

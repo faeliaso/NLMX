@@ -8,7 +8,10 @@ use std::{
 };
 
 use nlmx_application::ports::{DiagnosticsSnapshot, OperationStats, ResourceUsage, StorageUsage};
-use nlmx_domain::telemetry::Operation;
+use nlmx_domain::{
+    generation::{GenerationUsage, LastGeneration},
+    telemetry::Operation,
+};
 use serde_json::Value;
 
 /// Durations kept per operation (oldest dropped first) for percentiles.
@@ -31,6 +34,9 @@ struct State {
     embeddings: u64,
     embed_ms: u64,
     first_tokens: Vec<u64>,
+    /// Latest generation whose tokens were counted; a later one that wasn't (failed, cancelled,
+    /// no count) leaves it as it was.
+    last_generation: Option<LastGeneration>,
     resources: Option<ResourceUsage>,
     storage: Option<StorageUsage>,
 }
@@ -47,6 +53,7 @@ impl Default for State {
             embeddings: 0,
             embed_ms: 0,
             first_tokens: Vec::new(),
+            last_generation: None,
             resources: None,
             storage: None,
         }
@@ -128,6 +135,20 @@ impl MetricsRegistry {
                 if let Some(ms) = u("first_token_ms") {
                     push(&mut s.first_tokens, ms);
                 }
+                let count = |key: &str| u(key).and_then(|n| u32::try_from(n).ok());
+                if let (Some(turn), Some(prompt_tokens), Some(completion_tokens)) = (
+                    count("turn"),
+                    count("reported_prompt_tokens"),
+                    count("completion_tokens"),
+                ) {
+                    s.last_generation = Some(LastGeneration {
+                        turn,
+                        usage: GenerationUsage {
+                            prompt_tokens,
+                            completion_tokens,
+                        },
+                    });
+                }
             }
             "resources" => {
                 s.resources = Some(ResourceUsage {
@@ -174,6 +195,7 @@ impl MetricsRegistry {
             embeddings: s.embeddings,
             embeddings_per_second: rate(s.embeddings, s.embed_ms),
             first_token_p50_ms: percentile(&s.first_tokens, 0.5),
+            last_generation: s.last_generation,
             resources: s.resources,
             storage: s.storage,
         }
@@ -278,6 +300,9 @@ mod tests {
                     first_token_ms: Some(50 * (i as u64 + 1)),
                     output_chars: 100,
                     total_ms: ms,
+                    turn: 1,
+                    reported_prompt_tokens: None,
+                    completion_tokens: None,
                 },
             );
         }
@@ -306,6 +331,46 @@ mod tests {
         assert_eq!(s.resources.unwrap().llama_rss_bytes, Some(2 << 20));
         let json = snapshot_json(&s).to_string();
         assert!(json.contains("\"error_rate\"") && json.contains("\"pages_per_second\":20.0"));
+    }
+
+    fn generated(turn: u32, usage: Option<(u32, u32)>) -> Measurement {
+        Measurement::Generated {
+            intent: "free",
+            status: "answered",
+            prompt_tokens: 10,
+            first_token_ms: Some(40),
+            output_chars: 100,
+            total_ms: 900,
+            turn,
+            reported_prompt_tokens: usage.map(|(prompt, _)| prompt),
+            completion_tokens: usage.map(|(_, completion)| completion),
+        }
+    }
+
+    fn last(r: &MetricsRegistry) -> Option<(u32, u32, u32)> {
+        r.snapshot()
+            .last_generation
+            .map(|g| (g.turn, g.usage.prompt_tokens, g.usage.completion_tokens))
+    }
+
+    #[test]
+    fn keeps_the_tokens_of_the_latest_counted_generation() {
+        let r = MetricsRegistry::new();
+        assert_eq!(last(&r), None);
+        feed(&r, generated(1, Some((101, 19))));
+        assert_eq!(last(&r), Some((1, 101, 19)));
+        feed(&r, generated(2, Some((1655, 343))));
+        assert_eq!(last(&r), Some((2, 1655, 343)));
+        // Cancelled or uncounted, and failed generations leave the last counted one in place.
+        feed(&r, generated(3, None));
+        feed(
+            &r,
+            Measurement::GenerationFailed {
+                kind: ErrorKind::Unavailable,
+                total_ms: 3,
+            },
+        );
+        assert_eq!(last(&r), Some((2, 1655, 343)));
     }
 
     #[test]
