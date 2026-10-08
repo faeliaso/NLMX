@@ -17,6 +17,7 @@
       <span class="statusbar-item activity-idle">{% call ds::icon("check") %}{% endcall %}{{ nlmx_i18n::t("common-ready") }}</span>
       <span class="statusbar-item activity-busy" role="status">{% call ds::spinner(nlmx_i18n::t("common-loading"), "sm") %}{% endcall %}{{ nlmx_i18n::t("common-loading-ellipsis") }}</span>
       <span class="statusbar-spacer"></span>
+      <span id="token-usage" hx-get="/fragments/token-usage" hx-trigger="load" hx-swap="innerHTML"></span>
       <span id="system-status" hx-get="/fragments/status" hx-trigger="load, every 60s, fm-setup-done from:body" hx-swap="innerHTML">
         {% call ds::spinner(nlmx_i18n::t("nav-checking-status"), "sm") %}{% endcall %}
       </span>

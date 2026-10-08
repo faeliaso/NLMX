@@ -12,6 +12,23 @@ pub fn format_number(locale: Locale, value: f64, decimals: usize) -> String {
     format!("{value:.decimals$}").replace('.', &decimal_separator(locale).to_string())
 }
 
+/// A whole number with the locale's thousands separator: `8.192` (pt-BR, es), `8,192` (en).
+pub fn format_integer(locale: Locale, value: u64) -> String {
+    let separator = match locale {
+        Locale::En => ',',
+        Locale::PtBr | Locale::Es => '.',
+    };
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(separator);
+        }
+        out.push(digit);
+    }
+    out
+}
+
 /// `12%` (`12 %` in Spanish) from a 0..=1 ratio.
 pub fn format_percent(locale: Locale, ratio: f64) -> String {
     let n = format_number(locale, ratio * 100.0, 0);

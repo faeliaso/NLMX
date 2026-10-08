@@ -129,6 +129,11 @@ pub enum Measurement {
         first_token_ms: Option<u64>,
         output_chars: u32,
         total_ms: u64,
+        /// 1-based position of the answer in its conversation.
+        turn: u32,
+        /// Tokens as the model counted them (prompt, answer); `None` when unavailable.
+        reported_prompt_tokens: Option<u32>,
+        completion_tokens: Option<u32>,
     },
     GenerationFailed {
         kind: ErrorKind,
@@ -291,6 +296,9 @@ impl Measurement {
                 first_token_ms,
                 output_chars,
                 total_ms,
+                turn,
+                reported_prompt_tokens,
+                completion_tokens,
             } => vec![
                 ("intent", Label(intent)),
                 ("status", Label(status)),
@@ -298,6 +306,12 @@ impl Measurement {
                 ("first_token_ms", opt(first_token_ms)),
                 ("output_chars", U64(output_chars.into())),
                 ("total_ms", U64(total_ms)),
+                ("turn", U64(turn.into())),
+                (
+                    "reported_prompt_tokens",
+                    opt(reported_prompt_tokens.map(u64::from)),
+                ),
+                ("completion_tokens", opt(completion_tokens.map(u64::from))),
             ],
             Self::GenerationFailed { kind, total_ms } => {
                 vec![("kind", Label(kind.as_str())), ("total_ms", U64(total_ms))]
@@ -354,10 +368,13 @@ mod tests {
             first_token_ms: Some(640),
             output_chars: 233,
             total_ms: 2100,
+            turn: 3,
+            reported_prompt_tokens: Some(830),
+            completion_tokens: Some(61),
         };
         assert_eq!(
             m.to_json(),
-            r#"{"intent":"regular","status":"answered","prompt_tokens":812,"first_token_ms":640,"output_chars":233,"total_ms":2100}"#
+            r#"{"intent":"regular","status":"answered","prompt_tokens":812,"first_token_ms":640,"output_chars":233,"total_ms":2100,"turn":3,"reported_prompt_tokens":830,"completion_tokens":61}"#
         );
         assert_eq!(m.outcome(), Some((Operation::Generate, 2100, false)));
         let failed = Measurement::IngestFailed {

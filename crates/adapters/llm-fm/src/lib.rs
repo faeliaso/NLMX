@@ -22,7 +22,8 @@ use std::{
 
 use nlmx_application::ports::{BoxFuture, CancelFlag, LlmProvider};
 use nlmx_domain::generation::{
-    FinishReason, Generation, GenerationRequest, LanguageModelStatus, LlmCapabilities, LlmError,
+    FinishReason, Generation, GenerationRequest, GenerationUsage, LanguageModelStatus,
+    LlmCapabilities, LlmError, MODEL_CONTEXT_WINDOW,
 };
 use tokio::{
     process::Command,
@@ -41,7 +42,7 @@ use self::{
 const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const COUNT_TIMEOUT: Duration = Duration::from_secs(10);
 /// The on-device system model's context window.
-pub const SYSTEM_CONTEXT_TOKENS: u32 = 4096;
+pub const SYSTEM_CONTEXT_TOKENS: u32 = MODEL_CONTEXT_WINDOW;
 pub(crate) const CANCEL_POLL: Duration = Duration::from_millis(100);
 
 pub struct FoundationModelsProvider {
@@ -262,22 +263,21 @@ impl FoundationModelsProvider {
             .await
             .map_err(|_| LlmError::Unavailable("encerrando".into()))?;
         if cancel.is_cancelled() {
-            return Ok(Generation {
-                text: String::new(),
-                finish: FinishReason::Cancelled,
-            });
+            return Ok(Generation::new(String::new(), FinishReason::Cancelled));
         }
+        let mut reported = None;
         let result = if self.config.respond_only || self.serve_recently_failed() {
             respond::generate(&self.config, request, on_token, cancel).await
         } else {
             match self.client().await {
                 Ok(client) => match self
-                    .stream(&client, request, on_token, cancel.clone())
+                    .stream(&client, request, on_token, cancel.clone(), &mut reported)
                     .await
                 {
                     // The server went away before answering: one attempt through `fm respond`.
                     Err(LlmError::Unavailable(reason)) => {
                         tracing::warn!(%reason, "fm serve failed; using fm respond");
+                        reported = None;
                         respond::generate(&self.config, request, on_token, cancel).await
                     }
                     other => other,
@@ -290,6 +290,13 @@ impl FoundationModelsProvider {
                 }
             }
         };
+        let result = match result {
+            Ok(mut generation) => {
+                generation.usage = self.usage(request, &generation, reported).await;
+                Ok(generation)
+            }
+            err => err,
+        };
         if matches!(
             result,
             Err(LlmError::LicenseRequired | LlmError::Unavailable(_))
@@ -300,12 +307,41 @@ impl FoundationModelsProvider {
         result
     }
 
+    /// Tokens of a finished generation: the counts `fm serve` reported, or, after `fm respond`
+    /// (which reports none), the tokenizer's exact count of the prompt and of the answer.
+    /// `None` for a cancelled or empty answer or when the count is unavailable — never a guess.
+    async fn usage(
+        &self,
+        request: &GenerationRequest,
+        generation: &Generation,
+        reported: Option<GenerationUsage>,
+    ) -> Option<GenerationUsage> {
+        if generation.finish == FinishReason::Cancelled || generation.text.is_empty() {
+            return None;
+        }
+        if reported.is_some() {
+            return reported;
+        }
+        let answer = GenerationRequest {
+            system: String::new(),
+            history: Vec::new(),
+            user: generation.text.clone(),
+            temperature: 0.0,
+            max_tokens: 0,
+        };
+        Some(GenerationUsage {
+            prompt_tokens: self.count(request).await.ok()?,
+            completion_tokens: self.count(&answer).await.ok()?,
+        })
+    }
+
     async fn stream(
         &self,
         client: &reqwest::Client,
         request: &GenerationRequest,
         on_token: &(dyn Fn(&str) + Send + Sync),
         cancel: CancelFlag,
+        reported: &mut Option<GenerationUsage>,
     ) -> Result<Generation, LlmError> {
         let mut messages = vec![serde_json::json!({ "role": "system", "content": request.system })];
         for turn in &request.history {
@@ -316,6 +352,8 @@ impl FoundationModelsProvider {
         let body = serde_json::json!({
             "model": "system",
             "stream": true,
+            // Ends the stream with the real token count (`usage.completion_tokens`).
+            "stream_options": { "include_usage": true },
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "messages": messages,
@@ -345,13 +383,10 @@ impl FoundationModelsProvider {
         let mut text = String::new();
         let mut finish = FinishReason::Completed;
         let mut idle_since = Instant::now();
-        loop {
+        'stream: loop {
             if cancel.is_cancelled() {
                 // Dropping the response closes the connection and stops the generation.
-                return Ok(Generation {
-                    text,
-                    finish: FinishReason::Cancelled,
-                });
+                return Ok(Generation::new(text, FinishReason::Cancelled));
             }
             let chunk = match tokio::time::timeout(CANCEL_POLL, response.chunk()).await {
                 Err(_) => {
@@ -371,17 +406,26 @@ impl FoundationModelsProvider {
                         on_token(&piece);
                         text.push_str(&piece);
                     }
+                    SseEvent::Usage {
+                        prompt_tokens,
+                        completion_tokens,
+                    } => {
+                        *reported = Some(GenerationUsage {
+                            prompt_tokens,
+                            completion_tokens,
+                        })
+                    }
                     SseEvent::Finish(reason) => {
                         if reason == "length" {
                             finish = FinishReason::Length;
                         }
                     }
                     SseEvent::Error(message) => return Err(errors::from_message(&message)),
-                    SseEvent::Done => return Ok(Generation { text, finish }),
+                    SseEvent::Done => break 'stream,
                 }
             }
         }
-        Ok(Generation { text, finish })
+        Ok(Generation::new(text, finish))
     }
 }
 

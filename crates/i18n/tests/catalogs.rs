@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use nlmx_i18n::{
-    Arg, Locale, catalog_source, format_bytes, format_percent, message_ids, resolve, tr, tr_args,
+    Arg, Locale, catalog_source, format_bytes, format_integer, format_percent, message_ids,
+    resolve, tr, tr_args,
 };
 
 fn tags(list: &[&str]) -> Vec<String> {
@@ -170,6 +171,12 @@ fn formats_numbers_per_locale() {
     assert_eq!(format_bytes(Locale::Es, 812), "812 B");
     assert_eq!(format_percent(Locale::En, 0.5), "50%");
     assert_eq!(format_percent(Locale::Es, 0.5), "50 %");
+    assert_eq!(format_integer(Locale::PtBr, 8192), "8.192");
+    assert_eq!(format_integer(Locale::En, 8192), "8,192");
+    assert_eq!(format_integer(Locale::Es, 1_234_567), "1.234.567");
+    assert_eq!(format_integer(Locale::En, 0), "0");
+    assert_eq!(format_integer(Locale::PtBr, 999), "999");
+    assert_eq!(format_integer(Locale::PtBr, 1000), "1.000");
 }
 
 fn rust_and_template_files(dir: &Path, out: &mut Vec<PathBuf>) {

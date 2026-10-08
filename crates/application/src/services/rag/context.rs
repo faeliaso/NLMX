@@ -54,9 +54,9 @@ impl Default for ContextBudget {
     fn default() -> Self {
         Self {
             context_tokens: 4096,
-            max_context_tokens: 1800,
+            max_context_tokens: 3500,
             answer_tokens: 700,
-            max_passage_tokens: 600,
+            max_passage_tokens: 1200,
             safety_margin: 0.1,
         }
     }
